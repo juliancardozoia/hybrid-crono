@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/*
+ * La app es oscura SIEMPRE, no "oscura si el sistema lo pide".
+ *
+ * No es preferencia estetica: la pantalla del juez se usa al sol, al aire libre,
+ * durante 90 minutos, y el fondo negro con texto claro es lo que mejor se lee y
+ * lo que menos bateria consume en pantallas OLED. Que el mismo producto se vea
+ * blanco en un celular con el tema claro y negro en otro no tiene sentido.
+ *
+ * Antes esto dependia de `prefers-color-scheme`, asi que en el navegador del
+ * celular con tema claro toda la app salia blanca.
+ */
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+
+  /* Que los controles nativos —selects, scrollbars, date pickers— tambien
+     salgan oscuros. Sin esto, un <select> aparece blanco sobre fondo negro. */
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  /* Antes decia Arial y pisaba las fuentes que carga el layout. */
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+
+  /* iOS agranda el texto solo al rotar a horizontal. En una pantalla donde el
+     tamaño de cada elemento esta pensado, eso rompe el layout. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/*
+ * Respeta el notch y la barra de gestos.
+ *
+ * La pantalla del juez ocupa el alto completo: sin esto, en un iPhone el boton
+ * de marcar queda parcialmente debajo de la barra de gestos, que es justo donde
+ * el juez apoya el pulgar.
+ */
+@supports (padding: max(0px)) {
+  .safe-bottom {
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  }
+  .safe-top {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+}
+
+/*
+ * Areas tactiles.
+ *
+ * Un juez con las manos sudadas y el celular en una mano necesita blancos
+ * grandes. 44px es el minimo que recomiendan tanto Apple como Google.
+ */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a.boton {
+    min-height: 44px;
+  }
+}
+
+/*
+ * Barra de pestanas desplazable.
+ *
+ * `overflow-x: auto` a secas habilita tambien el eje vertical, y como el
+ * contenido roza el alto del contenedor aparecia una barra vertical inutil
+ * dentro de las pestanas. Ademas la barra horizontal, en escritorio, ocupa
+ * lugar y corta el borde inferior activo.
+ */
+.tabs-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
