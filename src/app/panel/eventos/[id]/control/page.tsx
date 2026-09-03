@@ -4,13 +4,22 @@ import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
 import { getHeats, getJudges } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
-import { cancelHeatStart, startHeat } from "@/features/heats/actions";
+import {
+  cancelHeatStart,
+  startHeat,
+  type FormState,
+} from "@/features/heats/actions";
 import { estaPendienteDeVerificar } from "@/features/verification/lib/estado";
 import { getVerificationQueue } from "@/features/verification/queries";
+import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 
 export const dynamic = "force-dynamic";
 
-export default async function ControlPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ControlPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const { event, canVerify } = await requireEventAccess(id);
 
@@ -19,17 +28,21 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
   const [heats, cola, judges] = await Promise.all([
     getHeats(id),
     getVerificationQueue(id),
-    getJudges(event.org_id),
+    getJudges(id),
   ]);
 
   const porCarril = new Map(cola.map((c) => [c.laneId, c]));
   const porJuez = new Map(judges.map((j) => [j.userId, j.label]));
 
-  const sinJuez = heats.flatMap((h) => h.lanes.filter((l) => l.team_id && !l.judge_id)).length;
+  const sinJuez = heats.flatMap((h) =>
+    h.lanes.filter((l) => l.team_id && !l.judge_id),
+  ).length;
   // "Para revisar" son carriles que pintan MAL: un marcaje fuera de orden, un
   // split sospechosamente corto, un marcaje anulado. Cero aca no quiere decir
   // que el evento este listo, quiere decir que nada parece roto.
-  const conAnomalias = cola.filter((c) => c.anomalies.length > 0 || c.voidedCount > 0).length;
+  const conAnomalias = cola.filter(
+    (c) => c.anomalies.length > 0 || c.voidedCount > 0,
+  ).length;
   const sinMarcajes = cola.filter((c) => c.eventCount === 0).length;
 
   // Lo que si dice cuanto falta para cerrar el evento. Sin este numero, un
@@ -41,20 +54,33 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
   const marcajesDelHeat = (heatId: string) =>
     heats
       .find((h) => h.id === heatId)
-      ?.lanes.reduce((n, l) => n + (porCarril.get(l.id)?.eventCount ?? 0), 0) ?? 0;
+      ?.lanes.reduce((n, l) => n + (porCarril.get(l.id)?.eventCount ?? 0), 0) ??
+    0;
 
   return (
     <div className="flex flex-col gap-6">
       {/* Dos por fila en celular: cuatro no entran legibles en 360px. */}
       <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-        <Indicador valor={sinJuez} etiqueta="carriles sin juez" alerta={sinJuez > 0} />
-        <Indicador valor={sinMarcajes} etiqueta="sin marcajes" alerta={sinMarcajes > 0} />
-        <Indicador valor={conAnomalias} etiqueta="con anomalías" alerta={conAnomalias > 0} />
+        <Indicador
+          valor={sinJuez}
+          etiqueta="carriles sin juez"
+          alerta={sinJuez > 0}
+        />
+        <Indicador
+          valor={sinMarcajes}
+          etiqueta="sin marcajes"
+          alerta={sinMarcajes > 0}
+        />
+        <Indicador
+          valor={conAnomalias}
+          etiqueta="con anomalías"
+          alerta={conAnomalias > 0}
+        />
         <Indicador
           valor={sinVerificar}
           etiqueta="sin verificar"
           alerta={sinVerificar > 0}
-          href={`/panel/eventos/${id}/resultados`}
+          href={`/panel/eventos/${id}/verificacion`}
         />
       </section>
 
@@ -64,7 +90,10 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
         </p>
       ) : (
         heats.map((heat) => (
-          <section key={heat.id} className="rounded-2xl border border-neutral-800 p-4 sm:p-5">
+          <section
+            key={heat.id}
+            className="rounded-2xl border border-neutral-800 p-4 sm:p-5"
+          >
             {/*
               En celular el titulo y la accion van apilados, y el boton ocupa el
               ancho completo. Antes compartian una fila con flex-wrap y el boton
@@ -83,7 +112,9 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
                     ? `Inició ${horaEnEvento(heat.started_at, event.timezone)}`
                     : "Sin iniciar"}
                   {heat.start_source === "device_offline" && (
-                    <span className="ml-2 text-amber-400">salida provisional</span>
+                    <span className="ml-2 text-amber-400">
+                      salida provisional
+                    </span>
                   )}
                 </p>
               </div>
@@ -94,14 +125,15 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
                 marcajesDelHeat(heat.id) === 0 && (
                   // Todavia no llego ningun marcaje: se puede deshacer sin
                   // destruir tiempos de nadie.
-                  <form action={deshacer.bind(null, id, heat.id)} className="shrink-0">
-                    <button
-                      type="submit"
+                  <div className="shrink-0">
+                    <FormularioDeEstado
+                      accion={deshacer.bind(null, id, heat.id)}
+                      estadoInicial={{ error: null }}
+                      etiqueta="Deshacer inicio"
+                      mensajeDeCarga="Deshaciendo el inicio del heat…"
                       className="w-full rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 sm:w-auto"
-                    >
-                      Deshacer inicio
-                    </button>
-                  </form>
+                    />
+                  </div>
                 )
               )}
             </header>
@@ -115,7 +147,8 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
             <ul className="mt-4 divide-y divide-neutral-800">
               {heat.lanes.map((lane) => {
                 const info = porCarril.get(lane.id);
-                const tieneTiempo = info?.totalMs !== null && info?.totalMs !== undefined;
+                const tieneTiempo =
+                  info?.totalMs !== null && info?.totalMs !== undefined;
 
                 return (
                   <li key={lane.id} className="flex items-center gap-3 py-3">
@@ -136,7 +169,9 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
                         </span>
                         <span className="truncate text-sm font-medium">
                           {lane.athletes ?? lane.teamLabel ?? (
-                            <span className="text-neutral-600">carril libre</span>
+                            <span className="text-neutral-600">
+                              carril libre
+                            </span>
                           )}
                         </span>
                       </p>
@@ -149,7 +184,10 @@ export default async function ControlPage({ params }: { params: Promise<{ id: st
                           <span className="text-amber-400">sin juez</span>
                         )}
                         {lane.athletes && lane.teamLabel && (
-                          <span className="text-neutral-600"> · {lane.teamLabel}</span>
+                          <span className="text-neutral-600">
+                            {" "}
+                            · {lane.teamLabel}
+                          </span>
                         )}
                       </p>
                     </div>
@@ -190,7 +228,10 @@ function LargarHeat({
   heat,
 }: {
   eventId: string;
-  heat: { id: string; lanes: Array<{ team_id: string | null; judge_id: string | null }> };
+  heat: {
+    id: string;
+    lanes: Array<{ team_id: string | null; judge_id: string | null }>;
+  };
 }) {
   const conAtleta = heat.lanes.filter((l) => l.team_id !== null);
   const sinJuez = conAtleta.filter((l) => l.judge_id === null).length;
@@ -200,15 +241,14 @@ function LargarHeat({
     // En celular ocupa el ancho completo y el texto va alineado a la izquierda,
     // como el resto de la tarjeta. Recien en pantalla ancha se va a la derecha.
     <div className="shrink-0 sm:max-w-[17rem] sm:text-right">
-      <form action={largar.bind(null, eventId, heat.id)}>
-        <button
-          type="submit"
-          disabled={!listo}
-          className="w-full rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2.5"
-        >
-          INICIAR HEAT
-        </button>
-      </form>
+      <FormularioDeEstado
+        accion={largar.bind(null, eventId, heat.id)}
+        estadoInicial={{ error: null }}
+        etiqueta="INICIAR HEAT"
+        mensajeDeCarga="Largando el heat…"
+        disabled={!listo}
+        className="w-full rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2.5"
+      />
       {!listo && (
         <p className="mt-2 text-xs text-amber-400">
           {conAtleta.length === 0
@@ -248,7 +288,9 @@ function Indicador({
       >
         {valor}
       </p>
-      <p className="mt-1 text-[11px] leading-tight text-neutral-500 sm:text-xs">{etiqueta}</p>
+      <p className="mt-1 text-[11px] leading-tight text-neutral-500 sm:text-xs">
+        {etiqueta}
+      </p>
     </Caja>
   );
 }
@@ -265,12 +307,22 @@ function EstadoCarril({ estado }: { estado: string }) {
   return <span className={`text-xs ${c.clase}`}>{c.texto}</span>;
 }
 
-async function largar(eventId: string, heatId: string) {
+async function largar(
+  eventId: string,
+  heatId: string,
+  _prev: FormState,
+  _formData: FormData,
+) {
   "use server";
-  await startHeat(eventId, heatId);
+  return startHeat(eventId, heatId);
 }
 
-async function deshacer(eventId: string, heatId: string) {
+async function deshacer(
+  eventId: string,
+  heatId: string,
+  _prev: FormState,
+  _formData: FormData,
+) {
   "use server";
-  await cancelHeatStart(eventId, heatId);
+  return cancelHeatStart(eventId, heatId);
 }

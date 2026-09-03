@@ -1,26 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { BotonDeEnvio } from "./BotonDeEnvio";
 
 export interface SimpleFormState {
   error: string | null;
 }
 
 const initial: SimpleFormState = { error: null };
-
-function Submit({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
-    >
-      {pending ? "Guardando…" : label}
-    </button>
-  );
-}
 
 /** Formulario chico con estado de accion de servidor. Evita repetir el cableado. */
 export function SimpleForm({
@@ -29,7 +16,10 @@ export function SimpleForm({
   hidden,
   children,
 }: {
-  action: (prev: SimpleFormState, formData: FormData) => Promise<SimpleFormState>;
+  action: (
+    prev: SimpleFormState,
+    formData: FormData,
+  ) => Promise<SimpleFormState>;
   submitLabel: string;
   hidden?: Record<string, string>;
   children: React.ReactNode;
@@ -52,7 +42,12 @@ export function SimpleForm({
       )}
 
       <div>
-        <Submit label={submitLabel} />
+        <BotonDeEnvio
+          pendienteTexto="Guardando…"
+          className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+        >
+          {submitLabel}
+        </BotonDeEnvio>
       </div>
     </form>
   );
@@ -64,12 +59,17 @@ export function Field({
   type = "text",
   required,
   placeholder,
+  defaultValue,
+  ayuda,
 }: {
   label: string;
   name: string;
   type?: string;
   required?: boolean;
   placeholder?: string;
+  defaultValue?: string | number;
+  /** Una linea bajo el campo, para reglas que el placeholder no alcanza a decir. */
+  ayuda?: string;
 }) {
   return (
     <label className="flex flex-col gap-1.5">
@@ -79,8 +79,10 @@ export function Field({
         type={type}
         required={required}
         placeholder={placeholder}
+        defaultValue={defaultValue}
         className="rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400"
       />
+      {ayuda && <span className="text-xs text-neutral-600">{ayuda}</span>}
     </label>
   );
 }

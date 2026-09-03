@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { fetchHeatStart, resolveLaneBundle, type LaneBundle } from "../lib/bundle";
 import { JudgeScreen } from "./JudgeScreen";
+import { WodJudgeScreen } from "./WodJudgeScreen";
 
 type Estado =
   | { fase: "cargando" }
@@ -91,6 +92,35 @@ export function CarrilClient() {
           Volver a mis carriles
         </Link>
       </main>
+    );
+  }
+
+  // LA APP DECIDE QUE VA A JUZGAR, EL JUEZ NO ELIGE NADA.
+  //
+  // Si la prueba del carril tiene partes de CrossFit, monta la pantalla de
+  // repeticiones; si no, la de circuito. Las dos viven en el mismo bundle
+  // precacheado y en la misma ruta estatica, asi que la decision no cuesta una
+  // consulta ni rompe el offline.
+  const partes = estado.bundle.wod ?? [];
+
+  if (partes.length > 0) {
+    return (
+      <WodJudgeScreen
+        laneId={estado.bundle.laneId}
+        bib={estado.bundle.bib !== null ? String(estado.bundle.bib) : "—"}
+        athlete={estado.bundle.athletes}
+        subtitle={[estado.bundle.divisionName, estado.bundle.heatName].filter(Boolean).join(" · ")}
+        partes={[...partes]
+          .sort((a, b) => a.orderIndex - b.orderIndex)
+          .map((p) => ({ partId: p.partId, label: p.label, structure: p.structure }))}
+        heatStartEpochMs={
+          estado.bundle.heatStartedAt ? new Date(estado.bundle.heatStartedAt).getTime() : null
+        }
+        startOffsetMs={estado.bundle.startOffsetMs}
+        recordedBy={estado.bundle.judgeId ?? ""}
+        onCheckStart={checkStart}
+        localStart="offline"
+      />
     );
   }
 

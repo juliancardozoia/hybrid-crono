@@ -4,7 +4,25 @@ import type { Database } from "./types";
 import { supabaseAnonKey, supabaseConfigured, supabaseUrl } from "./env";
 
 /** Rutas que se sirven sin sesion. Todo lo demas exige login. */
-const PUBLIC_PREFIXES = ["/login", "/registro", "/auth", "/en-vivo", "/spike", "/api/spike"];
+// El catalogo y la ficha de una competencia son la cara publica del producto:
+// tienen que abrirse sin cuenta, igual que el leaderboard.
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/registro",
+  // Sin estas dos, quien olvido la contraseña queda encerrado: el enlace del
+  // correo llega a alguien SIN sesion, y el middleware lo mandaria al login,
+  // que es justo lo que no puede pasar.
+  "/recuperar",
+  "/nueva-clave",
+  "/auth",
+  "/eventos",
+  "/en-vivo",
+  "/spike",
+  "/api/spike",
+  // El webhook de pagos lo llama la pasarela, que no tiene sesion. Su barrera
+  // es la firma, no la cookie: ver src/app/api/pagos/[proveedor]/webhook.
+  "/api/pagos",
+];
 
 function isPublic(pathname: string): boolean {
   return pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));

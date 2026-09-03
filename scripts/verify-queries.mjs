@@ -36,6 +36,14 @@ const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
  */
 const CONSULTAS = [
   {
+    donde: "features/workouts/queries.ts · getGrillaDeCarga",
+    tabla: "team_members",
+    select: `
+      team_id,
+      athletes (first_name, last_name)
+    `,
+  },
+  {
     donde: "features/judge/queries.ts · getJudgeLanes",
     tabla: "lanes",
     select: `
@@ -52,11 +60,11 @@ const CONSULTAS = [
     donde: "features/judge/lib/bundle.ts · fetchLaneBundle",
     tabla: "lanes",
     select: `
-      id, event_id, lane_number, start_offset_ms, judge_id,
+      id, event_id, lane_number, start_offset_ms, judge_id, workout_id,
       heats (id, name, started_at, events (name)),
       teams (
         bib_number, name,
-        divisions (name, course_template_id),
+        divisions (id, name, course_template_id),
         team_members (athletes (first_name, last_name))
       )
     `,
@@ -65,7 +73,7 @@ const CONSULTAS = [
     donde: "features/events/config/queries.ts · getTeams",
     tabla: "teams",
     select:
-      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date))",
+      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date, email, country, document_id, state_province))",
   },
   {
     donde: "features/events/config/queries.ts · getHeats",

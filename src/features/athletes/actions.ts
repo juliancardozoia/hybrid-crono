@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireManage } from "@/features/events/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import type { AthleteGender } from "@/lib/supabase/types";
-import { buildImportPlan, type DivisionInfo, type ImportPlan, type PlannedTeam } from "./lib/import";
+import {
+  buildImportPlan,
+  type DivisionInfo,
+  type ImportPlan,
+  type PlannedTeam,
+} from "./lib/import";
 
 export interface FormState {
   error: string | null;
@@ -38,7 +43,10 @@ async function cargarDivisiones(eventId: string): Promise<DivisionInfo[]> {
 
 async function dorsalesUsados(eventId: string): Promise<number[]> {
   const supabase = await createClient();
-  const { data } = await supabase.from("teams").select("bib_number").eq("event_id", eventId);
+  const { data } = await supabase
+    .from("teams")
+    .select("bib_number")
+    .eq("event_id", eventId);
   return (data ?? []).map((t) => t.bib_number);
 }
 
@@ -65,19 +73,26 @@ export async function previewImport(
   }
 
   if (!csv.trim()) {
-    return { error: "Sube un archivo CSV o pega el contenido.", plan: null, csv: null };
-  }
-
-  const divisiones = await cargarDivisiones(eventId);
-  if (divisiones.length === 0) {
     return {
-      error: "Primero crea al menos una división: el CSV se asigna por nombre de división.",
+      error: "Sube un archivo CSV o pega el contenido.",
       plan: null,
       csv: null,
     };
   }
 
-  const plan = buildImportPlan(csv, divisiones, { existingBibs: await dorsalesUsados(eventId) });
+  const divisiones = await cargarDivisiones(eventId);
+  if (divisiones.length === 0) {
+    return {
+      error:
+        "Primero crea al menos una división: el CSV se asigna por nombre de división.",
+      plan: null,
+      csv: null,
+    };
+  }
+
+  const plan = buildImportPlan(csv, divisiones, {
+    existingBibs: await dorsalesUsados(eventId),
+  });
 
   return { error: null, plan, csv };
 }
@@ -86,18 +101,24 @@ export async function previewImport(
  * Paso 2: escribe. Va por la funcion import_teams, que corre todo en una
  * transaccion: si algo falla, no queda medio padron cargado.
  */
-export async function confirmImport(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function confirmImport(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   await requireManage(eventId);
 
   const csv = String(formData.get("csv") ?? "");
-  if (!csv.trim()) return { error: "Se perdió el contenido del archivo. Subilo de nuevo." };
+  if (!csv.trim())
+    return { error: "Se perdió el contenido del archivo. Subilo de nuevo." };
 
   // El plan se recalcula en el servidor en vez de confiar en el que viajo al
   // navegador: si el cliente lo manipulara, entrarian dorsales o divisiones que
   // nunca se validaron.
   const divisiones = await cargarDivisiones(eventId);
-  const plan = buildImportPlan(csv, divisiones, { existingBibs: await dorsalesUsados(eventId) });
+  const plan = buildImportPlan(csv, divisiones, {
+    existingBibs: await dorsalesUsados(eventId),
+  });
 
   if (plan.teams.length === 0) {
     return { error: "No hay nada válido para importar." };
@@ -127,58 +148,117 @@ export async function confirmImport(_prev: FormState, formData: FormData): Promi
   return { error: null };
 }
 
-/** Alta manual, para los que llegan sueltos el día del evento. */
-export async function createAthleteTeam(_prev: FormState, formData: FormData): Promise<FormState> {
+export interface IntegranteManual {
+  firstName: string;
+  lastName: string;
+  email: string;
+  birthDate: string | null;
+  gender: AthleteGender | null;
+  country: string | null;
+  documentId: string | null;
+  stateProvince: string | null;
+}
+
+function traducir(error: { code?: string; message?: string } | null): string {
+  if (!error) return "No se pudo guardar.";
+  if (error.code === "23505") return "Ya existe un registro con esos datos.";
+  if (error.code === "23514") return "Algún valor está fuera de rango.";
+  if (error.code === "insufficient_privilege")
+    return "No tienes permiso para esta operación.";
+  return error.message || "No se pudo guardar.";
+}
+
+/**
+ * Alta manual, UNIFICADA con el sistema de inscripciones.
+ *
+ * Antes esta funcion escribia derecho en `athletes`/`teams` via `import_teams`
+ * —el mismo RPC que usa la importacion CSV, pero para un solo atleta—, un
+ * segundo camino por el que podia nacer un equipo. Ahora llama a
+ * `admin_create_registration()`, que arma la inscripcion con los datos que ya
+ * tenemos y confirma con la MISMA funcion que usa el portal publico
+ * (`confirm_registration`): un solo lugar donde nace un equipo, sea cual sea
+ * la puerta por la que entro.
+ *
+ * QUEDA CONFIRMADO DIRECTO, sin pedir pago aunque la categoria tenga precio:
+ * es la organizacion registrando a alguien que ya esta ahi, no un tramite por
+ * el portal.
+ *
+ * La importacion CSV (`confirmImport`, mas abajo) sigue por `import_teams` a
+ * proposito: es una carga MASIVA de un padron ya armado, no una persona
+ * completando su propio tramite — no tiene el mismo problema que resolvia
+ * unificar el alta de a uno.
+ */
+export async function crearRegistroManual(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
-  await requireManage(eventId);
-
-  const firstName = String(formData.get("firstName") ?? "").trim();
-  const lastName = String(formData.get("lastName") ?? "").trim();
   const divisionId = String(formData.get("divisionId") ?? "");
-  const gender = (String(formData.get("gender") ?? "") || null) as AthleteGender | null;
-  const birthDate = String(formData.get("birthDate") ?? "").trim() || null;
-  const email = String(formData.get("email") ?? "").trim() || null;
-  const bibRaw = String(formData.get("bibNumber") ?? "").trim();
+  const teamName = String(formData.get("teamName") ?? "").trim() || null;
+  const teamSize = Number(formData.get("teamSize") ?? 1);
 
-  if (!firstName || !lastName) return { error: "Completa nombre y apellido." };
   if (!divisionId) return { error: "Elige una división." };
+  if (!Number.isInteger(teamSize) || teamSize < 1)
+    return { error: "División inválida." };
 
-  const usados = await dorsalesUsados(eventId);
-  let bib: number;
+  const integrantes: IntegranteManual[] = [];
+  for (let i = 0; i < teamSize; i++) {
+    const firstName = String(formData.get(`firstName_${i}`) ?? "").trim();
+    const lastName = String(formData.get(`lastName_${i}`) ?? "").trim();
+    const email = String(formData.get(`email_${i}`) ?? "").trim();
+    const country = String(formData.get(`country_${i}`) ?? "").trim();
+    const documentId = String(formData.get(`documentId_${i}`) ?? "").trim();
 
-  if (bibRaw) {
-    bib = Number(bibRaw);
-    if (!Number.isInteger(bib) || bib <= 0) return { error: "El dorsal no es válido." };
-    if (usados.includes(bib)) return { error: `El dorsal ${bib} ya está usado.` };
-  } else {
-    bib = Math.max(0, ...usados) + 1;
+    if (!firstName || !lastName) {
+      return { error: `Completa nombre y apellido del integrante ${i + 1}.` };
+    }
+    if (!email) return { error: `Falta el correo del integrante ${i + 1}.` };
+    if (!country) return { error: `Falta el país del integrante ${i + 1}.` };
+    if (!documentId)
+      return { error: `Falta el documento del integrante ${i + 1}.` };
+
+    integrantes.push({
+      firstName,
+      lastName,
+      email,
+      birthDate: String(formData.get(`birthDate_${i}`) ?? "").trim() || null,
+      gender: (String(formData.get(`gender_${i}`) ?? "") ||
+        null) as AthleteGender | null,
+      country,
+      documentId,
+      stateProvince:
+        String(formData.get(`stateProvince_${i}`) ?? "").trim() || null,
+    });
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("import_teams", {
-    p_event_id: eventId,
-    p_teams: [
-      {
-        divisionId,
-        bibNumber: bib,
-        name: null,
-        members: [{ firstName, lastName, gender, birthDate, email, phone: null, externalRef: null }],
-      },
-    ],
+  const { error } = await supabase.rpc("admin_create_registration", {
+    p_division_id: divisionId,
+    // "" y NULL dan lo mismo del lado de la funcion (`nullif(trim(coalesce(...
+    // , '')), '')`), asi que no hace falta pasar null: el tipo generado no lo
+    // acepta porque el parametro SQL no tiene default.
+    p_team_name: teamName ?? "",
+    p_integrantes: integrantes as never,
   });
 
-  if (error) return { error: "No se pudo crear el atleta." };
+  if (error) return { error: traducir(error) };
 
   refrescar(eventId);
   return { error: null };
 }
 
-export async function deleteTeam(eventId: string, teamId: string): Promise<void> {
+export async function deleteTeam(
+  eventId: string,
+  teamId: string,
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
 
   // Los atletas quedan: pueden estar en otro equipo, y borrarlos en cascada
   // seria destruir datos que el organizador no pidio borrar.
-  await supabase.from("teams").delete().eq("id", teamId);
+  const { error } = await supabase.from("teams").delete().eq("id", teamId);
+  if (error) return { error: traducir(error) };
+
   refrescar(eventId);
+  return { error: null };
 }

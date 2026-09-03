@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { claimLane } from "@/features/judge/actions";
+import { claimLane, releaseLane } from "@/features/judge/actions";
 import { getJudgeLanes, type JudgeLane, type LanesResult } from "@/features/judge/queries";
 import { ClaimButton } from "@/features/judge/components/ClaimButton";
 
-export const metadata = { title: "Carriles — Hybrid Crono" };
+export const metadata = { title: "Carriles — Scora" };
 
 export default async function JuezPage() {
   const { mios, libres, motivo } = await getJudgeLanes();
@@ -13,7 +13,7 @@ export default async function JuezPage() {
       <header>
         <h1 className="text-2xl font-bold">Tus carriles</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          Tomá tu carril con señal, antes de que largue el heat. Después la pantalla del
+          Toma tu carril con señal, antes de que largue el heat. Después la pantalla del
           cronómetro funciona sin conexión.
         </p>
       </header>
@@ -25,16 +25,27 @@ export default async function JuezPage() {
           </h2>
           <ul className="flex flex-col gap-2">
             {mios.map((lane) => (
-              <li key={lane.laneId}>
-                <Link
-                  href={`/juez/carril?id=${lane.laneId}`}
-                  className="block rounded-2xl border border-lime-500/40 bg-lime-500/5 p-4 transition-colors hover:bg-lime-500/10"
-                >
+              <li
+                key={lane.laneId}
+                className="rounded-2xl border border-lime-500/40 bg-lime-500/5 p-4"
+              >
+                <Link href={`/juez/carril?id=${lane.laneId}`} className="block">
                   <LaneInfo lane={lane} />
                   <p className="mt-2 text-sm font-semibold text-lime-400">
                     {lane.heatStartedAt ? "Heat en curso — abrir cronómetro" : "Abrir cronómetro"}
                   </p>
                 </Link>
+                {/* Terminado este heat, hay que soltarlo para poder tomar
+                    otro: un juez solo puede tener un carril activo por heat a
+                    la vez. */}
+                <form action={releaseLane.bind(null, lane.laneId)} className="mt-3">
+                  <button
+                    type="submit"
+                    className="text-xs text-neutral-500 hover:text-neutral-300 hover:underline"
+                  >
+                    Terminé — liberar este carril
+                  </button>
+                </form>
               </li>
             ))}
           </ul>

@@ -202,7 +202,7 @@ export function buildImportPlan(
     if (!division) {
       issues.push({
         line,
-        message: `La división "${nombreDivision}" no existe. Creala primero o corregí la planilla.`,
+        message: `La división "${nombreDivision}" no existe. Creala primero o corrige la planilla.`,
       });
       return;
     }

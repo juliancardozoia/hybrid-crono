@@ -10,9 +10,24 @@
  * este archivo y no desparramado por toda la aplicacion.
  */
 
-import type { Database, Tables, Enums } from "./database.types";
+import type { Database, Json, Tables, TablesInsert, Enums } from "./database.types";
 
-export type { Database };
+export type { Database, Json };
+
+/**
+ * Lo que la app manda al crear un heat.
+ *
+ * `workout_id` es NOT NULL y la llena el trigger `heats_prueba_por_defecto`
+ * ANTES del insert. El generador de tipos no puede saberlo —ve una columna
+ * obligatoria sin default— asi que exige un valor que la app no debe mandar:
+ * `createHeat` no sabe que existen las pruebas y no tiene por que aprenderlo.
+ *
+ * Este alias es el unico lugar donde se dice "esa columna la pone la base".
+ */
+export type HeatInsert = Omit<TablesInsert<"heats">, "workout_id">;
+
+/** El tipo completo, solo para el cast del insert. Ver `HeatInsert`. */
+export type HeatInsertConTrigger = TablesInsert<"heats">;
 
 // --- Enums ------------------------------------------------------------------
 
@@ -27,6 +42,28 @@ export type HeatStatus = Enums<"heat_status">;
 export type LaneStatus = Enums<"lane_status">;
 export type StartSource = Enums<"start_source">;
 export type TimingEventType = Enums<"timing_event_type">;
+export type TimeScheme = Enums<"time_scheme">;
+export type ScoreUnitDb = Enums<"score_unit">;
+export type ScoreDirDb = Enums<"score_dir">;
+export type ScoreStatusDb = Enums<"score_status">;
+export type CaptureMode = Enums<"capture_mode">;
+export type BlockKind = Enums<"block_kind">;
+export type TeamMode = Enums<"team_mode">;
+export type MovementUnit = Enums<"movement_unit">;
+export type MovementCategory = Enums<"movement_category">;
+export type TiebreakSource = Enums<"tiebreak_source">;
+export type OrgPlan = Enums<"org_plan">;
+export type EventType = Enums<"event_type">;
+export type EventFormat = Enums<"event_format">;
+export type EventDocumentKind = Enums<"event_document_kind">;
+export type LoadUnit = Enums<"load_unit">;
+export type RegistrationStatus = Enums<"registration_status">;
+export type RegistrationMemberStatus = Enums<"registration_member_status">;
+export type RegistrationFieldType = Enums<"registration_field_type">;
+export type PaymentProvider = Enums<"payment_provider">;
+export type OrderStatus = Enums<"order_status">;
+export type DiscountKind = Enums<"discount_kind">;
+export type EventStaffRole = Enums<"event_staff_role">;
 
 // --- Filas ------------------------------------------------------------------
 
@@ -48,6 +85,29 @@ export type TimingEventRow = Tables<"timing_events">;
 export type ResultRow = Tables<"results">;
 export type ResultPublication = Tables<"result_publications">;
 export type LaneAudit = Tables<"lane_audit">;
+export type MovementRow = Tables<"movements">;
+export type ScoringTableRow = Tables<"scoring_tables">;
+export type WorkoutRow = Tables<"workouts">;
+export type WorkoutPartRow = Tables<"workout_parts">;
+export type PartDivisionRow = Tables<"part_divisions">;
+export type PartBlockRow = Tables<"part_blocks">;
+export type PartMovementRow = Tables<"part_movements">;
+export type DivisionMovementSpec = Tables<"division_movement_specs">;
+export type WorkoutScoreRow = Tables<"workout_scores">;
+export type WorkoutScoreAudit = Tables<"workout_score_audit">;
+export type StandingRow = Tables<"standings">;
+export type EventDocumentRow = Tables<"event_documents">;
+export type DivisionRegistration = Tables<"division_registration">;
+export type RegistrationFieldRow = Tables<"registration_fields">;
+export type RegistrationRow = Tables<"registrations">;
+export type RegistrationMemberRow = Tables<"registration_members">;
+export type PaymentProviderRow = Tables<"payment_providers">;
+export type DiscountCodeRow = Tables<"discount_codes">;
+export type OrderRow = Tables<"orders">;
+export type PaymentAttemptRow = Tables<"payment_attempts">;
+export type ArenaRow = Tables<"arenas">;
+export type BillingAccountRow = Tables<"billing_accounts">;
+export type EventStaffRow = Tables<"event_staff">;
 
 /**
  * Lo que devuelve event_config_issues(). El generador la tipa como Json porque

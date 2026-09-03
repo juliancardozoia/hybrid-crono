@@ -36,7 +36,7 @@ export async function createClient() {
  *
  * Solo para trabajo de servidor que legitimamente no tiene un usuario detras,
  * como recalcular resultados tras una ingesta. Nunca lo expongas a una ruta que
- * reciba input del usuario sin verificar permisos vos mismo primero.
+ * reciba input del usuario sin verificar permisos tú mismo primero.
  */
 export function createServiceClient() {
   return createServerClient<Database>(supabaseUrl(), supabaseServiceRoleKey(), {

@@ -1,10 +1,32 @@
-import { createHeat, deleteHeat } from "@/features/heats/actions";
-import { HeatCard, type TeamOption } from "@/features/heats/components/HeatCard";
-import { getDivisions, getHeats, getJudges, getTeams } from "@/features/events/config/queries";
+import {
+  createHeat,
+  deleteHeat,
+  type FormState,
+} from "@/features/heats/actions";
+import {
+  HeatCard,
+  type TeamOption,
+} from "@/features/heats/components/HeatCard";
+import {
+  getDivisions,
+  getHeats,
+  getJudges,
+  getTeams,
+} from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
-import { Field, FieldRow, Select, SimpleForm } from "@/shared/components/SimpleForm";
+import {
+  Field,
+  FieldRow,
+  Select,
+  SimpleForm,
+} from "@/shared/components/SimpleForm";
+import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 
-export default async function HeatsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function HeatsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
   const { event, canManage, canVerify } = await requireEventAccess(id);
 
@@ -12,7 +34,7 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
     getHeats(id),
     getTeams(id),
     getDivisions(id),
-    getJudges(event.org_id),
+    getJudges(id),
   ]);
 
   // Un equipo corre una sola vez en todo el evento, asi que el selector tiene
@@ -28,7 +50,8 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
     id: t.id,
     label: `#${t.bib_number} · ${
       t.name ??
-      (t.members.map((m) => `${m.first_name} ${m.last_name}`).join(" / ") || "sin nombre")
+      (t.members.map((m) => `${m.first_name} ${m.last_name}`).join(" / ") ||
+        "sin nombre")
     }`,
     asignadoEn: asignaciones.get(t.id) ?? null,
   }));
@@ -38,7 +61,8 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-neutral-500">
-        Los heats son las tandas de largada. Cada carril lleva un equipo y lo sigue un juez.
+        Los heats son las tandas de largada. Cada carril lleva un equipo y lo
+        sigue un juez.
         {sinAsignar > 0 && (
           <span className="ml-1 text-amber-400">
             Quedan {sinAsignar} equipo(s) sin heat.
@@ -63,18 +87,17 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
               canVerify={canVerify}
             />
             {canManage && heat.started_at === null && (
-              <form
-                action={quitarHeat.bind(null, id, heat.id)}
-                className="absolute top-4 right-4"
-              >
-                <button
-                  type="submit"
-                  className="text-sm text-neutral-700 hover:text-red-400"
+              <div className="absolute top-4 right-4">
+                <FormularioDeEstado
+                  accion={quitarHeat.bind(null, id, heat.id)}
+                  estadoInicial={{ error: null }}
+                  etiqueta="✕"
+                  pendienteTexto="…"
+                  mensajeDeCarga="Quitando el heat…"
                   title="Quitar heat"
-                >
-                  ✕
-                </button>
-              </form>
+                  className="text-sm text-neutral-700 hover:text-red-400"
+                />
+              </div>
             )}
           </div>
         ))
@@ -83,10 +106,19 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
       {canManage && (
         <section className="rounded-2xl border border-neutral-800 p-5">
           <h2 className="mb-4 font-semibold">Nuevo heat</h2>
-          <SimpleForm action={createHeat} submitLabel="Crear heat" hidden={{ eventId: id }}>
+          <SimpleForm
+            action={createHeat}
+            submitLabel="Crear heat"
+            hidden={{ eventId: id }}
+          >
             <FieldRow>
               <Field label="Nombre" name="name" required placeholder="Heat 1" />
-              <Field label="Carriles" name="laneCount" type="number" placeholder="6" />
+              <Field
+                label="Carriles"
+                name="laneCount"
+                type="number"
+                placeholder="6"
+              />
             </FieldRow>
             <FieldRow>
               <Select
@@ -97,7 +129,11 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
                   ...divisions.map((d) => ({ value: d.id, label: d.name })),
                 ]}
               />
-              <Field label="Hora de largada (opcional)" name="scheduledAt" type="datetime-local" />
+              <Field
+                label="Hora de largada (opcional)"
+                name="scheduledAt"
+                type="datetime-local"
+              />
             </FieldRow>
           </SimpleForm>
         </section>
@@ -106,7 +142,12 @@ export default async function HeatsPage({ params }: { params: Promise<{ id: stri
   );
 }
 
-async function quitarHeat(eventId: string, heatId: string) {
+async function quitarHeat(
+  eventId: string,
+  heatId: string,
+  _prev: FormState,
+  _formData: FormData,
+) {
   "use server";
-  await deleteHeat(eventId, heatId);
+  return deleteHeat(eventId, heatId);
 }

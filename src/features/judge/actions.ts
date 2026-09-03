@@ -29,7 +29,18 @@ export async function claimLane(_prev: ClaimState, formData: FormData): Promise<
       return { error: "Ese carril lo tomó otro juez. Elige otro." };
     }
     if (errorIncluye(error.message, "no perteneces")) {
-      return { error: "No perteneces a este evento." };
+      return { error: "No perteneces a este evento, o tu postulación todavía no fue aprobada." };
+    }
+    if (errorIncluye(error.message, "ya tienes un carril activo")) {
+      return { error: error.message };
+    }
+    if (errorIncluye(error.message, "autoasignación")) {
+      return {
+        error: "La organización desactivó la autoasignación: pídele a un organizador que te asigne un carril.",
+      };
+    }
+    if (errorIncluye(error.message, "no estás habilitado")) {
+      return { error: "No estás habilitado para juzgar esta categoría." };
     }
     return { error: "No se pudo tomar el carril." };
   }
@@ -38,12 +49,17 @@ export async function claimLane(_prev: ClaimState, formData: FormData): Promise<
   redirect(`/juez/carril?id=${laneId}`);
 }
 
-/** Devuelve el carril para que lo tome otro juez. */
+/**
+ * Devuelve el carril para que lo tome otro juez.
+ *
+ * transfer_lane deja hacer esto sin rol de verificacion CUANDO el que llama
+ * es el juez que ya tiene el carril y lo suelta (p_to_judge null): es la
+ * autoliberacion, no una reasignacion. Es lo que le permite a un juez
+ * terminar su heat y quedar libre para tomar otro sin esperar el lease de
+ * seis horas ni pedirselo a la organizacion.
+ */
 export async function releaseLane(laneId: string): Promise<void> {
   const supabase = await createClient();
-  // transfer_lane a null exige rol de verificacion; un juez comun suelta el
-  // suyo dejando vencer el lease o pidiendoselo a la organizacion. Aca solo
-  // intentamos, y si no tiene permiso no pasa nada.
   await supabase.rpc("transfer_lane", {
     p_lane_id: laneId,
     p_to_judge: null as unknown as string,

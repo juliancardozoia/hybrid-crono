@@ -2,104 +2,156 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
+import { BotonDeGoogle } from "./BotonDeGoogle";
+import { CampoDeClave } from "./CampoDeClave";
+import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import type { AuthState } from "../actions";
+import { crearTraductor } from "@/shared/i18n/diccionario";
+import type { Idioma } from "@/shared/i18n/idiomas";
 
 const initial: AuthState = { error: null, message: null };
 
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-xl bg-lime-400 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
-    >
-      {pending ? "Un momento…" : label}
-    </button>
-  );
-}
-
+/**
+ * Entrar y crear cuenta, en el mismo componente.
+ *
+ * Son la misma pantalla con dos palabras cambiadas, y separarlas en dos
+ * componentes garantiza que dentro de tres meses una tenga el ojo de la
+ * contraseña y la otra no.
+ *
+ * ORDEN DE LOS ELEMENTOS, QUE NO ES CASUAL
+ *
+ *   1. Google       el camino corto, y el que no deja cuentas sin confirmar.
+ *   2. separador    "o con tu email", no una linea muda: dice que hay abajo.
+ *   3. email/clave  el camino de siempre.
+ *   4. cambiar      quien cayo en la pantalla equivocada tiene que verlo sin
+ *                   buscar. Es el motivo mas comun de abandono en un login.
+ *
+ * El link de "olvidé mi contraseña" va PEGADO al campo de clave y no perdido en
+ * el pie: es el momento exacto en que la persona se da cuenta de que no la
+ * recuerda.
+ */
 export function AuthForm({
   mode,
   action,
   volver,
+  idioma,
 }: {
   mode: "login" | "registro";
   action: (prev: AuthState, formData: FormData) => Promise<AuthState>;
   volver?: string;
+  idioma: Idioma;
 }) {
+  const t = crearTraductor(idioma);
   const [state, formAction] = useActionState(action, initial);
   const esLogin = mode === "login";
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-8 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">{esLogin ? "Entrar" : "Crear cuenta"}</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          {esLogin
-            ? "Ingresa para gestionar tus competencias."
-            : "Crea tu cuenta de organizador."}
-        </p>
+    <div className="flex flex-col gap-6">
+      <BotonDeGoogle
+        volver={volver}
+        textos={{
+          entrar: t("auth.google"),
+          abriendo: t("auth.googleAbriendo"),
+          error: t("auth.googleError"),
+        }}
+      />
+
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-neutral-800" />
+        <span className="text-xs text-neutral-600">{t("auth.separador")}</span>
+        <span className="h-px flex-1 bg-neutral-800" />
       </div>
 
       <form action={formAction} className="flex flex-col gap-4">
         {volver && <input type="hidden" name="volver" value={volver} />}
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Email</span>
+          <span className="text-sm font-medium">{t("auth.email")}</span>
           <input
             name="email"
             type="email"
             required
             autoComplete="email"
-            className="rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400"
+            autoFocus
+            placeholder={t("auth.emailEjemplo")}
+            className="rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none transition-colors focus:border-lime-400"
           />
         </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Contraseña</span>
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={8}
+        <div className="flex flex-col gap-1.5">
+          <CampoDeClave
+            label={t("auth.clave")}
+            ver={t("auth.claveVer")}
+            ocultar={t("auth.claveOcultar")}
             autoComplete={esLogin ? "current-password" : "new-password"}
-            className="rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400"
+            minLength={esLogin ? undefined : 8}
+            pista={esLogin ? undefined : t("auth.clavePista")}
           />
-        </label>
+          {esLogin && (
+            <Link
+              href="/recuperar"
+              className="self-end text-xs text-neutral-500 hover:text-lime-400"
+            >
+              {t("auth.olvide")}
+            </Link>
+          )}
+        </div>
 
         {state.error && (
-          <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          <p
+            role="alert"
+            className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300"
+          >
             {state.error}
           </p>
         )}
         {state.message && (
-          <p className="rounded-xl border border-lime-500/40 bg-lime-500/10 p-3 text-sm text-lime-300">
+          <p
+            role="status"
+            className="rounded-xl border border-lime-500/40 bg-lime-500/10 p-3 text-sm text-lime-300"
+          >
             {state.message}
           </p>
         )}
 
-        <SubmitButton label={esLogin ? "Entrar" : "Crear cuenta"} />
+        <BotonDeEnvio
+          pendienteTexto={t("auth.espera")}
+          mensajeDeCarga={t("auth.espera")}
+          className="w-full rounded-xl bg-lime-400 py-3.5 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+        >
+          {esLogin ? t("auth.botonEntrar") : t("auth.botonRegistro")}
+        </BotonDeEnvio>
       </form>
 
-      <p className="text-center text-sm text-neutral-500">
+      {!esLogin && (
+        <p className="text-xs leading-relaxed text-neutral-600">
+          {t("auth.terminos")}
+        </p>
+      )}
+
+      <p className="border-t border-neutral-800 pt-6 text-sm text-neutral-500">
         {esLogin ? (
           <>
-            ¿No tienes cuenta?{" "}
-            <Link href="/registro" className="text-lime-400 hover:underline">
-              Regístrate
+            {t("auth.sinCuenta")}{" "}
+            <Link
+              href="/registro"
+              className="font-medium text-lime-400 hover:underline"
+            >
+              {t("auth.sinCuentaLink")}
             </Link>
           </>
         ) : (
           <>
-            ¿Ya tienes cuenta?{" "}
-            <Link href="/login" className="text-lime-400 hover:underline">
-              Ingresa
+            {t("auth.conCuenta")}{" "}
+            <Link
+              href="/login"
+              className="font-medium text-lime-400 hover:underline"
+            >
+              {t("auth.conCuentaLink")}
             </Link>
           </>
         )}
       </p>
-    </main>
+    </div>
   );
 }

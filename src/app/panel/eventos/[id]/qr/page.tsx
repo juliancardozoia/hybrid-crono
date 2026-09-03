@@ -3,7 +3,7 @@ import { getTeams } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { publicUrl, qrSvg } from "@/features/leaderboard/lib/qr";
 
-export const metadata = { title: "QR de atletas — Hybrid Crono" };
+export const metadata = { title: "QR de atletas — Scora" };
 
 export default async function QrPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

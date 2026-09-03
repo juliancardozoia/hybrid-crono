@@ -18,59 +18,48 @@ export interface JudgeLane {
   tomadoPorOtro: boolean;
 }
 
-// El estado del evento se pide a traves de `heats`, no con un embed directo
-// `events (...)`: `lanes` NO tiene clave foranea a `events`, solo llega por las
-// compuestas hacia heats y teams. PostgREST rechaza el embed directo con
-// PGRST200 y la consulta entera devuelve cero filas.
-const SELECT = `
-  id, lane_number, status, judge_id, event_id, team_id,
-  heats (id, name, started_at, events (name, status)),
-  teams (
-    bib_number, name,
-    divisions (name),
-    team_members (athletes (first_name, last_name))
-  )
-`;
-
+/**
+ * `judge_visible_lanes()` reemplaza el `.from("lanes").select("... teams
+ * (... athletes (...))")` que habia aca. No es solo por el PGRST200 de
+ * siempre (`lanes` no tiene FK directa a `events`): es que ese embed abria
+ * `athletes` por RLS de TABLA para poder mostrar el nombre, y RLS es por
+ * fila, no por columna -- un juez de UN evento con `select=*` por la API
+ * hubiera podido leer la fecha de nacimiento y el documento de cualquier
+ * atleta de la competencia, no solo el nombre que la pantalla necesita. La
+ * funcion arma el nombre ADENTRO (donde si puede leer esas tablas) y
+ * devuelve el string ya armado.
+ */
 interface Row {
-  id: string;
+  lane_id: string;
   lane_number: number;
   status: LaneStatus;
   judge_id: string | null;
   event_id: string;
+  event_name: string | null;
+  event_status: string | null;
   team_id: string | null;
-  heats: {
-    id: string;
-    name: string;
-    started_at: string | null;
-    events: { name: string; status: string } | null;
-  } | null;
-  teams: {
-    bib_number: number;
-    name: string | null;
-    divisions: { name: string } | null;
-    team_members: Array<{ athletes: { first_name: string; last_name: string } | null }>;
-  } | null;
+  bib_number: number | null;
+  team_name: string | null;
+  division_name: string | null;
+  athletes: string | null;
+  heat_id: string;
+  heat_name: string;
+  heat_started_at: string | null;
 }
 
 function mapear(row: Row, userId: string): JudgeLane {
-  const athletes =
-    row.teams?.team_members
-      .flatMap((m) => (m.athletes ? [`${m.athletes.first_name} ${m.athletes.last_name}`] : []))
-      .join(" / ") ?? "";
-
   return {
-    laneId: row.id,
+    laneId: row.lane_id,
     laneNumber: row.lane_number,
     status: row.status,
-    bib: row.teams?.bib_number ?? null,
-    athletes: athletes || (row.teams?.name ?? "Sin atleta"),
-    divisionName: row.teams?.divisions?.name ?? "",
-    heatId: row.heats?.id ?? "",
-    heatName: row.heats?.name ?? "",
-    heatStartedAt: row.heats?.started_at ?? null,
+    bib: row.bib_number,
+    athletes: row.athletes || row.team_name || "Sin atleta",
+    divisionName: row.division_name ?? "",
+    heatId: row.heat_id,
+    heatName: row.heat_name,
+    heatStartedAt: row.heat_started_at,
     eventId: row.event_id,
-    eventName: row.heats?.events?.name ?? "",
+    eventName: row.event_name ?? "",
     judgeId: row.judge_id,
     tomadoPorOtro: row.judge_id !== null && row.judge_id !== userId,
   };
@@ -111,7 +100,7 @@ export async function getJudgeLanes(): Promise<LanesResult> {
   // Se traen TODOS los carriles, incluso los que no tienen equipo, para poder
   // distinguir "no armaste los heats" de "los armaste pero sin atletas".
   const [{ data }, { count: eventosTotales }] = await Promise.all([
-    supabase.from("lanes").select(SELECT).order("lane_number"),
+    supabase.rpc("judge_visible_lanes"),
     supabase.from("events").select("id", { count: "exact", head: true }),
   ]);
 
@@ -123,13 +112,11 @@ export async function getJudgeLanes(): Promise<LanesResult> {
     };
   }
 
-  const filas = data as unknown as Row[];
+  const filas = data as Row[];
 
   // Un evento en borrador todavia se esta configurando: mostrarlo solo
   // confundiria al juez con carriles que pueden cambiar.
-  const enJuego = filas.filter(
-    (r) => r.heats?.events?.status === "ready" || r.heats?.events?.status === "live",
-  );
+  const enJuego = filas.filter((r) => r.event_status === "ready" || r.event_status === "live");
   const conAtleta = enJuego.filter((r) => r.team_id !== null);
   const todos = conAtleta.map((r) => mapear(r, user.id));
 

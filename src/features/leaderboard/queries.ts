@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/lib/supabase/public";
+import { buildScoreboard, type ScoreboardDivisionResult, type ScoreboardInput } from "@/shared/scoring/scoreboard";
 import type { LaneStatus } from "@/lib/supabase/types";
 
 export interface LeaderboardSplit {
@@ -113,5 +114,45 @@ export async function getEventInfo(slug: string): Promise<EventInfo | null> {
     venue: (fila.venue as string | null) ?? null,
     eventDate: (fila.event_date as string | null) ?? null,
     official: Boolean(fila.official),
+  };
+}
+
+export interface TablaGeneral {
+  divisiones: ScoreboardDivisionResult[];
+  /** Cuantas pruebas tiene el evento en total. Con una sola, el general no aporta. */
+  cantidadDePruebas: number;
+  official: boolean;
+  updatedAt: number;
+}
+
+const VACIA: TablaGeneral = {
+  divisiones: [],
+  cantidadDePruebas: 0,
+  official: false,
+  updatedAt: 0,
+};
+
+/**
+ * Tabla general por puntos.
+ *
+ * La base devuelve filas crudas y el ranking se arma aca con buildScoreboard,
+ * la misma funcion pura que corre el recalculo del servidor. En el plan
+ * gratuito public_scoreboard devuelve null hasta que el evento se publica: el
+ * gate vive en Postgres, no en este archivo, asi que no se puede saltear
+ * leyendo la respuesta.
+ */
+export async function getTablaGeneral(slug: string): Promise<TablaGeneral> {
+  const supabase = createPublicClient();
+  const { data, error } = await supabase.rpc("public_scoreboard", { p_public_slug: slug });
+
+  if (error || !data) return { ...VACIA, updatedAt: Date.now() };
+
+  const documento = data as unknown as ScoreboardInput;
+
+  return {
+    divisiones: buildScoreboard(documento),
+    cantidadDePruebas: documento.parts?.length ?? 0,
+    official: Boolean(documento.event?.official),
+    updatedAt: Date.now(),
   };
 }

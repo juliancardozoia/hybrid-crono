@@ -1,32 +1,39 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 import {
   confirmImport,
   previewImport,
   type FormState,
   type PreviewState,
 } from "../actions";
+import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 
 const inicialPreview: PreviewState = { error: null, plan: null, csv: null };
 const inicialConfirm: FormState = { error: null };
 
-function Submit({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "primary" }) {
-  const { pending } = useFormStatus();
+function Submit({
+  label,
+  tone = "neutral",
+  mensajeDeCarga,
+}: {
+  label: string;
+  tone?: "neutral" | "primary";
+  mensajeDeCarga: string;
+}) {
   const clase =
     tone === "primary"
       ? "bg-lime-400 text-lime-950 hover:bg-lime-300"
       : "border border-neutral-700 hover:bg-neutral-900";
 
   return (
-    <button
-      type="submit"
-      disabled={pending}
+    <BotonDeEnvio
+      pendienteTexto="Procesando…"
+      mensajeDeCarga={mensajeDeCarga}
       className={`rounded-xl px-5 py-3 text-sm font-bold disabled:opacity-60 ${clase}`}
     >
-      {pending ? "Procesando…" : label}
-    </button>
+      {label}
+    </BotonDeEnvio>
   );
 }
 
@@ -37,9 +44,21 @@ function Submit({ label, tone = "neutral" }: { label: string; tone?: "neutral" |
  * de la competencia y tener que limpiarlo a mano es exactamente el problema que
  * esta app viene a eliminar.
  */
-export function ImportWizard({ eventId, divisiones }: { eventId: string; divisiones: string[] }) {
-  const [preview, previewAction] = useActionState(previewImport, inicialPreview);
-  const [confirm, confirmAction] = useActionState(confirmImport, inicialConfirm);
+export function ImportWizard({
+  eventId,
+  divisiones,
+}: {
+  eventId: string;
+  divisiones: string[];
+}) {
+  const [preview, previewAction] = useActionState(
+    previewImport,
+    inicialPreview,
+  );
+  const [confirm, confirmAction] = useActionState(
+    confirmImport,
+    inicialConfirm,
+  );
 
   const plan = preview.plan;
   const importado = confirm.error === null && plan === null;
@@ -49,13 +68,15 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
       <section className="rounded-2xl border border-neutral-800 p-5">
         <h2 className="font-semibold">1 · Sube la planilla</h2>
         <p className="mt-1 text-sm text-neutral-500">
-          Columnas reconocidas: <strong>nombre</strong>, <strong>apellido</strong>,{" "}
-          <strong>sexo</strong>, <strong>division</strong>, y opcionales{" "}
+          Columnas reconocidas: <strong>nombre</strong>,{" "}
+          <strong>apellido</strong>, <strong>sexo</strong>,{" "}
+          <strong>division</strong>, y opcionales{" "}
           <code className="text-neutral-400">fecha_nacimiento</code>,{" "}
           <code className="text-neutral-400">email</code>,{" "}
           <code className="text-neutral-400">dorsal</code>,{" "}
-          <code className="text-neutral-400">equipo</code>. Los nombres de división tienen que
-          coincidir con las que ya creaste: {divisiones.join(", ")}.
+          <code className="text-neutral-400">equipo</code>. Los nombres de
+          división tienen que coincidir con las que ya creaste:{" "}
+          {divisiones.join(", ")}.
         </p>
 
         <form action={previewAction} className="mt-4 flex flex-col gap-4">
@@ -90,7 +111,10 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
           )}
 
           <div>
-            <Submit label="Ver qué se va a importar" />
+            <Submit
+              label="Ver qué se va a importar"
+              mensajeDeCarga="Leyendo la planilla…"
+            />
           </div>
         </form>
       </section>
@@ -101,10 +125,13 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
 
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <span className="text-lime-400">
-              {plan.teams.length} equipo(s) · {plan.totalAthletes} atleta(s) listos
+              {plan.teams.length} equipo(s) · {plan.totalAthletes} atleta(s)
+              listos
             </span>
             {plan.issues.length > 0 && (
-              <span className="text-amber-400">{plan.issues.length} fila(s) con problemas</span>
+              <span className="text-amber-400">
+                {plan.issues.length} fila(s) con problemas
+              </span>
             )}
           </div>
 
@@ -139,11 +166,17 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
                 <tbody className="divide-y divide-neutral-800">
                   {plan.teams.map((t) => (
                     <tr key={t.bibNumber}>
-                      <td className="px-3 py-2 font-mono tabular-nums">{t.bibNumber}</td>
-                      <td className="px-3 py-2">
-                        {t.members.map((m) => `${m.firstName} ${m.lastName}`).join(" / ")}
+                      <td className="px-3 py-2 font-mono tabular-nums">
+                        {t.bibNumber}
                       </td>
-                      <td className="px-3 py-2 text-neutral-500">{t.divisionName}</td>
+                      <td className="px-3 py-2">
+                        {t.members
+                          .map((m) => `${m.firstName} ${m.lastName}`)
+                          .join(" / ")}
+                      </td>
+                      <td className="px-3 py-2 text-neutral-500">
+                        {t.divisionName}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -157,8 +190,8 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
               <input type="hidden" name="csv" value={preview.csv ?? ""} />
 
               <p className="text-sm text-neutral-500">
-                Las filas con problemas se saltean. Se importa todo o nada: si algo falla al
-                escribir, no queda nada a medias.
+                Las filas con problemas se saltean. Se importa todo o nada: si
+                algo falla al escribir, no queda nada a medias.
               </p>
 
               {confirm.error && (
@@ -168,7 +201,11 @@ export function ImportWizard({ eventId, divisiones }: { eventId: string; divisio
               )}
 
               <div>
-                <Submit label={`Importar ${plan.teams.length} equipo(s)`} tone="primary" />
+                <Submit
+                  label={`Importar ${plan.teams.length} equipo(s)`}
+                  tone="primary"
+                  mensajeDeCarga="Importando los equipos…"
+                />
               </div>
             </form>
           )}

@@ -4,7 +4,7 @@ import { getEventInfo, getLeaderboard } from "@/features/leaderboard/queries";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Proyector — Hybrid Crono" };
+export const metadata = { title: "Proyector — Scora" };
 
 export default async function ProyectorPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

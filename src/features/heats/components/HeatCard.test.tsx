@@ -19,7 +19,13 @@
  * ciclo de vida de un <form action={...}> para conservar la seleccion.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "../../../../test/render";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const assignLanes = vi.fn(async () => ({ error: null }));
@@ -148,7 +154,9 @@ describe("asignar juez a un carril", () => {
   it("el juez elegido sigue a la vista despues de asignar", async () => {
     montar(heatArmado, true);
 
-    const select = document.querySelector<HTMLSelectElement>('select[name="judgeId"]')!;
+    const select = document.querySelector<HTMLSelectElement>(
+      'select[name="judgeId"]',
+    )!;
     fireEvent.change(select, { target: { value: "juez-2" } });
     fireEvent.click(screen.getByText("Asignar"));
 

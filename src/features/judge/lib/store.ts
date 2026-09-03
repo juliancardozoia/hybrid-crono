@@ -70,6 +70,21 @@ interface RaceState {
   /** Largada local, para cuando el heat arranca sin señal. */
   startLocally: () => Promise<void>;
   markSplit: () => Promise<void>;
+  /**
+   * Marcaje generico, para la pantalla de CrossFit.
+   *
+   * Existe para que contar repeticiones use EXACTAMENTE el mismo camino que
+   * marcar un parcial de circuito: uuid del cliente, IndexedDB antes que la
+   * red, y recien despues la UI. Duplicar ese camino en un store aparte seria
+   * abrir la puerta a que uno de los dos deje de escribir a disco primero, y
+   * ahi se pierde un tiempo.
+   */
+  markWod: (evento: {
+    type: TimingEvent["type"];
+    payload?: Record<string, unknown>;
+    /** Los marcajes que el juez puede deshacer arman la ventana de 10s. */
+    conUndo?: boolean;
+  }) => Promise<void>;
   applyPenalty: (penalty: PenaltyPayload) => Promise<void>;
   undoLast: () => Promise<void>;
   finishWith: (type: "dnf" | "dq") => Promise<void>;
@@ -198,6 +213,11 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     });
 
     armUndo(event.id, set);
+  },
+
+  markWod: async ({ type, payload, conUndo = true }) => {
+    const evento = await append({ type, payload: payload ?? {} });
+    if (conUndo) armUndo(evento.id, set);
   },
 
   applyPenalty: async (penalty) => {

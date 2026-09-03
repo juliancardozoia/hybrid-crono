@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { CarrilClient } from "@/features/judge/components/CarrilClient";
 
-export const metadata = { title: "Cronómetro — Hybrid Crono" };
+export const metadata = { title: "Cronómetro — Scora" };
 
 /**
  * Server component sin datos, a proposito: asi Next la prerenderiza estatica y

@@ -1,0 +1,15 @@
+-- `orders.total_cents` no puede ser nulo, y ahora el esquema lo dice.
+--
+-- Postgres marca TODA columna generada como nullable salvo que se declare lo
+-- contrario, aunque su expresion no pueda dar null nunca. `total_cents` es
+-- `greatest(0, amount_cents - discount_cents)` sobre dos columnas NOT NULL: es
+-- imposible que salga null.
+--
+-- Aparecio al generar `database.types.ts` contra la base real: el generador leyo
+-- la columna como `number | null` y tres lugares de la app dejaron de compilar
+-- —el bloque de pago, su consulta y el panel de ordenes— porque todos asumian,
+-- con razon, que un total siempre existe.
+--
+-- La alternativa era poner `?? 0` en cada lectura. Seria mentir en el peor lugar
+-- posible: un cobro que muestra cero pesos porque el tipo decia que podia faltar.
+alter table public.orders alter column total_cents set not null;

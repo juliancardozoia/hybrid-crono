@@ -17,7 +17,30 @@ export type TimingEventType =
   // Observacion del juez sin efecto sobre el tiempo. El reductor la ignora a
   // proposito: existe para que quede en el log y la organizacion la lea al
   // verificar.
-  | "note";
+  | "note"
+  // --- Marcajes de un WOD de CrossFit ---------------------------------------
+  //
+  // Comparten tabla, idempotencia, ancla y outbox con los del circuito: un
+  // `rep` y un `segment_split` son la MISMA fila, solo cambian `type` y
+  // `payload`. El reductor de circuitos los ignora porque filtra por tipo.
+  //
+  // A que movimiento apuntan va en `payload.partMovementId` y no en una columna
+  // nueva: agregarle una columna a timing_events es tocar la tabla mas
+  // sensible del producto, y el reductor ya tolera referencias huerfanas.
+  /** Una repeticion valida. */
+  | "rep"
+  /** Repeticion no valida. Queda registrada y no suma. */
+  | "no_rep"
+  /** Cierre del movimiento actual, con `payload.cantidad` si no llego al objetivo. */
+  | "movement_done"
+  /** Cierre de la ronda: saltea lo que quedo sin marcar. */
+  | "round_done"
+  /** Intento de levantamiento: `payload.loadKg` y `payload.valido`. */
+  | "lift"
+  /** Hito de desempate. Lo emite la pantalla sola al cerrar el movimiento marcado. */
+  | "tiebreak"
+  /** Se alcanzo el tope. Informativo: el cap lo DERIVA el reductor. */
+  | "time_cap";
 
 export type PenaltyKind = "time_add" | "no_rep" | "dq";
 
@@ -90,7 +113,11 @@ export type AnomalyCode =
   | "split_too_fast"
   | "out_of_order"
   | "extra_splits"
-  | "orphan_undo";
+  | "orphan_undo"
+  // Del reductor de WODs. Se suman a la lista en vez de tener su propio tipo
+  // para que la cola de anomalias de la torre de control siga siendo una sola.
+  | "marca_sobrante"
+  | "movimiento_desconocido";
 
 export type Anomaly = {
   code: AnomalyCode;

@@ -20,10 +20,18 @@ export function LeaderboardLive({
   slug,
   inicial,
   eventName,
+  compacto = false,
 }: {
   slug: string;
   inicial: Leaderboard;
   eventName: string;
+  /**
+   * Dentro de la ficha del evento, la cabecera de la pagina ya dice el nombre
+   * de la competencia y el ancho lo pone el marco. Repetir el titulo y volver a
+   * centrar en 3xl deja dos encabezados y una columna mas angosta que el resto
+   * de las pestañas.
+   */
+  compacto?: boolean;
 }) {
   const [data, setData] = useState(inicial);
   const [division, setDivision] = useState<string | null>(null);
@@ -54,10 +62,10 @@ export function LeaderboardLive({
   const filas = data.rows.filter((r) => r.divisionName === divisionActiva);
 
   return (
-    <main className="mx-auto w-full max-w-3xl p-5">
+    <div className={compacto ? "" : "mx-auto w-full max-w-3xl p-5"}>
       <header className="mb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">{eventName}</h1>
+          <h1 className="text-lg font-semibold">{compacto ? "Leaderboard" : eventName}</h1>
           <EstadoOficial official={data.official} />
         </div>
         <Link
@@ -117,7 +125,7 @@ export function LeaderboardLive({
           </ul>
         </>
       )}
-    </main>
+    </div>
   );
 }
 

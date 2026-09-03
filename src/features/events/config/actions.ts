@@ -2,8 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { GenderRule, PenaltyKind, SegmentKind } from "@/lib/supabase/types";
-import { HYROX_STANDARD, PENALIZACIONES_DEMO } from "@/features/events/lib/courseTemplates";
+import type {
+  GenderRule,
+  PenaltyKind,
+  SegmentKind,
+} from "@/lib/supabase/types";
+import {
+  HYROX_STANDARD,
+  PENALIZACIONES_DEMO,
+} from "@/features/events/lib/courseTemplates";
 import { requireManage } from "@/features/events/lib/access";
 
 export interface FormState {
@@ -18,7 +25,8 @@ const OK: FormState = { error: null };
  */
 function traducir(error: { code?: string; message?: string } | null): string {
   if (!error) return "No se pudo guardar.";
-  if (error.code === "23505") return "Ya existe un registro con ese nombre o código.";
+  if (error.code === "23505")
+    return "Ya existe un registro con ese nombre o código.";
   if (error.code === "23503") return "Falta algo que este registro necesita.";
   if (error.code === "23514") return "Algún valor está fuera de rango.";
   if (error.code === "42501") return "No tienes permiso para esta operación.";
@@ -63,14 +71,59 @@ export async function createCourseTemplate(
         name: s.name,
       })),
     );
-    if (segError) return { error: "Se creó el circuito pero fallaron los segmentos." };
+    if (segError)
+      return { error: "Se creó el circuito pero fallaron los segmentos." };
   }
 
   refrescar(eventId);
   return OK;
 }
 
-export async function addSegment(_prev: FormState, formData: FormData): Promise<FormState> {
+/**
+ * Borra un circuito ENTERO.
+ *
+ * Solo tiene sentido si ninguna categoria lo esta usando: `divisions` tiene
+ * `course_template_id` con `on delete restrict`, asi que Postgres ya lo
+ * bloquearia solo. El chequeo de aca es para que el boton ni siquiera
+ * aparezca cuando va a fallar — la pantalla no ofrece el boton si
+ * `getDivisions` encuentra alguna categoria con este circuito.
+ */
+export async function deleteCourseTemplate(
+  eventId: string,
+  templateId: string,
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+
+  const { data: enUso } = await supabase
+    .from("divisions")
+    .select("id")
+    .eq("course_template_id", templateId)
+    .limit(1);
+
+  // El boton no deberia aparecer en este caso —la pantalla ya cuenta las
+  // categorias que usan cada plantilla—, pero si de todos modos llega aca,
+  // antes esto devolvia sin avisar nada.
+  if (enUso && enUso.length > 0) {
+    return {
+      error: "Hay categorías usando este circuito: no se puede eliminar.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("course_templates")
+    .delete()
+    .eq("id", templateId);
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return OK;
+}
+
+export async function addSegment(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const templateId = String(formData.get("templateId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -106,7 +159,10 @@ export async function addSegment(_prev: FormState, formData: FormData): Promise<
   return OK;
 }
 
-export async function removeSegment(eventId: string, segmentId: string): Promise<void> {
+export async function removeSegment(
+  eventId: string,
+  segmentId: string,
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
 
@@ -116,7 +172,11 @@ export async function removeSegment(eventId: string, segmentId: string): Promise
     .eq("id", segmentId)
     .maybeSingle();
 
-  await supabase.from("segments").delete().eq("id", segmentId);
+  const { error } = await supabase
+    .from("segments")
+    .delete()
+    .eq("id", segmentId);
+  if (error) return { error: traducir(error) };
 
   // Borrar deja un hueco en order_index. No rompe nada (el reductor usa el
   // orden, no el numero), pero renumerar mantiene la lista ordenada y evita
@@ -137,6 +197,7 @@ export async function removeSegment(eventId: string, segmentId: string): Promise
   }
 
   refrescar(eventId);
+  return OK;
 }
 
 export async function moveSegment(
@@ -144,7 +205,7 @@ export async function moveSegment(
   templateId: string,
   segmentId: string,
   direction: "up" | "down",
-): Promise<void> {
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
 
@@ -154,29 +215,37 @@ export async function moveSegment(
     .eq("course_template_id", templateId)
     .order("order_index");
 
-  if (!segmentos) return;
+  if (!segmentos) return OK;
 
   const ids = segmentos.map((s) => s.id);
   const desde = ids.indexOf(segmentId);
   const hasta = direction === "up" ? desde - 1 : desde + 1;
 
-  if (desde === -1 || hasta < 0 || hasta >= ids.length) return;
+  // Ya esta en la punta: mover "arriba" el primero o "abajo" el ultimo no es
+  // un error, es un limite normal que la UI deberia deshabilitar. Se responde
+  // OK sin tocar nada en vez de fallar.
+  if (desde === -1 || hasta < 0 || hasta >= ids.length) return OK;
 
   [ids[desde], ids[hasta]] = [ids[hasta], ids[desde]];
 
   // Se manda la lista completa: reorder_segments renumera todo de una, que es
   // la unica forma de no chocar con unique(course_template_id, order_index).
-  await supabase.rpc("reorder_segments", {
+  const { error } = await supabase.rpc("reorder_segments", {
     p_template_id: templateId,
     p_ordered_ids: ids,
   });
+  if (error) return { error: traducir(error) };
 
   refrescar(eventId);
+  return OK;
 }
 
 // --- Divisiones -------------------------------------------------------------
 
-export async function createDivision(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function createDivision(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   const courseTemplateId = String(formData.get("courseTemplateId") ?? "");
@@ -185,11 +254,17 @@ export async function createDivision(_prev: FormState, formData: FormData): Prom
   const ageMin = formData.get("ageMin") ? Number(formData.get("ageMin")) : null;
   const ageMax = formData.get("ageMax") ? Number(formData.get("ageMax")) : null;
   const level = String(formData.get("level") ?? "").trim() || null;
+  const scoringTableId =
+    String(formData.get("scoringTableId") ?? "").trim() || null;
+  const cupoBruto = String(formData.get("capacity") ?? "").trim();
 
   await requireManage(eventId);
 
   if (name.length < 2) return { error: "Escribe un nombre a la división." };
-  if (!courseTemplateId) return { error: "Elige un circuito." };
+  // El circuito ya NO es obligatorio: una categoría de CrossFit no corre un
+  // circuito, corre N pruebas. `divisions.course_template_id` se volvió nullable
+  // justo para esto, y exigirlo aquí era lo único que quedaba del modelo viejo,
+  // cuando la plataforma solo entendía de carreras híbridas.
   if (genderRule === "mixed" && teamSize < 2) {
     return { error: "Una división mixta necesita equipos de 2 o más." };
   }
@@ -197,32 +272,75 @@ export async function createDivision(_prev: FormState, formData: FormData): Prom
     return { error: "La edad mínima no puede ser mayor que la máxima." };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("divisions").insert({
-    event_id: eventId,
-    name,
-    course_template_id: courseTemplateId,
-    team_size: teamSize,
-    gender_rule: genderRule,
-    age_min: ageMin,
-    age_max: ageMax,
-    level,
-  });
+  // Vacio = ilimitado, y por eso se guarda NULL y no cero: cero es un cupo real
+  // —una categoria cerrada— y confundirlos dejaria fuera a todo el mundo sin que
+  // nadie entienda por que.
+  let capacity: number | null = null;
+  if (cupoBruto) {
+    const n = Number(cupoBruto);
+    if (!Number.isInteger(n) || n < 1) {
+      return {
+        error: "El límite de registros es un número entero mayor que cero.",
+      };
+    }
+    capacity = n;
+  }
 
+  const supabase = await createClient();
+  const { data: creada, error } = await supabase
+    .from("divisions")
+    .insert({
+      event_id: eventId,
+      name,
+      course_template_id: courseTemplateId || null,
+      team_size: teamSize,
+      gender_rule: genderRule,
+      age_min: ageMin,
+      age_max: ageMax,
+      level,
+      scoring_table_id: scoringTableId,
+    })
+    .select("id")
+    .single();
+
+  if (error || !creada) return { error: traducir(error) };
+
+  // El cupo vive en `division_registration` y no en `divisions`: es un dato del
+  // TRAMITE, no de la categoria — la categoria sigue existiendo cuando las
+  // inscripciones cierran. Solo se crea la fila si hay algo que guardar.
+  if (capacity !== null) {
+    await supabase
+      .from("division_registration")
+      .upsert(
+        { division_id: creada.id, event_id: eventId, capacity },
+        { onConflict: "division_id" },
+      );
+  }
+
+  refrescar(eventId);
+  return OK;
+}
+
+export async function deleteDivision(
+  eventId: string,
+  divisionId: string,
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("divisions")
+    .delete()
+    .eq("id", divisionId);
   if (error) return { error: traducir(error) };
 
   refrescar(eventId);
   return OK;
 }
 
-export async function deleteDivision(eventId: string, divisionId: string): Promise<void> {
-  await requireManage(eventId);
-  const supabase = await createClient();
-  await supabase.from("divisions").delete().eq("id", divisionId);
-  refrescar(eventId);
-}
-
-export async function saveSegmentSpec(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function saveSegmentSpec(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const divisionId = String(formData.get("divisionId") ?? "");
   const segmentId = String(formData.get("segmentId") ?? "");
@@ -258,7 +376,10 @@ export async function saveSegmentSpec(_prev: FormState, formData: FormData): Pro
 
 // --- Penalizaciones ---------------------------------------------------------
 
-export async function createPenaltyType(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function createPenaltyType(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const code = String(formData.get("code") ?? "")
     .trim()
@@ -266,12 +387,16 @@ export async function createPenaltyType(_prev: FormState, formData: FormData): P
     .replace(/[^A-Z0-9_]/g, "_");
   const label = String(formData.get("label") ?? "").trim();
   const kind = String(formData.get("kind") ?? "time_add") as PenaltyKind;
-  const seconds = kind === "time_add" ? Number(formData.get("seconds") ?? 0) : 0;
+  const seconds =
+    kind === "time_add" ? Number(formData.get("seconds") ?? 0) : 0;
 
   await requireManage(eventId);
 
   if (!/^[A-Z0-9_]{2,32}$/.test(code)) {
-    return { error: "El código admite letras, números y guión bajo (2 a 32 caracteres)." };
+    return {
+      error:
+        "El código admite letras, números y guión bajo (2 a 32 caracteres).",
+    };
   }
   if (label.length < 2) return { error: "Escribe una descripción." };
   // La base tiene la misma regla; validar aca da un mensaje entendible en vez
@@ -295,18 +420,26 @@ export async function togglePenaltyType(
   eventId: string,
   penaltyId: string,
   active: boolean,
-): Promise<void> {
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
-  await supabase.from("penalty_types").update({ active }).eq("id", penaltyId);
+  const { error } = await supabase
+    .from("penalty_types")
+    .update({ active })
+    .eq("id", penaltyId);
+  if (error) return { error: traducir(error) };
+
   refrescar(eventId);
+  return OK;
 }
 
-export async function seedDefaultPenalties(eventId: string): Promise<void> {
+export async function seedDefaultPenalties(
+  eventId: string,
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
 
-  await supabase.from("penalty_types").insert(
+  const { error } = await supabase.from("penalty_types").insert(
     PENALIZACIONES_DEMO.map((p) => ({
       event_id: eventId,
       code: p.code,
@@ -315,8 +448,10 @@ export async function seedDefaultPenalties(eventId: string): Promise<void> {
       seconds: p.seconds,
     })),
   );
+  if (error) return { error: traducir(error) };
 
   refrescar(eventId);
+  return OK;
 }
 
 // --- Estado del evento ------------------------------------------------------
@@ -324,9 +459,18 @@ export async function seedDefaultPenalties(eventId: string): Promise<void> {
 export async function setEventStatus(
   eventId: string,
   status: "draft" | "ready" | "live" | "verifying" | "published",
-): Promise<void> {
+): Promise<FormState> {
   await requireManage(eventId);
   const supabase = await createClient();
-  await supabase.from("events").update({ status }).eq("id", eventId);
+  const { error } = await supabase
+    .from("events")
+    .update({ status })
+    .eq("id", eventId);
+  // Antes el error de Postgres se descartaba sin mirarlo: un RLS que negara el
+  // cambio, o un trigger de plan que lo bloqueara, no le llegaba a nadie — el
+  // boton quedaba igual y el organizador no sabia por que.
+  if (error) return { error: traducir(error) };
+
   refrescar(eventId);
+  return OK;
 }

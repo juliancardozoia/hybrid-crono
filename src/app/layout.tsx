@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ProveedorDeCarga } from "@/shared/components/Carga";
+import { ProveedorDeNotificaciones } from "@/shared/components/Notificaciones";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,10 +25,14 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Hybrid Crono",
+  title: "Scora",
   description: "Cronometraje de competencias por tiempo.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Hybrid Crono" },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Scora",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -35,7 +41,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* Montados UNA vez arriba de toda la app: el overlay de carga y los
+            toasts quedan disponibles en cualquier pantalla sin que cada una
+            arme los suyos. Son inertes hasta que algo los llama — la app del
+            juez (offline-first a proposito) simplemente no lo hace. */}
+        <ProveedorDeCarga>
+          <ProveedorDeNotificaciones>{children}</ProveedorDeNotificaciones>
+        </ProveedorDeCarga>
+      </body>
     </html>
   );
 }

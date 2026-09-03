@@ -36,7 +36,7 @@ export async function verifyResults(_prev: FormState, formData: FormData): Promi
 /**
  * Publica el oficial y pasa el evento a "publicado".
  *
- * El snapshot que guarda publish_results es inmutable: desde acá en adelante el
+ * El snapshot que guarda publish_results es inmutable: desde aquí en adelante el
  * podio anunciado no depende de la tabla `results`. Si después se corrige algo,
  * hay que publicar de nuevo y esa republicación queda registrada aparte.
  */
@@ -82,7 +82,7 @@ export async function voidTimingEvent(_prev: FormState, formData: FormData): Pro
   if (error) return { error: "No se pudo anular el marcaje." };
 
   refrescar(eventId);
-  return { error: null, mensaje: "Marcaje anulado. Recalculá el resultado del carril." };
+  return { error: null, mensaje: "Marcaje anulado. Recalcula el resultado del carril." };
 }
 
 /** Fuerza el recálculo del cache de resultados de todo el evento. */

@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 import { formatElapsed } from "@/shared/timing/clock";
 import {
   publishResults,
@@ -10,24 +9,32 @@ import {
   type FormState,
 } from "../actions";
 import { estaPendienteDeVerificar } from "../lib/estado";
+import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import type { QueueRow } from "../queries";
 
 const inicial: FormState = { error: null, mensaje: null };
 
-function Boton({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "primary" }) {
-  const { pending } = useFormStatus();
+function Boton({
+  label,
+  tone = "neutral",
+  mensajeDeCarga,
+}: {
+  label: string;
+  tone?: "neutral" | "primary";
+  mensajeDeCarga: string;
+}) {
   return (
-    <button
-      type="submit"
-      disabled={pending}
+    <BotonDeEnvio
+      pendienteTexto="Trabajando…"
+      mensajeDeCarga={mensajeDeCarga}
       className={`rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-60 ${
         tone === "primary"
           ? "bg-lime-400 text-lime-950 hover:bg-lime-300"
           : "border border-neutral-700 hover:bg-neutral-900"
       }`}
     >
-      {pending ? "Trabajando…" : label}
-    </button>
+      {label}
+    </BotonDeEnvio>
   );
 }
 
@@ -64,11 +71,18 @@ export function PanelVerificacion({
 }) {
   const [verifyState, verifyAction] = useActionState(verifyResults, inicial);
   const [publishState, publishAction] = useActionState(publishResults, inicial);
-  const [recomputeState, recomputeAction] = useActionState(recomputeEvent, inicial);
+  const [recomputeState, recomputeAction] = useActionState(
+    recomputeEvent,
+    inicial,
+  );
 
   const pendientes = cola.filter(estaPendienteDeVerificar).length;
   const conProblemas = cola.filter(
-    (c) => c.anomalies.length > 0 || c.voidedCount > 0 || c.startedOffline || c.eventCount === 0,
+    (c) =>
+      c.anomalies.length > 0 ||
+      c.voidedCount > 0 ||
+      c.startedOffline ||
+      c.eventCount === 0,
   );
 
   return (
@@ -76,12 +90,15 @@ export function PanelVerificacion({
       <section className="rounded-2xl border border-neutral-800 p-5">
         <h2 className="font-semibold">1 · Recalcular</h2>
         <p className="mt-1 mb-3 text-sm text-neutral-500">
-          Reconstruye los resultados desde el log de marcajes. Ejecuta esto si anulaste algún
-          marcaje o si algún juez sincronizó tarde.
+          Reconstruye los resultados desde el log de marcajes. Ejecuta esto si
+          anulaste algún marcaje o si algún juez sincronizó tarde.
         </p>
         <form action={recomputeAction}>
           <input type="hidden" name="eventId" value={eventId} />
-          <Boton label="Recalcular todo el evento" />
+          <Boton
+            label="Recalcular todo el evento"
+            mensajeDeCarga="Recalculando el evento…"
+          />
         </form>
         <Aviso state={recomputeState} />
       </section>
@@ -98,13 +115,16 @@ export function PanelVerificacion({
 
         {conProblemas.length === 0 ? (
           <p className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            Nada llamativo: ningún carril quedó sin marcajes, sin anomalías ni con marcajes
-            anulados.
+            Nada llamativo: ningún carril quedó sin marcajes, sin anomalías ni
+            con marcajes anulados.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {conProblemas.map((c) => (
-              <li key={c.laneId} className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4">
+              <li
+                key={c.laneId}
+                className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4"
+              >
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="min-w-0">
                     <span className="font-mono text-lg font-bold tabular-nums">
@@ -120,12 +140,19 @@ export function PanelVerificacion({
                 </div>
 
                 <ul className="mt-2 space-y-1 text-sm text-amber-200">
-                  {c.eventCount === 0 && <li>⚠ No llegó ningún marcaje de este carril.</li>}
+                  {c.eventCount === 0 && (
+                    <li>⚠ No llegó ningún marcaje de este carril.</li>
+                  )}
                   {c.startedOffline && (
-                    <li>⚠ El heat inició sin señal: la salida es provisional.</li>
+                    <li>
+                      ⚠ El heat inició sin señal: la salida es provisional.
+                    </li>
                   )}
                   {c.voidedCount > 0 && (
-                    <li>⚠ {c.voidedCount} marcaje(s) anulados por el juez principal.</li>
+                    <li>
+                      ⚠ {c.voidedCount} marcaje(s) anulados por el juez
+                      principal.
+                    </li>
                   )}
                   {c.anomalies.map((a, i) => (
                     <li key={i}>⚠ {a.message}</li>
@@ -140,7 +167,8 @@ export function PanelVerificacion({
       <section className="rounded-2xl border border-neutral-800 p-5">
         <h2 className="font-semibold">3 · Verificar</h2>
         <p className="mt-1 mb-3 text-sm text-neutral-500">
-          Deja constancia de que la organización revisó estos tiempos. No cambia ningún resultado.
+          Deja constancia de que la organización revisó estos tiempos. No cambia
+          ningún resultado.
           {pendientes > 0 && ` Quedan ${pendientes} sin verificar.`}
         </p>
         <form action={verifyAction} className="flex flex-wrap items-end gap-3">
@@ -159,7 +187,10 @@ export function PanelVerificacion({
               ))}
             </select>
           </label>
-          <Boton label="Marcar como verificados" />
+          <Boton
+            label="Marcar como verificados"
+            mensajeDeCarga="Verificando…"
+          />
         </form>
         <Aviso state={verifyState} />
       </section>
@@ -168,12 +199,16 @@ export function PanelVerificacion({
         <section className="rounded-2xl border border-neutral-800 p-5">
           <h2 className="font-semibold">4 · Publicar</h2>
           <p className="mt-1 mb-3 text-sm text-neutral-500">
-            Congela el resultado oficial en una copia inmutable. Desde ese momento el podio
-            anunciado ya no depende de la tabla de resultados: si después se corrige algo, hay que
-            publicar de nuevo y queda registrado aparte.
+            Congela el resultado oficial en una copia inmutable. Desde ese
+            momento el podio anunciado ya no depende de la tabla de resultados:
+            si después se corrige algo, hay que publicar de nuevo y queda
+            registrado aparte.
             {yaPublicado && " Este evento ya tiene resultados publicados."}
           </p>
-          <form action={publishAction} className="flex flex-wrap items-end gap-3">
+          <form
+            action={publishAction}
+            className="flex flex-wrap items-end gap-3"
+          >
             <input type="hidden" name="eventId" value={eventId} />
             <label className="flex flex-col gap-1.5">
               <span className="text-sm">División</span>
@@ -189,7 +224,11 @@ export function PanelVerificacion({
                 ))}
               </select>
             </label>
-            <Boton label="Publicar oficiales" tone="primary" />
+            <Boton
+              label="Publicar oficiales"
+              tone="primary"
+              mensajeDeCarga="Publicando los resultados oficiales…"
+            />
           </form>
           <Aviso state={publishState} />
         </section>

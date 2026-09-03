@@ -3,7 +3,11 @@
 import { startTransition, useActionState, useState } from "react";
 import { assignLanes, setLaneJudge, type FormState } from "../actions";
 import { fechaHoraEnEvento } from "@/shared/utils/fecha";
-import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
+import { useCargaMientras } from "@/shared/components/Carga";
+import type {
+  HeatWithLanes,
+  JudgeOption,
+} from "@/features/events/config/queries";
 
 const inicial: FormState = { error: null };
 
@@ -32,8 +36,22 @@ export function HeatCard({
   canManage: boolean;
   canVerify: boolean;
 }) {
-  const [lanesState, lanesAction, guardando] = useActionState(assignLanes, inicial);
-  const [judgeState, judgeAction] = useActionState(setLaneJudge, inicial);
+  const [lanesState, lanesAction, guardando] = useActionState(
+    assignLanes,
+    inicial,
+  );
+  const [judgeState, judgeAction, asignandoJuez] = useActionState(
+    setLaneJudge,
+    inicial,
+  );
+
+  // El overlay global, no un cambio de texto local: las dos acciones se
+  // invocan a mano (ver el comentario de mas abajo sobre por que no hay
+  // `<form>`) y antes ninguna de las dos avisaba que algo estaba pasando —
+  // "Asignar" ni siquiera se deshabilitaba mientras la asignacion de juez
+  // estaba en curso.
+  useCargaMientras(guardando, "Guardando los carriles…");
+  useCargaMientras(asignandoJuez, "Asignando el juez…");
 
   const largado = heat.started_at !== null;
   const carriles = Array.from({ length: heat.lane_count }, (_, i) => i + 1);
@@ -47,15 +65,21 @@ export function HeatCard({
    */
   const desdeProps = () =>
     Object.fromEntries(
-      heat.lanes.flatMap((l) => (l.team_id ? [[l.lane_number, l.team_id]] : [])),
+      heat.lanes.flatMap((l) =>
+        l.team_id ? [[l.lane_number, l.team_id]] : [],
+      ),
     ) as Record<number, string>;
 
   // El juez de cada carril, por id de carril. Mismo motivo que arriba.
   const juecesDesdeProps = () =>
-    Object.fromEntries(heat.lanes.map((l) => [l.id, l.judge_id ?? ""])) as Record<string, string>;
+    Object.fromEntries(
+      heat.lanes.map((l) => [l.id, l.judge_id ?? ""]),
+    ) as Record<string, string>;
 
-  const [seleccion, setSeleccion] = useState<Record<number, string>>(desdeProps);
-  const [juezPorCarril, setJuezPorCarril] = useState<Record<string, string>>(juecesDesdeProps);
+  const [seleccion, setSeleccion] =
+    useState<Record<number, string>>(desdeProps);
+  const [juezPorCarril, setJuezPorCarril] =
+    useState<Record<string, string>>(juecesDesdeProps);
   const [heatSembrado, setHeatSembrado] = useState(heat.id);
 
   // Solo si la tarjeta pasa a representar OTRO heat. Ajustar estado durante el
@@ -85,7 +109,8 @@ export function HeatCard({
     const datos = new FormData();
     datos.set("eventId", eventId);
     datos.set("heatId", heat.id);
-    for (const numero of carriles) datos.set(`lane-${numero}`, seleccion[numero] ?? "");
+    for (const numero of carriles)
+      datos.set(`lane-${numero}`, seleccion[numero] ?? "");
 
     startTransition(() => lanesAction(datos));
   };
@@ -95,7 +120,10 @@ export function HeatCard({
   // veria vacio aunque el valor siga puesto.
   const opcionesPara = (numero: number) =>
     teams.filter(
-      (t) => t.asignadoEn === null || t.asignadoEn === heat.id || t.id === seleccion[numero],
+      (t) =>
+        t.asignadoEn === null ||
+        t.asignadoEn === heat.id ||
+        t.id === seleccion[numero],
     );
 
   const asignarJuez = (laneId: string) => {
@@ -114,12 +142,15 @@ export function HeatCard({
           <h3 className="font-semibold">{heat.name}</h3>
           <p className="text-sm text-neutral-500">
             {heat.lane_count} carriles
-            {heat.scheduled_at && ` · ${fechaHoraEnEvento(heat.scheduled_at, timezone)}`}
+            {heat.scheduled_at &&
+              ` · ${fechaHoraEnEvento(heat.scheduled_at, timezone)}`}
           </p>
         </div>
         <span
           className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
-            largado ? "bg-lime-500/15 text-lime-300" : "bg-neutral-800 text-neutral-400"
+            largado
+              ? "bg-lime-500/15 text-lime-300"
+              : "bg-neutral-800 text-neutral-400"
           }`}
         >
           {largado ? "Largado" : "Programado"}
@@ -189,13 +220,20 @@ export function HeatCard({
 
           <ul className="flex flex-col gap-2">
             {heat.lanes.map((lane) => (
-              <li key={lane.id} className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="w-6 text-sm text-neutral-500">{lane.lane_number}</span>
+              <li
+                key={lane.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2"
+              >
+                <span className="w-6 text-sm text-neutral-500">
+                  {lane.lane_number}
+                </span>
                 <span className="flex min-w-0 basis-full items-baseline gap-2 sm:basis-auto">
                   <span className="font-mono text-sm text-neutral-300">
                     {lane.bib !== null ? `#${lane.bib}` : "—"}
                   </span>
-                  <span className="truncate text-sm">{lane.athletes ?? lane.teamLabel ?? ""}</span>
+                  <span className="truncate text-sm">
+                    {lane.athletes ?? lane.teamLabel ?? ""}
+                  </span>
                 </span>
 
                 <div className="flex min-w-[14rem] flex-1 items-center gap-2">
@@ -203,7 +241,10 @@ export function HeatCard({
                     name="judgeId"
                     value={juezPorCarril[lane.id] ?? ""}
                     onChange={(e) =>
-                      setJuezPorCarril((prev) => ({ ...prev, [lane.id]: e.target.value }))
+                      setJuezPorCarril((prev) => ({
+                        ...prev,
+                        [lane.id]: e.target.value,
+                      }))
                     }
                     className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm outline-none focus:border-lime-400"
                   >
@@ -217,7 +258,8 @@ export function HeatCard({
                   <button
                     type="button"
                     onClick={() => asignarJuez(lane.id)}
-                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800"
+                    disabled={asignandoJuez}
+                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800 disabled:opacity-60"
                   >
                     Asignar
                   </button>
@@ -233,8 +275,8 @@ export function HeatCard({
           )}
 
           <p className="mt-3 text-xs text-neutral-600">
-            Asignar acá es opcional: el juez también puede tomar su carril desde su celular. Lo que
-            no puede es tomar uno que ya tomó otro.
+            Asignar aquí es opcional: el juez también puede tomar su carril
+            desde su celular. Lo que no puede es tomar uno que ya tomó otro.
           </p>
         </div>
       )}

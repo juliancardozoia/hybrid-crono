@@ -5,10 +5,16 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // Ver test/server-only-stub.ts: sin esto, los modulos solo-servidor no se
+      // pueden testear, que son justo los que tocan secretos y base.
+      "server-only": fileURLToPath(new URL("./test/server-only-stub.ts", import.meta.url)),
+    },
   },
   test: {
     environment: "node",
+    setupFiles: ["./test/setup-dom.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx", "supabase/tests/**/*.test.ts"],
     // El entorno por defecto sigue siendo node: la logica pura y los tests de
     // base no necesitan DOM y arrancan mas rapido sin el. Los pocos tests de
