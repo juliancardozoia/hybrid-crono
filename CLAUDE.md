@@ -1128,13 +1128,31 @@ entre los carriles — es el "evitamos fraude" del pedido original.
   nueva esquiva los "Heat N" que ya usa un heat en marcha de esa categoría.
 - **El pool de jueces es el mismo `event_staff` aprobado que ya lista la
   pantalla de Jueces** — no `org_members`. Se mezcla una sola vez por corrida
-  (`order by random()`) y se reparte por turno, carril por carril: con menos
-  jueces que carriles, el mismo juez vuelve a aparecer, y eso es correcto —
-  es la misma regla de "un juez puede cubrir varios carriles del mismo heat"
-  de siempre. `getJudges()` (el selector manual de "asignar juez" en
-  `HeatCard`) ahora también exige `approved_at is not null`, por la misma
-  razón: antes un juez que se había postulado y todavía no estaba aprobado
-  podía aparecer como elegible en ese selector.
+  (`order by random()`). `getJudges()` (el selector manual de "asignar juez"
+  en `HeatCard`) también exige `approved_at is not null`, por la misma razón:
+  antes un juez que se había postulado y todavía no estaba aprobado podía
+  aparecer como elegible en ese selector.
+- **Sin ningún juez cargado, la distribución NO falla — arma los heats
+  igual, con los carriles libres.** La primera versión bloqueaba la funcion
+  entera si `event_staff` estaba vacío, y eso le impedía al organizador armar
+  los heats primero e invitar jueces después, que es el flujo real. La
+  garantía de "no se larga un heat sin juez" ya la exige `start_heat()` (mira
+  `judge_id is null` en los carriles con equipo) — bloquear otra vez acá no
+  sumaba seguridad, solo quitaba flexibilidad. Correr la distribución de
+  nuevo después de invitar jueces (o asignar a mano desde `/heats`) es el
+  ajuste esperado.
+- **El reparto evita repetir un juez dentro del mismo heat y en heats
+  seguidos de la misma categoría.** Antes era un round-robin plano sobre
+  todos los carriles de todas las categorías sin memoria de heat: con pocos
+  jueces terminaba fácil el mismo juez en dos carriles del mismo heat —
+  físicamente imposible— o en el Heat 1 y el Heat 2 sin margen para
+  moverse entre uno y el otro. Ahora, por categoría, cada carril busca el
+  primer juez de la rotación que no haya quedado ni en el heat actual ni en
+  el inmediatamente anterior — nunca busca más atrás que eso, así que el
+  Heat 1 y el Heat 3 sí pueden repetir el mismo juez a propósito. **Es mejor
+  esfuerzo, no una garantía dura**: con muy pocos jueces puede ser imposible
+  evitarlo del todo, y ahí cae al round-robin plano de siempre en vez de
+  fallar — igual que con la falta de jueces, el organizador ajusta después.
 - **Solo equipos confirmados y no retirados.** Por construcción, toda fila de
   `teams` ya es una inscripción confirmada o pagada (`teams` nace únicamente
   desde `confirm_registration()` o `import_teams()` — nunca de una

@@ -142,12 +142,6 @@ export async function autoDistribuirHeats(
   });
 
   if (error) {
-    if (errorIncluye(error.message, "no hay jueces", "todavia no hay jueces", "todavía no hay jueces")) {
-      return {
-        error:
-          "Todavía no hay jueces cargados en este evento: agrega al menos uno desde la sección Jueces.",
-      };
-    }
     return { error: "No se pudo distribuir los heats." };
   }
 

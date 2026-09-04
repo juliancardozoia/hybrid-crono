@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { asAdmin, asUser, expectDenied } from "./harness";
+import { asAdmin, asUser, createUser, expectDenied } from "./harness";
 import { seedScenario, type Scenario } from "./fixtures";
 
 let s: Scenario;
@@ -39,17 +39,28 @@ describe("auto_distribuir_heats", () => {
     });
   });
 
-  it("exige al menos un juez cargado", async () => {
+  it("sin jueces cargados igual arma los heats: los carriles quedan libres, no falla", async () => {
     // Se quita al único juez de event_staff que armó beforeEach. `event_staff`
     // no tiene grant de delete para authenticated -- las bajas pasan por
     // remove_event_staff() -- asi que esto se hace como admin.
     await asAdmin(s.db, () => s.db.query("delete from event_staff where event_id = $1", [s.eventId]));
 
     await asUser(s.db, s.users.owner, async () => {
-      const msg = await expectDenied(() =>
-        s.db.query("select * from auto_distribuir_heats($1, 2)", [s.eventId]),
+      const res = await s.db.query<{ heats_creados: number; equipos_asignados: number }>(
+        "select * from auto_distribuir_heats($1, 2)",
+        [s.eventId],
       );
-      expect(msg).toContain("jueces");
+      expect(res.rows[0]).toMatchObject({ heats_creados: 2, equipos_asignados: 3 });
+
+      // Los carriles con equipo existen igual, sin juez: `start_heat()` es
+      // quien va a exigir el juez mas adelante, al intentar largar -- no
+      // hace falta bloquear aca tambien.
+      const lanes = await s.db.query<{ judge_id: string | null }>(
+        "select judge_id from lanes where event_id = $1 and team_id is not null",
+        [s.eventId],
+      );
+      expect(lanes.rows.length).toBe(3);
+      expect(lanes.rows.every((l) => l.judge_id === null)).toBe(true);
     });
   });
 
@@ -86,6 +97,90 @@ describe("auto_distribuir_heats", () => {
       );
       expect(lanes.rows.length).toBe(3);
       expect(lanes.rows.every((l) => l.judge_id !== null)).toBe(true);
+    });
+  });
+
+  it("no repite un juez dentro del mismo heat, y evita heats seguidos si hay margen de jueces", async () => {
+    // 4 jueces para 2 carriles por heat: alcanza para que cada heat use un
+    // par SIN NINGUNA interseccion con el heat inmediatamente anterior. Con
+    // menos margen el reparto cae a mejor esfuerzo (ver el comentario de la
+    // migracion), asi que el test se arma con margen a proposito.
+    const judgeC = await createUser(s.db, "juez.c@box.com");
+    const judgeD = await createUser(s.db, "juez.d@box.com");
+
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query(`select invite_event_staff($1, 'juez.b@box.com', 'judge')`, [s.eventId]);
+      await s.db.query(`select invite_event_staff($1, 'juez.c@box.com', 'judge')`, [s.eventId]);
+      await s.db.query(`select invite_event_staff($1, 'juez.d@box.com', 'judge')`, [s.eventId]);
+    });
+
+    // 3 equipos mas del fixture (total 6) para armar 3 heats de a 2 carriles.
+    await asAdmin(s.db, async () => {
+      for (let i = 0; i < 3; i++) {
+        const atleta = await s.db.query<{ id: string }>(
+          `insert into athletes (event_id, first_name, last_name, gender)
+           values ($1, $2, 'Extra', 'male') returning id`,
+          [s.eventId, `Rotacion${i}`],
+        );
+        const equipo = await s.db.query<{ id: string }>(
+          "insert into teams (event_id, division_id, bib_number) values ($1, $2, $3) returning id",
+          [s.eventId, s.divisionId, 200 + i],
+        );
+        await s.db.query(
+          "insert into team_members (team_id, athlete_id, event_id) values ($1, $2, $3)",
+          [equipo.rows[0].id, atleta.rows[0].id, s.eventId],
+        );
+      }
+    });
+
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ heats_creados: number; equipos_asignados: number }>(
+        "select * from auto_distribuir_heats($1, 2)",
+        [s.eventId],
+      );
+      expect(res.rows[0]).toMatchObject({ heats_creados: 3, equipos_asignados: 6 });
+
+      const lanes = await s.db.query<{ name: string; judge_id: string }>(
+        `select h.name, l.judge_id from lanes l join heats h on h.id = l.heat_id
+         where h.event_id = $1 and h.division_id = $2 and l.team_id is not null
+         order by h.name, l.lane_number`,
+        [s.eventId, s.divisionId],
+      );
+
+      const porHeat = new Map<string, string[]>();
+      for (const row of lanes.rows) {
+        expect(row.judge_id).not.toBeNull();
+        const lista = porHeat.get(row.name) ?? [];
+        lista.push(row.judge_id);
+        porHeat.set(row.name, lista);
+      }
+
+      const heats = ["Heat 1", "Heat 2", "Heat 3"];
+      expect([...porHeat.keys()].sort()).toEqual(heats);
+
+      // Ningun heat repite juez consigo mismo.
+      for (const nombre of heats) {
+        const jueces = porHeat.get(nombre)!;
+        expect(new Set(jueces).size).toBe(jueces.length);
+      }
+
+      // Con 4 jueces y 2 carriles por heat, ningun par de heats seguidos
+      // comparte juez.
+      for (let i = 0; i < heats.length - 1; i++) {
+        const actual = new Set(porHeat.get(heats[i]));
+        const siguiente = porHeat.get(heats[i + 1])!;
+        for (const juez of siguiente) {
+          expect(actual.has(juez)).toBe(false);
+        }
+      }
+
+      // Los jueces asignados salen de los 4 invitados -- confirma que el
+      // sorteo realmente tenia margen para evitar los heats seguidos.
+      const todosLosJueces = new Set([...porHeat.values()].flat());
+      const invitados = new Set([s.users.judgeA, s.users.judgeB, judgeC, judgeD]);
+      for (const juez of todosLosJueces) {
+        expect(invitados.has(juez)).toBe(true);
+      }
     });
   });
 
