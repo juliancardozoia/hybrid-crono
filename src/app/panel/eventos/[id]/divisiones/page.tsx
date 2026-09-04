@@ -68,11 +68,21 @@ export default async function DivisionesPage({
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-500">
-        Una categoría es lo que rankea por separado: individual, parejas del
-        mismo sexo, parejas mixtas, con o sin rango de edad. Tócala para ponerle
-        su cupo y sus parámetros.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-neutral-500">
+          Una categoría es lo que rankea por separado: individual, parejas del
+          mismo sexo, parejas mixtas, con o sin rango de edad. Tócala para ponerle
+          su cupo y sus parámetros.
+        </p>
+        {canManage && (
+          <NuevaDivision
+            eventId={id}
+            templates={templates}
+            formato={event.format}
+            tablas={tablas}
+          />
+        )}
+      </div>
 
       {categorias.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-neutral-700 p-6 text-center text-sm text-neutral-500">
@@ -121,15 +131,6 @@ export default async function DivisionesPage({
           entendió qué competencia se está armando. */}
       {canManage && esHibrida && templates.length === 0 && (
         <CircuitoDeHyrox eventId={id} />
-      )}
-
-      {canManage && (
-        <NuevaDivision
-          eventId={id}
-          templates={templates}
-          formato={event.format}
-          tablas={tablas}
-        />
       )}
     </div>
   );

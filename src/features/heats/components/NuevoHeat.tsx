@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { createHeat, type FormState } from "../actions";
 import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
+import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 
 const inicial: FormState = { error: null };
 
@@ -32,17 +33,15 @@ export function NuevoHeat({
 
   return (
     <>
-      <button
-        type="button"
+      <BotonAbrirModal
         onClick={() => setAbierto(true)}
         disabled={divisiones.length === 0}
         title={divisiones.length === 0 ? "Primero crea al menos una categoría" : undefined}
-        className="w-fit rounded-xl border border-neutral-700 px-5 py-3 text-sm font-semibold transition-colors hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        + Nuevo heat
-      </button>
+        Crear heat
+      </BotonAbrirModal>
 
-      <Modal abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Nuevo heat">
+      <Modal abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Crear heat">
         {/* `key` remonta el formulario cada vez que se abre: sin esto, un
             intento a medias que se cancelo dejaba los campos con lo ultimo
             escrito la proxima vez que se abriera el modal. */}

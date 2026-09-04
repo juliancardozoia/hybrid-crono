@@ -55,9 +55,9 @@ export async function guardarCategoria(
   const ageMin = formData.get("ageMin") ? Number(formData.get("ageMin")) : null;
   const ageMax = formData.get("ageMax") ? Number(formData.get("ageMax")) : null;
 
-  if (name.length < 2) return { error: "Escribe un nombre a la división." };
+  if (name.length < 2) return { error: "Escribe un nombre a la categoría." };
   if (genderRule === "mixed" && teamSize < 2) {
-    return { error: "Una división mixta necesita equipos de 2 o más." };
+    return { error: "Una categoría mixta necesita equipos de 2 o más." };
   }
   if (ageMin !== null && ageMax !== null && ageMin > ageMax) {
     return { error: "La edad mínima no puede ser mayor que la máxima." };
@@ -96,7 +96,7 @@ export async function guardarCategoria(
 
   if (errorDivision)
     return {
-      error: errorDivision.message || "No se pudo guardar la división.",
+      error: errorDivision.message || "No se pudo guardar la categoría.",
     };
 
   const { error: errorCupo } = await supabase

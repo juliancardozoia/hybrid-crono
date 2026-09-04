@@ -79,6 +79,21 @@ const TRAZOS: Record<string, React.ReactNode> = {
   // —en Windows sale mas fino y desalineado respecto a la linea base— y no se
   // puede engrosar ni centrar sin pelear con la tipografia.
   tilde: <path d="M5 12.5 10 17 19 7.5" />,
+  copiar: (
+    <>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </>
+  ),
+  // El generico de "mensaje", no el logo de WhatsApp: el proyecto no dibuja
+  // logos de marca (ver Instagram, arriba) — el color verde y el link a
+  // wa.me ya dicen de que se trata.
+  whatsapp: (
+    <>
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.32 7.6L4 20l1.06-4.5A8.5 8.5 0 1 1 21 11.5Z" />
+      <path d="M8.5 10.5c.3 2.5 2.5 4.7 5 5" />
+    </>
+  ),
 };
 
 export type NombreDeIcono = keyof typeof TRAZOS;

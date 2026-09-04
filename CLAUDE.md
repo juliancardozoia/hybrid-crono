@@ -1120,6 +1120,79 @@ entre los carriles — es el "evitamos fraude" del pedido original.
   lista plana obliga a leerla entera para encontrar la de una categoría —
   mismo motivo que ya llevó a la torre de control a un filtro por división.
 
+### Cinco pantallas de alta, un solo patrón
+
+Divisiones, Circuito, Atletas, Heats y Penalizaciones son la misma forma:
+descripción + botón de alta a la derecha, arriba de la pantalla, que abre un
+modal. Se armonizaron después de que las cinco hubieran crecido cada una a su
+manera —formularios fijos al pie en unas, botones de otro color y otro
+tamaño en otras—, y quedaron reglas concretas que conviene sostener si se
+agrega una sexta:
+
+- **`BotonAbrirModal`** (`shared/components/`) es el ÚNICO estilo de botón de
+  alta: mismo relleno lima, mismo `px-5 py-3`, misma posición. Los seis
+  disparadores actuales —Crear categoría, Crear circuito, Crear atleta, Crear
+  heat, Crear penalización, Distribuir automáticamente— lo usan. Un séptimo
+  botón de alta que no lo use es el primer lugar donde la inconsistencia
+  vuelve a aparecer.
+- **El texto es "Crear {cosa}"**, en minúscula salvo la primera palabra —la
+  convención tipográfica que ya usaba el resto de la app ("Nueva categoría",
+  no "Nueva Categoría")— y se repite igual en el botón que abre el modal, en
+  el título del modal, y en el botón de guardar adentro. Las tres instancias
+  dicen lo mismo a propósito: es la misma acción vista tres veces, no tres
+  acciones distintas.
+- **`CircuitoDeHyrox` es la excepción, y lo sigue siendo.** No es un modal —
+  son dos botones sin ningún campo, porque el circuito de Hyrox son siempre
+  las mismas 16 estaciones y no hay nada que escribir. Convertirlo a modal
+  agregaría un paso sin ninguna pregunta que hacer.
+- **El backdrop de `Modal` ya NO cierra al clickear afuera.** Antes lo hacía,
+  y era la forma más fácil de perder un formulario a medio llenar: un click
+  apenas afuera del contenido —nada raro con un modal ancho en una pantalla
+  chica— disparaba el cierre sin avisar, y como el formulario se REMONTA en
+  cada apertura (`key={abierto ? ... : ...}`, a propósito, para no arrastrar
+  un intento cancelado a la próxima vez que se abre) lo escrito desaparecía
+  para siempre. Sigue cerrando por la X, por Cancelar, y por Escape —una
+  tecla es una acción deliberada, un click cerca no—. Es un cambio en el
+  componente compartido: alcanza a los seis modales de una sola vez.
+- **"Categoría" es el término, no "División".** `divisionId`, `division_id`,
+  `divisiones` como nombre de variable y `NuevaDivision` como nombre de
+  componente se quedan igual —son identificadores de código, no texto que
+  lee el organizador—, pero cualquier `<label>`, encabezado de columna,
+  mensaje de error o placeholder que diga "división" está mal. Se corrigió
+  en más de una docena de lugares la primera vez —incluida la pestaña de
+  arriba, que decía "Divisiones"— porque el término se había colado de a
+  poco en mensajes de error y ejemplos de CSV.
+
+### Atletas: qué se ve y qué no
+
+- **DNI y correo, únicos DENTRO de la misma competencia.** Nada lo impedía:
+  se podía cargar el mismo documento dos veces sin que la app dijera nada,
+  a mano o por CSV. `athletes_document_unico` / `athletes_email_unico` son
+  índices únicos parciales sobre `athletes (event_id, upper(trim(...)))` —
+  en la tabla, no en cada camino de escritura por separado, así que valen
+  igual para el alta manual (`admin_create_registration`), la importación
+  CSV (`import_teams`) y la inscripción pública (`confirm_registration`) sin
+  repetir la validación tres veces.
+- **El correo es único POR EVENTO, no global, a propósito.** La misma
+  persona corre competencias de organizadores distintos con el mismo correo
+  todo el tiempo — bloquear esa reutilización habría sido el bug, no la
+  corrección. Lo que no puede pasar es que dos inscriptos de la MISMA
+  competencia compartan correo o documento.
+- **El campo Documento se sacó de la grilla, junto con Email y Teléfono en
+  texto plano.** Mostrar el DNI, el correo y el teléfono de cientos de
+  personas en una tabla es exponer datos personales sin necesidad — quien
+  administra la competencia casi siempre lo que quiere es COPIARLOS a otro
+  lado (un mensaje, un mail masivo), no leerlos ahí. La columna "Contacto"
+  ofrece un ícono de copiar por cada dato (`BotonCopiar`, en
+  `shared/components/`) y un ícono de WhatsApp que abre `wa.me/<número>` —
+  sin librería, con el ícono genérico de "mensaje" y no el logo de la marca,
+  mismo criterio que ya usa el ícono de Instagram del pie del sitio. El
+  buscador de la grilla SÍ sigue indexando DNI y correo — que no se
+  MUESTREN no significa que no se puedan encontrar escribiéndolos.
+- **La bandera del país va al lado del nombre de cada integrante**, no una
+  sola por equipo: en una pareja mixta de países distintos, una sola bandera
+  mentiría sobre la otra mitad del equipo.
+
 ### Inscripciones responde TRES preguntas, en orden
 
 1. **Como se cobra** — los medios de pago del organizador.

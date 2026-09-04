@@ -70,12 +70,12 @@ export function ImportWizard({
         <p className="mt-1 text-sm text-neutral-500">
           Columnas reconocidas: <strong>nombre</strong>,{" "}
           <strong>apellido</strong>, <strong>sexo</strong>,{" "}
-          <strong>division</strong>, y opcionales{" "}
+          <strong>categoria</strong>, y opcionales{" "}
           <code className="text-neutral-400">fecha_nacimiento</code>,{" "}
           <code className="text-neutral-400">email</code>,{" "}
           <code className="text-neutral-400">dorsal</code>,{" "}
           <code className="text-neutral-400">equipo</code>. Los nombres de
-          división tienen que coincidir con las que ya creaste:{" "}
+          categoría tienen que coincidir con las que ya creaste:{" "}
           {divisiones.join(", ")}.
         </p>
 
@@ -99,7 +99,7 @@ export function ImportWizard({
             <textarea
               name="csv"
               rows={6}
-              placeholder="nombre,apellido,sexo,division&#10;Ana,Gomez,F,Individual Femenino"
+              placeholder="nombre,apellido,sexo,categoria&#10;Ana,Gomez,F,Individual Femenino"
               className="mt-2 w-full rounded-xl border border-neutral-700 bg-transparent px-4 py-3 font-mono text-sm outline-none focus:border-lime-400"
             />
           </details>
@@ -160,7 +160,7 @@ export function ImportWizard({
                   <tr>
                     <th className="px-3 py-2">Dorsal</th>
                     <th className="px-3 py-2">Atleta(s)</th>
-                    <th className="px-3 py-2">División</th>
+                    <th className="px-3 py-2">Categoría</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800">

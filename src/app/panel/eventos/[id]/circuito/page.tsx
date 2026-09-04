@@ -1,6 +1,5 @@
 import {
   addSegment,
-  createCourseTemplate,
   deleteCourseTemplate,
   moveSegment,
   removeSegment,
@@ -19,6 +18,7 @@ import {
   SimpleForm,
 } from "@/shared/components/SimpleForm";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { NuevoCircuito } from "@/features/events/components/NuevoCircuito";
 
 const TIPOS: Record<string, string> = {
   run: "Corrida",
@@ -57,11 +57,14 @@ export default async function CircuitoPage({
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-500">
-        El circuito es la secuencia de segmentos que el juez va marcando. Cada
-        marcaje cierra un segmento, así que un Hyrox estándar son 16 taps por
-        atleta.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-neutral-500">
+          El circuito es la secuencia de segmentos que el juez va marcando. Cada
+          marcaje cierra un segmento, así que un Hyrox estándar son 16 taps por
+          atleta.
+        </p>
+        {canManage && <NuevoCircuito eventId={id} />}
+      </div>
 
       {conSegmentos.map((template) => {
         const enUso = categoriasPorTemplate.get(template.id) ?? 0;
@@ -178,37 +181,6 @@ export default async function CircuitoPage({
         );
       })}
 
-      {canManage && (
-        <section className="rounded-2xl border border-neutral-800 p-5">
-          <h2 className="font-semibold">Nuevo circuito</h2>
-          <p className="mt-1 mb-4 text-sm text-neutral-500">
-            El preset de Hyrox carga las 8 estaciones con sus corridas de 1km ya
-            ordenadas.
-          </p>
-          <SimpleForm
-            action={createCourseTemplate}
-            submitLabel="Crear circuito"
-            hidden={{ eventId: id }}
-          >
-            <FieldRow>
-              <Field
-                label="Nombre"
-                name="name"
-                required
-                placeholder="Hyrox Estándar"
-              />
-              <Select
-                label="Contenido"
-                name="preset"
-                options={[
-                  { value: "hyrox", label: "Preset Hyrox (16 segmentos)" },
-                  { value: "vacio", label: "Vacío" },
-                ]}
-              />
-            </FieldRow>
-          </SimpleForm>
-        </section>
-      )}
     </div>
   );
 }

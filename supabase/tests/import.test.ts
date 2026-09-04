@@ -154,6 +154,126 @@ describe("import_teams", () => {
   });
 });
 
+describe("un DNI o un correo no se repite DENTRO de la misma competencia", () => {
+  it("el mismo documento en el mismo evento choca", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Uno', 'Ok', '12345')",
+        [s.eventId],
+      );
+      await expectDenied(() =>
+        s.db.query(
+          "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Dos', 'Choca', '12345')",
+          [s.eventId],
+        ),
+      );
+    });
+  });
+
+  it("mayusculas y espacios no esquivan la regla", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Uno', 'Ok', 'abc123')",
+        [s.eventId],
+      );
+      await expectDenied(() =>
+        s.db.query(
+          "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Dos', 'Choca', ' ABC123 ')",
+          [s.eventId],
+        ),
+      );
+    });
+  });
+
+  it("el mismo documento en OTRO evento no choca", async () => {
+    const otro = await asUser(s.db, s.users.owner, async () => {
+      const r = await s.db.query<{ id: string }>(
+        "insert into events (org_id, name, public_slug) values ($1, 'Otro evento', 'otro-evento-doc') returning id",
+        [s.orgId],
+      );
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Uno', 'Ok', '999')",
+        [s.eventId],
+      );
+      return r.rows[0].id;
+    });
+
+    await asUser(s.db, s.users.owner, async () => {
+      // No debe lanzar.
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, document_id) values ($1, 'Otro', 'Atleta', '999')",
+        [otro],
+      );
+    });
+  });
+
+  it("el mismo correo en el mismo evento choca", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, email) values ($1, 'Uno', 'Ok', 'ana@correo.com')",
+        [s.eventId],
+      );
+      await expectDenied(() =>
+        s.db.query(
+          "insert into athletes (event_id, first_name, last_name, email) values ($1, 'Dos', 'Choca', 'ANA@correo.com')",
+          [s.eventId],
+        ),
+      );
+    });
+  });
+
+  it("el mismo correo en OTRO evento no choca — la misma persona corre eventos de organizadores distintos", async () => {
+    const otro = await asUser(s.db, s.users.owner, async () => {
+      const r = await s.db.query<{ id: string }>(
+        "insert into events (org_id, name, public_slug) values ($1, 'Otro evento', 'otro-evento-mail') returning id",
+        [s.orgId],
+      );
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, email) values ($1, 'Uno', 'Ok', 'ana@correo.com')",
+        [s.eventId],
+      );
+      return r.rows[0].id;
+    });
+
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query(
+        "insert into athletes (event_id, first_name, last_name, email) values ($1, 'Ana', 'Otra vez', 'ana@correo.com')",
+        [otro],
+      );
+    });
+  });
+
+  it("dos correos iguales en el MISMO lote de import_teams no dejan nada cargado", async () => {
+    const antes = await contarAtletas();
+
+    await asUser(s.db, s.users.owner, async () => {
+      await expectDenied(() =>
+        s.db.query("select import_teams($1, $2::jsonb)", [
+          s.eventId,
+          JSON.stringify([
+            {
+              divisionId: s.divisionId,
+              bibNumber: 601,
+              members: [
+                { firstName: "Uno", lastName: "Ok", gender: "male", email: "dup@correo.com" },
+              ],
+            },
+            {
+              divisionId: s.divisionId,
+              bibNumber: 602,
+              members: [
+                { firstName: "Dos", lastName: "Choca", gender: "male", email: "dup@correo.com" },
+              ],
+            },
+          ]),
+        ]),
+      );
+    });
+
+    expect(await contarAtletas()).toBe(antes);
+  });
+});
+
 describe("assign_heat_lanes", () => {
   it("arma los carriles en el orden recibido", async () => {
     await asUser(s.db, s.users.owner, async () => {

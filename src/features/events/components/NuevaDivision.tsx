@@ -7,6 +7,7 @@ import {
 } from "@/features/events/config/actions";
 import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
+import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import type { CourseTemplate, EventFormat } from "@/lib/supabase/types";
 
 const inicial: FormState = { error: null };
@@ -58,18 +59,12 @@ export function NuevaDivision({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="w-fit rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300"
-      >
-        + Nueva categoría
-      </button>
+      <BotonAbrirModal onClick={() => setAbierto(true)}>Crear categoría</BotonAbrirModal>
 
       <Modal
         abierto={abierto}
         alCerrar={() => setAbierto(false)}
-        titulo="Nueva categoría"
+        titulo="Crear categoría"
         ancho="max-w-2xl"
       >
         {/* `key` remonta el formulario cada vez que se abre: sin esto, un

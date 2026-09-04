@@ -85,8 +85,8 @@ export default async function ResumenPage({
   }> = [
     {
       href: `/panel/eventos/${id}/divisiones`,
-      titulo: "Divisiones",
-      cuenta: `${divisions.length} división(es)`,
+      titulo: "Categorías",
+      cuenta: `${divisions.length} categoría(s)`,
       hecho: divisions.length > 0,
       opcional: false,
     },

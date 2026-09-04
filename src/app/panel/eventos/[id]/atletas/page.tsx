@@ -57,10 +57,10 @@ export default async function AtletasPage({
 
             {divisions.length === 0 ? (
               <span
-                className="cursor-not-allowed rounded-xl bg-neutral-900 px-4 py-2 text-sm text-neutral-600"
-                title="Crea primero las divisiones"
+                className="w-fit cursor-not-allowed rounded-xl bg-neutral-900 px-5 py-3 text-sm font-bold text-neutral-600"
+                title="Crea primero las categorías"
               >
-                + Nuevo registro
+                Crear atleta
               </span>
             ) : (
               <AltaDeAtleta
@@ -78,7 +78,7 @@ export default async function AtletasPage({
 
       {canManage && divisions.length === 0 && (
         <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
-          Crea primero las divisiones: cada atleta se inscribe en una.
+          Crea primero las categorías: cada atleta se inscribe en una.
         </p>
       )}
 

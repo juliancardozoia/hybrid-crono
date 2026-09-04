@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { autoDistribuirHeats, type EstadoDistribucion } from "../actions";
 import { Field } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
+import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 
 const inicial: EstadoDistribucion = { error: null, resumen: null };
@@ -40,13 +41,7 @@ export function DistribuirHeats({ eventId }: { eventId: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="w-fit rounded-xl bg-lime-400 px-5 py-3 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300"
-      >
-        Distribuir automáticamente
-      </button>
+      <BotonAbrirModal onClick={() => setAbierto(true)}>Distribuir automáticamente</BotonAbrirModal>
 
       <Modal
         abierto={abierto}

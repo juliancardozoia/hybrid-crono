@@ -1,18 +1,13 @@
 import {
-  createPenaltyType,
+  deletePenaltyType,
   seedDefaultPenalties,
   togglePenaltyType,
   type FormState,
 } from "@/features/events/config/actions";
 import { getPenaltyTypes } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
-import {
-  Field,
-  FieldRow,
-  Select,
-  SimpleForm,
-} from "@/shared/components/SimpleForm";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { NuevaPenalizacion } from "@/features/events/components/NuevaPenalizacion";
 import type { PenaltyKind } from "@/lib/supabase/types";
 
 const TIPOS: Record<PenaltyKind, string> = {
@@ -31,12 +26,15 @@ export default async function PenalizacionesPage({
   const penalties = await getPenaltyTypes(id);
 
   return (
-    <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-500">
-        Este catálogo es lo que el juez ve al tocar PENALIZAR. Cortito y claro:
-        si tiene quince opciones, nadie lo usa bien con un atleta gritando al
-        lado.
-      </p>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-neutral-500">
+          Este catálogo es lo que el juez ve al tocar PENALIZAR. Cortito y claro:
+          si tiene quince opciones, nadie lo usa bien con un atleta gritando al
+          lado.
+        </p>
+        {canManage && <NuevaPenalizacion eventId={id} />}
+      </div>
 
       {penalties.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-neutral-700 p-6 text-center">
@@ -75,55 +73,29 @@ export default async function PenalizacionesPage({
                 </p>
               </div>
               {canManage && (
-                <FormularioDeEstado
-                  accion={alternar.bind(null, id, p.id, !p.active)}
-                  estadoInicial={{ error: null }}
-                  etiqueta={p.active ? "Desactivar" : "Activar"}
-                  pendienteTexto="…"
-                  mensajeDeCarga="Actualizando la penalización…"
-                  className="text-sm text-neutral-500 hover:text-neutral-200"
-                />
+                <div className="flex items-center gap-3">
+                  <FormularioDeEstado
+                    accion={alternar.bind(null, id, p.id, !p.active)}
+                    estadoInicial={{ error: null }}
+                    etiqueta={p.active ? "Desactivar" : "Activar"}
+                    pendienteTexto="…"
+                    mensajeDeCarga="Actualizando la penalización…"
+                    className="text-sm text-neutral-500 hover:text-neutral-200"
+                  />
+                  <FormularioDeEstado
+                    accion={eliminar.bind(null, id, p.id)}
+                    estadoInicial={{ error: null }}
+                    etiqueta="Eliminar"
+                    pendienteTexto="…"
+                    mensajeDeCarga="Eliminando la penalización…"
+                    title="Eliminar penalización"
+                    className="text-sm text-neutral-600 hover:text-red-400"
+                  />
+                </div>
               )}
             </li>
           ))}
         </ul>
-      )}
-
-      {canManage && (
-        <section className="rounded-2xl border border-neutral-800 p-5">
-          <h2 className="mb-4 font-semibold">Nueva penalización</h2>
-          <SimpleForm
-            action={createPenaltyType}
-            submitLabel="Agregar"
-            hidden={{ eventId: id }}
-          >
-            <FieldRow>
-              <Field label="Código" name="code" required placeholder="ROM" />
-              <Field
-                label="Descripción"
-                name="label"
-                required
-                placeholder="Rango de movimiento"
-              />
-            </FieldRow>
-            <FieldRow>
-              <Select
-                label="Tipo"
-                name="kind"
-                options={[
-                  { value: "time_add", label: "Suma tiempo" },
-                  { value: "no_rep", label: "Repetición inválida (no suma)" },
-                  { value: "dq", label: "Descalifica" },
-                ]}
-              />
-              <Field
-                label="Segundos (solo si suma tiempo)"
-                name="seconds"
-                type="number"
-              />
-            </FieldRow>
-          </SimpleForm>
-        </section>
       )}
     </div>
   );
@@ -143,4 +115,14 @@ async function alternar(
 ) {
   "use server";
   return togglePenaltyType(eventId, penaltyId, active);
+}
+
+async function eliminar(
+  eventId: string,
+  penaltyId: string,
+  _prev: FormState,
+  _formData: FormData,
+) {
+  "use server";
+  return deletePenaltyType(eventId, penaltyId);
 }

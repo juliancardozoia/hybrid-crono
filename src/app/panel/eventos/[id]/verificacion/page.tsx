@@ -52,7 +52,7 @@ export default async function ResultadosPage({ params }: { params: Promise<{ id:
               <li key={p.id} className="flex items-center justify-between px-4 py-3 text-sm">
                 <span>
                   {p.divisionId
-                    ? divisiones.find((d) => d.id === p.divisionId)?.name ?? "una división"
+                    ? divisiones.find((d) => d.id === p.divisionId)?.name ?? "una categoría"
                     : "Todo el evento"}
                 </span>
                 <span className="text-neutral-500">

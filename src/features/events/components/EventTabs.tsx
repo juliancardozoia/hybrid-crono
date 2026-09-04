@@ -62,7 +62,7 @@ const SIN_PESTANAS = [
 function secciones(esHibrida: boolean): Seccion[] {
   return [
     { slug: "", label: "Resumen" },
-    { slug: "divisiones", label: "Divisiones" },
+    { slug: "divisiones", label: "Categorías" },
     esHibrida ? { slug: "circuito", label: "Circuito" } : { slug: "pruebas", label: "Workouts" },
     { slug: "atletas", label: "Atletas" },
     { slug: "heats", label: "Heats" },

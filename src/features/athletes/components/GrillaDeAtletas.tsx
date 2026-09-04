@@ -2,8 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { BotonCopiar } from "@/shared/components/BotonCopiar";
+import { Bandera } from "@/shared/components/Bandera";
+import { Icono } from "@/shared/components/Icono";
 import type { TeamWithMembers } from "@/features/events/config/queries";
 import type { FormState } from "@/features/athletes/actions";
+
+/** Solo dígitos, con el código de país si ya lo trae: lo que espera wa.me. */
+function numeroDeWhatsapp(telefono: string): string {
+  return telefono.replace(/[^0-9]/g, "");
+}
 
 /**
  * El padron, en una grilla con buscador y filtro.
@@ -15,7 +23,16 @@ import type { FormState } from "@/features/athletes/actions";
  * evento (cientos de filas, no miles) ya viaja en la carga de la pagina, asi
  * que filtrarlo en el navegador es instantaneo y no pide una consulta nueva
  * por cada letra.
+ *
+ * PAGINADO DE A 20. Con una competencia de verdad (80, 200 atletas) la tabla
+ * entera scrollea sin fin. El numero de pagina NO se resetea con un efecto al
+ * cambiar el filtro: se CLAMPEA en el render (`Math.min(pagina, totalPaginas)`),
+ * asi que filtrar a una sola pagina de resultados estando en la 3 la muestra
+ * bien sin un `useEffect` de por medio, y volver a vaciar el filtro devuelve
+ * la pagina de antes en vez de siempre arrancar en 1.
  */
+const POR_PAGINA = 20;
+
 export function GrillaDeAtletas({
   teams,
   divisiones,
@@ -33,6 +50,7 @@ export function GrillaDeAtletas({
 }) {
   const [busqueda, setBusqueda] = useState("");
   const [divisionId, setDivisionId] = useState("");
+  const [pagina, setPagina] = useState(1);
 
   const filtrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -58,6 +76,13 @@ export function GrillaDeAtletas({
     });
   }, [teams, busqueda, divisionId]);
 
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / POR_PAGINA));
+  const paginaValida = Math.min(pagina, totalPaginas);
+  const visibles = filtrados.slice(
+    (paginaValida - 1) * POR_PAGINA,
+    paginaValida * POR_PAGINA,
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap gap-2">
@@ -73,7 +98,7 @@ export function GrillaDeAtletas({
             onChange={(e) => setDivisionId(e.target.value)}
             className="w-auto appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400"
           >
-            <option value="">Todas las divisiones</option>
+            <option value="">Todas las categorías</option>
             {divisiones.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -97,15 +122,15 @@ export function GrillaDeAtletas({
             <thead>
               <tr className="border-b border-neutral-800 bg-neutral-900/40 text-left text-neutral-500">
                 <th className="px-4 py-3 font-medium">#</th>
-                <th className="px-3 py-3 font-medium">Nombre / Equipo</th>
-                <th className="px-3 py-3 font-medium">División</th>
-                <th className="px-3 py-3 font-medium">Email</th>
-                <th className="px-3 py-3 font-medium">Documento</th>
+                <th className="px-3 py-3 font-medium">Atleta / Equipo</th>
+                <th className="px-3 py-3 font-medium">Categoría</th>
+                <th className="px-3 py-3 font-medium">Correo</th>
+                <th className="px-3 py-3 font-medium">WhatsApp</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((t) => (
+              {visibles.map((t) => (
                 <tr
                   key={t.id}
                   className="border-b border-neutral-900 last:border-0"
@@ -115,28 +140,70 @@ export function GrillaDeAtletas({
                   </td>
                   <td className="px-3 py-3">
                     {t.name && (
-                      <span className="mr-2 font-medium">{t.name}</span>
+                      <p className="mb-1 font-medium">{t.name}</p>
                     )}
-                    <span className={t.name ? "text-neutral-400" : ""}>
-                      {t.members
-                        .map((m) => `${m.first_name} ${m.last_name}`)
-                        .join(" / ") || "sin integrantes"}
-                    </span>
+                    {t.members.length === 0 ? (
+                      <p className="text-neutral-400">sin integrantes</p>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {t.members.map((m) => (
+                          <p
+                            key={m.id}
+                            className={`flex h-[1.625rem] items-center gap-1.5 ${t.name ? "text-neutral-400" : ""}`}
+                          >
+                            <Bandera codigo={m.country} className="h-3 w-4 shrink-0" />
+                            <span>
+                              {m.first_name} {m.last_name}
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-neutral-400">
                     {t.divisionName}
                   </td>
-                  <td className="px-3 py-3 text-neutral-400">
-                    {t.members
-                      .map((m) => m.email)
-                      .filter(Boolean)
-                      .join(", ") || "—"}
+                  <td className="px-3 py-3">
+                    {t.members.length === 0 ? (
+                      <span className="text-neutral-600">—</span>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {t.members.map((m) => (
+                          <div key={m.id} className="flex h-[1.625rem] items-center">
+                            {m.email ? (
+                              <BotonCopiar valor={m.email} titulo={`Copiar correo: ${m.email}`} />
+                            ) : (
+                              <span className="text-neutral-600">—</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-3 py-3 text-neutral-400">
-                    {t.members
-                      .map((m) => m.document_id)
-                      .filter(Boolean)
-                      .join(", ") || "—"}
+                  <td className="px-3 py-3">
+                    {t.members.length === 0 ? (
+                      <span className="text-neutral-600">—</span>
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        {t.members.map((m) => (
+                          <div key={m.id} className="flex h-[1.625rem] items-center">
+                            {m.phone ? (
+                              <a
+                                href={`https://wa.me/${numeroDeWhatsapp(m.phone)}`}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                title={`Escribir por WhatsApp a ${m.first_name}`}
+                                className="rounded-lg p-1.5 text-emerald-500 transition-colors hover:bg-neutral-800 hover:text-emerald-400"
+                              >
+                                <Icono nombre="whatsapp" className="h-3.5 w-3.5" />
+                              </a>
+                            ) : (
+                              <span className="text-neutral-600">—</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {canManage && alQuitar && (
@@ -155,6 +222,30 @@ export function GrillaDeAtletas({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {filtrados.length > POR_PAGINA && (
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            disabled={paginaValida <= 1}
+            className="rounded-xl border border-neutral-700 px-4 py-2 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ← Anterior
+          </button>
+          <span className="text-neutral-500">
+            Página {paginaValida} de {totalPaginas}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+            disabled={paginaValida >= totalPaginas}
+            className="rounded-xl border border-neutral-700 px-4 py-2 hover:bg-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Siguiente →
+          </button>
         </div>
       )}
     </div>

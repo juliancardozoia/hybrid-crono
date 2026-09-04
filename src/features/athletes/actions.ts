@@ -84,7 +84,7 @@ export async function previewImport(
   if (divisiones.length === 0) {
     return {
       error:
-        "Primero crea al menos una división: el CSV se asigna por nombre de división.",
+        "Primero crea al menos una categoría: el CSV se asigna por nombre de categoría.",
       plan: null,
       csv: null,
     };
@@ -136,16 +136,30 @@ export async function confirmImport(
   });
 
   if (error) {
-    return {
-      error:
-        error.code === "23505"
-          ? "Hay un dorsal repetido. Vuelve a generar la vista previa."
-          : "No se pudo importar. No se cargó nada.",
-    };
+    return { error: traducirImport(error) };
   }
 
   refrescar(eventId);
   return { error: null };
+}
+
+/**
+ * Igual que `traducir()`, pero para el error de `import_teams`: la carga es
+ * TODO O NADA, así que un solo documento o correo repetido en la planilla —o
+ * contra alguien que ya estaba cargado— hace fallar el lote entero, y el
+ * mensaje tiene que decir cuál de las tres reglas fue.
+ */
+function traducirImport(error: { code?: string; message?: string } | null): string {
+  if (error?.code === "23505") {
+    if (error.message?.includes("athletes_document_unico")) {
+      return "Hay un documento repetido en la planilla, o ya está cargado. No se importó nada.";
+    }
+    if (error.message?.includes("athletes_email_unico")) {
+      return "Hay un correo repetido en la planilla, o ya está cargado. No se importó nada.";
+    }
+    return "Hay un dorsal repetido. Vuelve a generar la vista previa.";
+  }
+  return "No se pudo importar. No se cargó nada.";
 }
 
 export interface IntegranteManual {
@@ -161,7 +175,18 @@ export interface IntegranteManual {
 
 function traducir(error: { code?: string; message?: string } | null): string {
   if (!error) return "No se pudo guardar.";
-  if (error.code === "23505") return "Ya existe un registro con esos datos.";
+  if (error.code === "23505") {
+    // Los nombres de indice son especificos a proposito, para no devolver el
+    // mismo "ya existe un registro con esos datos" ante tres causas
+    // distintas: dorsal repetido, documento repetido, correo repetido.
+    if (error.message?.includes("athletes_document_unico")) {
+      return "Ya hay un atleta con ese documento en esta competencia.";
+    }
+    if (error.message?.includes("athletes_email_unico")) {
+      return "Ya hay un atleta con ese correo en esta competencia.";
+    }
+    return "Ya existe un registro con esos datos.";
+  }
   if (error.code === "23514") return "Algún valor está fuera de rango.";
   if (error.code === "insufficient_privilege")
     return "No tienes permiso para esta operación.";
@@ -197,9 +222,9 @@ export async function crearRegistroManual(
   const teamName = String(formData.get("teamName") ?? "").trim() || null;
   const teamSize = Number(formData.get("teamSize") ?? 1);
 
-  if (!divisionId) return { error: "Elige una división." };
+  if (!divisionId) return { error: "Elige una categoría." };
   if (!Number.isInteger(teamSize) || teamSize < 1)
-    return { error: "División inválida." };
+    return { error: "Categoría inválida." };
 
   const integrantes: IntegranteManual[] = [];
   for (let i = 0; i < teamSize; i++) {

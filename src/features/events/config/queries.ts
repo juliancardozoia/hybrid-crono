@@ -69,6 +69,7 @@ export interface TeamWithMembers extends TeamRow {
       | "gender"
       | "birth_date"
       | "email"
+      | "phone"
       | "country"
       | "document_id"
       | "state_province"
@@ -82,7 +83,7 @@ export async function getTeams(eventId: string): Promise<TeamWithMembers[]> {
   const { data } = await supabase
     .from("teams")
     .select(
-      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date, email, country, document_id, state_province))",
+      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date, email, phone, country, document_id, state_province))",
     )
     .eq("event_id", eventId)
     .order("bib_number");

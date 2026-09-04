@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { crearRegistroManual, type FormState } from "../actions";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
+import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import { PAISES } from "@/shared/utils/paises";
 
 const campo =
@@ -69,18 +70,12 @@ export function AltaDeAtleta({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="rounded-xl bg-lime-400 px-4 py-2 text-sm font-bold text-lime-950 hover:bg-lime-300"
-      >
-        + Nuevo registro
-      </button>
+      <BotonAbrirModal onClick={() => setAbierto(true)}>Crear atleta</BotonAbrirModal>
 
       <Modal
         abierto={abierto}
         alCerrar={() => setAbierto(false)}
-        titulo="Nuevo registro"
+        titulo="Crear atleta"
         ancho="max-w-2xl"
       >
         {/* `key` remonta el formulario cada vez que se abre: sin esto, un
@@ -97,7 +92,7 @@ export function AltaDeAtleta({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">División</span>
+              <span className="text-sm font-medium">Categoría</span>
               <select
                 name="divisionId"
                 value={divisionId}
@@ -144,7 +139,7 @@ export function AltaDeAtleta({
           guardando={pending}
           error={state.error}
           guardarId="nuevo-registro"
-          etiqueta="Registrar"
+          etiqueta="Crear atleta"
           mensajeDeCarga="Registrando…"
         />
       </Modal>

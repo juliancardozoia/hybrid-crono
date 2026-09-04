@@ -15,7 +15,7 @@ export default async function ImportarPage({ params }: { params: Promise<{ id: s
   if (divisions.length === 0) {
     return (
       <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 text-sm text-amber-200">
-        Crea primero las divisiones: el CSV asigna cada atleta por nombre de división.{" "}
+        Crea primero las categorías: el CSV asigna cada atleta por nombre de categoría.{" "}
         <Link href={`/panel/eventos/${id}/divisiones`} className="underline">
           Ir a divisiones
         </Link>

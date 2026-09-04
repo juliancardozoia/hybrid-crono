@@ -260,13 +260,13 @@ export async function createDivision(
 
   await requireManage(eventId);
 
-  if (name.length < 2) return { error: "Escribe un nombre a la división." };
+  if (name.length < 2) return { error: "Escribe un nombre a la categoría." };
   // El circuito ya NO es obligatorio: una categoría de CrossFit no corre un
   // circuito, corre N pruebas. `divisions.course_template_id` se volvió nullable
   // justo para esto, y exigirlo aquí era lo único que quedaba del modelo viejo,
   // cuando la plataforma solo entendía de carreras híbridas.
   if (genderRule === "mixed" && teamSize < 2) {
-    return { error: "Una división mixta necesita equipos de 2 o más." };
+    return { error: "Una categoría mixta necesita equipos de 2 o más." };
   }
   if (ageMin !== null && ageMax !== null && ageMin > ageMax) {
     return { error: "La edad mínima no puede ser mayor que la máxima." };
@@ -427,6 +427,30 @@ export async function togglePenaltyType(
     .from("penalty_types")
     .update({ active })
     .eq("id", penaltyId);
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Borra un tipo de penalización.
+ *
+ * A diferencia de un circuito o una categoría, nada más referencia
+ * `penalty_types` por clave foránea: un marcaje de penalización ya aplicado
+ * guarda su propia copia (código, etiqueta, tipo, segundos) en el `payload`
+ * del `timing_event`, no un enlace vivo a esta fila. Borrar el tipo no le
+ * hace nada a las penalizaciones ya cargadas — solo saca la opción del menú
+ * que ve el juez de ahora en más. Por eso no hace falta el patrón de "el
+ * botón no aparece si va a fallar": acá nunca falla por eso.
+ */
+export async function deletePenaltyType(
+  eventId: string,
+  penaltyId: string,
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+  const { error } = await supabase.from("penalty_types").delete().eq("id", penaltyId);
   if (error) return { error: traducir(error) };
 
   refrescar(eventId);

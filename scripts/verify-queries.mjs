@@ -58,7 +58,7 @@ const CONSULTAS = [
     donde: "features/events/config/queries.ts · getTeams",
     tabla: "teams",
     select:
-      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date, email, country, document_id, state_province))",
+      "*, divisions (name), team_members (athletes (id, first_name, last_name, gender, birth_date, email, phone, country, document_id, state_province))",
   },
   {
     donde: "features/events/config/queries.ts · getHeats",

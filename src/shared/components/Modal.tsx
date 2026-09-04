@@ -16,9 +16,14 @@ import { useCargaMientras } from "./Carga";
  * el backdrop ni atrapa el foco, asi que el `open`/`abierto` del componente se
  * sincroniza con un efecto en vez de pasarse directo como atributo.
  *
- * Clickear el backdrop cierra: el click en el `<dialog>` mismo (no en su
- * contenido, que esta adentro de un div hijo) solo puede venir del area que el
- * navegador pinta afuera del contenido — es el truco estandar para esto.
+ * CLICKEAR EL BACKDROP NO CIERRA. Lo hacia antes, y era la forma mas facil de
+ * perder un formulario a medio llenar: un click apenas afuera del contenido
+ * —nada raro con un modal ancho en una pantalla chica— disparaba `alCerrar()`
+ * sin avisar, y como el formulario se REMONTA en cada apertura (`key={abierto
+ * ? ... : ...}`, para no arrastrar un intento cancelado a la proxima vez) lo
+ * que se habia escrito desaparecia para siempre. Cerrar sigue disponible por
+ * la X, por Cancelar, y por Escape (accion de teclado deliberada, no un click
+ * cerca sin querer).
  */
 export function Modal({
   abierto,
@@ -48,9 +53,6 @@ export function Modal({
     <dialog
       ref={ref}
       onClose={alCerrar}
-      onClick={(e) => {
-        if (e.target === ref.current) alCerrar();
-      }}
       // `m-auto` es lo que centra un `<dialog>` nativo: el navegador lo abre
       // con `position: fixed; inset: 0` y se centra adentro de esa caja con
       // `margin: auto` — pero el preflight de Tailwind resetea TODOS los

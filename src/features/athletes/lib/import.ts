@@ -194,7 +194,7 @@ export function buildImportPlan(
 
     const nombreDivision = pick(record, ALIAS.division);
     if (!nombreDivision) {
-      issues.push({ line, message: `${firstName} ${lastName} no tiene división.` });
+      issues.push({ line, message: `${firstName} ${lastName} no tiene categoría.` });
       return;
     }
 
@@ -202,7 +202,7 @@ export function buildImportPlan(
     if (!division) {
       issues.push({
         line,
-        message: `La división "${nombreDivision}" no existe. Creala primero o corrige la planilla.`,
+        message: `La categoría "${nombreDivision}" no existe. Creala primero o corrige la planilla.`,
       });
       return;
     }

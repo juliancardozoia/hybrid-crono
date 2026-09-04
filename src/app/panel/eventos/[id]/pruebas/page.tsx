@@ -106,7 +106,7 @@ export default async function PruebasPage({
       {canManage &&
         (divisiones.length === 0 ? (
           <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
-            Crea primero las divisiones: una prueba se le asigna a las
+            Crea primero las categorías: una prueba se le asigna a las
             categorías que la corren.
           </p>
         ) : (

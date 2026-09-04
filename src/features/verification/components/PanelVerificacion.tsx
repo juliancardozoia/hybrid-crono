@@ -174,7 +174,7 @@ export function PanelVerificacion({
         <form action={verifyAction} className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="eventId" value={eventId} />
           <label className="flex flex-col gap-1.5">
-            <span className="text-sm">División</span>
+            <span className="text-sm">Categoría</span>
             <select
               name="divisionId"
               className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm"
@@ -211,7 +211,7 @@ export function PanelVerificacion({
           >
             <input type="hidden" name="eventId" value={eventId} />
             <label className="flex flex-col gap-1.5">
-              <span className="text-sm">División</span>
+              <span className="text-sm">Categoría</span>
               <select
                 name="divisionId"
                 className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm"
