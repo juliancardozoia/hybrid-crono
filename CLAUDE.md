@@ -1005,6 +1005,121 @@ categoria. Un colaborador acotado a una sola categoria quedaba viendo todas.
 Se le agrego la misma garantia que ya tienen `event_role()`/
 `event_staff_role()`/`can_score_event()` y el resto de este archivo.
 
+### La torre de control: un heat "termina", y por qué eso faltaba
+
+Probando el flujo real de una carrera híbrida aparecieron cinco huecos, todos
+alrededor de la misma pregunta que el proyecto nunca había tenido que
+contestar: **¿cuándo termina un heat?**
+
+`heats.status` nunca llega a `'finished'` en ningún lado del código — solo
+`'idle'`/`'running'` se escriben alguna vez (ver el historial de
+`start_heat`/`cancel_heat_start`). Sin esa señal, nada podía saber si un heat
+seguía en curso, y de ahí colgaban los cinco problemas reportados.
+
+**`heats.ended_at`** es la columna que faltaba. La llena `recomputeLanes()`
+—el mismo recálculo que ya corre en cada sincronización de un juez y cada vez
+que el organizador aprieta "Recalcular"— cuando **todos** los carriles con
+atleta de ese heat llegan a un estado terminal (`finished`/`dnf`/`dq`) en
+`results`. Si un recálculo posterior (anular un marcaje, por ejemplo) hace
+que deje de estar completo, se destranca sola: no hay un tercer lugar donde
+alguien tenga que acordarse de tocarla a mano.
+
+- **`start_heat` ahora exige que ningún juez de este heat esté YA en otro
+  heat en curso** (`started_at is not null and ended_at is null`). Antes solo
+  `claim_lane` —la AUTOasignación del juez— tenía el límite de un heat a la
+  vez; `transfer_lane` (la asignación del organizador desde Heats) no lo
+  tenía, y con eso se podía pre-asignar al mismo juez a dos heats que
+  terminan largándose en simultáneo. El mensaje nombra a los jueces en
+  conflicto.
+- **Marcar DNF desde el panel** (`marcarDnf`, en `heats/actions.ts`, botón en
+  Control) es para el atleta que no se presentó: sin esto el reloj de ese
+  carril seguía corriendo indefinidamente y nada permitía cerrar el heat.
+  Pasa por **el mismo camino que el botón DNF del juez** —`ingest_timing_events`
+  con un evento `dnf` más en el log— para que no exista una segunda forma de
+  llegar al mismo estado. El `elapsedMs` se deriva de `heat.started_at`, no
+  se acumula, misma doctrina que el resto del cronómetro.
+- **La torre de control se dividió**: `page.tsx` sigue siendo el servidor
+  (consultas, RLS), pero la lista de heats se resuelve en un arreglo plano
+  —sin `Map`, que no cruza bien la frontera servidor→cliente— y se renderiza
+  en `TorreDeHeats` (cliente), que agrega el filtro por categoría, el reloj
+  en vivo del heat en curso (`RelojDeHeat`, mismo patrón que `LiveClock` del
+  juez: al DOM directo, sin pasar por React) y el botón de DNF por carril.
+- **`cancel_heat_start` no cambió sus reglas** —sigue exigiendo cero
+  marcajes— pero el JUEZ ahora vuelve a preguntar si sigue vigente. Antes
+  `EsperandoLargada` solo consultaba la largada ANTES de anclar el reloj; una
+  vez anclado —que pasa solo, sin que el juez toque nada, en cuanto llega
+  `heatStartEpochMs`— nada volvía a preguntar. Una salida en falso deshecha
+  por la organización dejaba el reloj de cada juez corriendo sobre un heat
+  que ya no existía en la base. `useDetectarLargadaDeshecha` (en
+  `judge/lib/`, usado por `JudgeScreen` y `WodJudgeScreen`) vuelve a
+  preguntar cada 5s mientras el carril siga sin terminar, y reinicia el
+  carril solo si la respuesta es "no arrancó" **tres veces seguidas** — no
+  una: `onCheckStart` ya devuelve `null` también cuando falla la red (para no
+  cortar el polling de espera), así que una sola respuesta no alcanza para
+  distinguir "la organización deshizo la largada" de "hubo un bache de
+  señal".
+
+### Distribución automática de heats
+
+Con 80 atletas o más, armar heats de a uno y asignar cada juez a mano es
+tedioso — y elegir a mano quién juzga a quién es justo el lugar donde alguien
+podría acomodar el resultado. `auto_distribuir_heats(p_event_id,
+p_lanes_por_heat)` arma de una TODOS los heats de TODAS las categorías con
+equipos confirmados, numerados desde 1, con la cantidad de carriles que pida
+el organizador, y reparte los jueces ya cargados en el evento **al azar**
+entre los carriles — es el "evitamos fraude" del pedido original.
+
+- **El nombre del heat pasó a ser único por CATEGORÍA, no por evento**
+  (`unique (event_id, division_id, name)`, no `unique (event_id, name)`).
+  Sin este cambio, "Individual Masculino" y "Individual Femenino" no podían
+  tener las dos su propio "Heat 1" — chocaban entre sí. `division_id` sigue
+  siendo nullable a nivel de base (heats viejos sin categoría no se tocan),
+  pero desde ahora es **obligatorio en la app**: el modal de alta ya no
+  ofrece la opción "Mixto — varias divisiones" que había antes, que no era
+  ninguna categoría real, solo `division_id = null` con otro nombre.
+- **`createHeat` ya no pide nombre ni hora de largada.** El nombre se genera
+  solo — `"Heat " || (mayor consecutivo existente en esa categoría + 1)`,
+  nunca por cantidad de filas, porque borrar un heat de en medio y volver a
+  crear uno con "cantidad + 1" chocaría con el que ya existe. La hora de
+  largada real se sigue cargando en `/cronograma`; pedirla al crear no
+  aportaba nada.
+- **Correr la distribución dos veces RECALCULA, no duplica.** Por categoría:
+  se borran los heats que **todavía no largaron** (con su cascada de
+  carriles) y se arma la lista fresca de equipos confirmados que no están ya
+  corriendo en un heat en marcha. Los heats que **ya largaron** —tengan o no
+  marcajes— no se tocan, y sus equipos quedan excluidos del reparto nuevo.
+  Es lo que permite sumar categorías o atletas después de la primera corrida
+  y volver a apretar el botón sin perder nada. La numeración de la tanda
+  nueva esquiva los "Heat N" que ya usa un heat en marcha de esa categoría.
+- **El pool de jueces es el mismo `event_staff` aprobado que ya lista la
+  pantalla de Jueces** — no `org_members`. Se mezcla una sola vez por corrida
+  (`order by random()`) y se reparte por turno, carril por carril: con menos
+  jueces que carriles, el mismo juez vuelve a aparecer, y eso es correcto —
+  es la misma regla de "un juez puede cubrir varios carriles del mismo heat"
+  de siempre. `getJudges()` (el selector manual de "asignar juez" en
+  `HeatCard`) ahora también exige `approved_at is not null`, por la misma
+  razón: antes un juez que se había postulado y todavía no estaba aprobado
+  podía aparecer como elegible en ese selector.
+- **Solo equipos confirmados y no retirados.** Por construcción, toda fila de
+  `teams` ya es una inscripción confirmada o pagada (`teams` nace únicamente
+  desde `confirm_registration()` o `import_teams()` — nunca de una
+  inscripción a medias, ver "Una inscripcion NO es un equipo"), así que no
+  hace falta un segundo chequeo de "aprobado". El único filtro que faltaba
+  era `status <> 'withdrawn'`, ahora aplicado tanto en la distribución
+  automática como en el selector manual de `/heats`.
+- **Sin gate de plan por ahora, a propósito.** Es candidato a plan Pro más
+  adelante — ver [El plan corta por VISIBILIDAD](#el-plan-corta-por-visibilidad-no-por-captura)
+  y `src/features/planes/lib/errores.ts` — pero queda habilitado para
+  cualquier organización hasta que se decida el corte.
+- **Después de correr la distribución, el organizador ajusta a mano igual
+  que siempre**: `HeatCard` (reasignar equipos, cambiar el juez de un
+  carril) no cambió — los heats que arma la distribución automática son
+  filas comunes de `heats`/`lanes`, indistinguibles de las que se crean a
+  mano.
+- **`/heats` agrupa la lista por categoría.** Con quince heats o más, una
+  lista plana obliga a leerla entera para encontrar la de una categoría —
+  mismo motivo que ya llevó a la torre de control a un filtro por división.
+
 ### Inscripciones responde TRES preguntas, en orden
 
 1. **Como se cobra** — los medios de pago del organizador.

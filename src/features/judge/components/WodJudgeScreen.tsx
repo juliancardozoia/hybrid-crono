@@ -5,6 +5,7 @@ import { formatElapsed } from "@/shared/timing/clock";
 import { planDelWod, reduceWodEvents, type WodStep, type WodStructure } from "@/shared/timing/wod";
 import { startHeartbeat, useRaceStore } from "../lib/store";
 import { startSyncLoop, supabaseTransport, type SyncOutcome, type Transport } from "../lib/sync";
+import { useDetectarLargadaDeshecha } from "../lib/useDetectarLargadaDeshecha";
 import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
@@ -93,6 +94,12 @@ export function WodJudgeScreen({
   const online = useOnlineStatus();
   const [indiceParte, setIndiceParte] = useState(0);
   const [syncError, setSyncError] = useState<{ texto: string; fatal: boolean } | null>(null);
+  const [largadaDeshecha, setLargadaDeshecha] = useState(false);
+
+  // Ver useDetectarLargadaDeshecha: si la organización deshace una largada
+  // falsa despues de que este carril ya anclo su reloj, sin esto seguiria
+  // corriendo sobre un heat que ya no existe.
+  useDetectarLargadaDeshecha(onCheckStart, online, () => setLargadaDeshecha(true));
   const [cantidad, setCantidad] = useState("");
   const [kilos, setKilos] = useState("");
   const [confirmandoDnf, setConfirmandoDnf] = useState(false);
@@ -230,6 +237,13 @@ export function WodJudgeScreen({
           }`}
         >
           {syncError.texto}
+        </p>
+      )}
+
+      {largadaDeshecha && !anchor && (
+        <p className="mx-4 mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+          La organización deshizo la largada de este heat — probablemente una salida en falso.
+          Esperando la salida de nuevo.
         </p>
       )}
 

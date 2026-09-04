@@ -63,14 +63,30 @@ export function LeaderboardLive({
 
   return (
     <div className={compacto ? "" : "mx-auto w-full max-w-3xl p-5"}>
-      <header className="mb-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold">{compacto ? "Leaderboard" : eventName}</h1>
+      {/*
+        EN MODO COMPACTO NO HAY TITULO PROPIO. Quien incrusta este componente
+        —la pestaña "Leaderboards" del portal público, o "Leaderboard" en el
+        panel del organizador— ya puso un título o una pestaña activa ahí
+        arriba: repetirlo acá era el mismo texto dos veces en la misma
+        pantalla. Standalone (`/en-vivo/[slug]`) sigue mostrando el nombre del
+        evento, porque ahí no hay ningún otro título.
+      */}
+      <header className={compacto ? "mb-4 flex items-center justify-between gap-3" : "mb-5"}>
+        {compacto ? (
           <EstadoOficial official={data.official} />
-        </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-lg font-semibold">{eventName}</h1>
+            <EstadoOficial official={data.official} />
+          </div>
+        )}
         <Link
           href={`/en-vivo/${slug}/proyector`}
-          className="mt-2 inline-block text-sm text-neutral-500 hover:text-neutral-300"
+          className={
+            compacto
+              ? "shrink-0 text-sm text-neutral-500 hover:text-neutral-300"
+              : "mt-2 inline-block text-sm text-neutral-500 hover:text-neutral-300"
+          }
         >
           Ver en pantalla grande →
         </Link>
@@ -82,23 +98,27 @@ export function LeaderboardLive({
         </p>
       ) : (
         <>
+          {/*
+            UN COMBO, NO PESTAÑAS. Con seis categorías o más una fila de
+            pestañas se desborda o se vuelve horizontal-scroll, y encontrar la
+            propia es leerlas todas. Un select resuelve las dos cosas de una,
+            sin importar cuántas categorías tenga el evento.
+          */}
           {data.divisions.length > 1 && (
-            <nav className="tabs-scroll mb-4 flex gap-1 border-b border-neutral-800">
-              {data.divisions.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDivision(d)}
-                  className={`-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap ${
-                    d === divisionActiva
-                      ? "border-lime-400 font-medium text-neutral-100"
-                      : "border-transparent text-neutral-500 hover:text-neutral-300"
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </nav>
+            <label className="mb-4 flex items-center gap-2 text-sm">
+              <span className="text-neutral-500">Categoría</span>
+              <select
+                value={divisionActiva ?? ""}
+                onChange={(e) => setDivision(e.target.value)}
+                className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm sm:flex-none"
+              >
+                {data.divisions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           <ul className="flex flex-col gap-1.5">

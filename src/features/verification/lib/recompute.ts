@@ -199,7 +199,55 @@ export async function recomputeLanes(filtro: {
     recalculados += 1;
   }
 
+  // `heats.status` nunca llega a 'finished' en ningun lado del codigo: es el
+  // hueco que impedia saber si un heat seguia en curso. `ended_at` lo llena
+  // ACA, con el mismo recalculo que ya corre en cada sincronizacion, en vez
+  // de agregar un tercer camino de escritura para lo mismo.
+  const heatIds = [...new Set(lanes.map((l) => l.heat_id))];
+  await Promise.all(heatIds.map((heatId) => actualizarCierreDeHeat(service, heatId)));
+
   return { recalculados };
+}
+
+/**
+ * Un heat "termino" cuando TODOS sus carriles con atleta llegaron a un
+ * estado terminal (finished/dnf/dq). Se reevalua cada vez, en los dos
+ * sentidos: si ya estaba marcado y un recalculo (p. ej. anular un marcaje)
+ * lo saca de terminal, se destranca solo -- 'results' es cache y puede
+ * cambiar, `ended_at` tiene que seguirla.
+ */
+async function actualizarCierreDeHeat(
+  service: ReturnType<typeof createServiceClient>,
+  heatId: string,
+): Promise<void> {
+  const [{ data: carriles }, { data: heat }] = await Promise.all([
+    service.from("lanes").select("id, team_id").eq("heat_id", heatId),
+    service.from("heats").select("ended_at, started_at").eq("id", heatId).maybeSingle(),
+  ]);
+
+  if (!heat || !heat.started_at) return;
+
+  const conAtleta = (carriles ?? []).filter((l) => l.team_id !== null);
+  if (conAtleta.length === 0) return;
+
+  const { data: resultados } = await service
+    .from("results")
+    .select("lane_id, status")
+    .in(
+      "lane_id",
+      conAtleta.map((l) => l.id),
+    );
+
+  const porCarril = new Map((resultados ?? []).map((r) => [r.lane_id, r.status]));
+  const terminado = (estado: string | undefined) =>
+    estado === "finished" || estado === "dnf" || estado === "dq";
+  const completo = conAtleta.every((l) => terminado(porCarril.get(l.id)));
+
+  if (completo && !heat.ended_at) {
+    await service.from("heats").update({ ended_at: new Date().toISOString() }).eq("id", heatId);
+  } else if (!completo && heat.ended_at) {
+    await service.from("heats").update({ ended_at: null }).eq("id", heatId);
+  }
 }
 
 type FilaDeMarcaje = {

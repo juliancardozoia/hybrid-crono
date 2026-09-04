@@ -6,6 +6,7 @@ import { SUSPICIOUS_SPLIT_MS } from "@/shared/timing/reducer";
 import type { PenaltyPayload, Segment } from "@/shared/timing/types";
 import { startHeartbeat, UNDO_WINDOW_MS, useRaceStore } from "../lib/store";
 import { startSyncLoop, supabaseTransport, type SyncOutcome, type Transport } from "../lib/sync";
+import { useDetectarLargadaDeshecha } from "../lib/useDetectarLargadaDeshecha";
 import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
@@ -73,9 +74,16 @@ export function JudgeScreen({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmFastSplit, setConfirmFastSplit] = useState(false);
   const [syncError, setSyncError] = useState<{ texto: string; fatal: boolean } | null>(null);
+  const [largadaDeshecha, setLargadaDeshecha] = useState(false);
 
   const running = result?.status === "running";
   useWakeLock(running);
+
+  // Si la organización deshace una largada falsa después de que este carril
+  // ya ancló su reloj (puede pasar sin que el juez haya marcado nada
+  // todavía), el reloj sigue corriendo sobre un heat que ya no existe. Esto
+  // lo detecta y reinicia el carril solo.
+  useDetectarLargadaDeshecha(onCheckStart, online, () => setLargadaDeshecha(true));
 
   useEffect(() => {
     void init({ laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy });
@@ -186,6 +194,16 @@ export function JudgeScreen({
           {syncError.fatal
             ? "Tus marcajes siguen guardados en este dispositivo; avisa a la organización."
             : "Los marcajes están guardados aquí y se reintentan solos."}
+        </p>
+      )}
+
+      {/* El aviso se apaga solo en cuanto vuelve a haber un ancla (la
+          organización largó de nuevo): no hace falta un efecto que lo limpie
+          a mano, alcanza con condicionar el render a que siga sin ancla. */}
+      {largadaDeshecha && !anchor && (
+        <p className="mx-4 mt-3 rounded-xl border border-amber-500/40 sm:mx-5 bg-amber-500/10 p-3 text-sm text-amber-200">
+          La organización deshizo la largada de este heat — probablemente una salida en falso.
+          Esperando la salida de nuevo.
         </p>
       )}
 

@@ -1,17 +1,16 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatElapsed } from "@/shared/timing/clock";
-import { horaEnEvento } from "@/shared/utils/fecha";
-import { getHeats, getJudges } from "@/features/events/config/queries";
+import { getDivisions, getHeats, getJudges } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import {
   cancelHeatStart,
+  marcarDnf,
   startHeat,
   type FormState,
 } from "@/features/heats/actions";
 import { estaPendienteDeVerificar } from "@/features/verification/lib/estado";
 import { getVerificationQueue } from "@/features/verification/queries";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { TorreDeHeats, type HeatVista } from "@/features/heats/components/TorreDeHeats";
 
 export const dynamic = "force-dynamic";
 
@@ -25,14 +24,16 @@ export default async function ControlPage({
 
   if (!canVerify) redirect(`/panel/eventos/${id}`);
 
-  const [heats, cola, judges] = await Promise.all([
+  const [heats, cola, judges, divisiones] = await Promise.all([
     getHeats(id),
     getVerificationQueue(id),
     getJudges(id),
+    getDivisions(id),
   ]);
 
   const porCarril = new Map(cola.map((c) => [c.laneId, c]));
   const porJuez = new Map(judges.map((j) => [j.userId, j.label]));
+  const nombreDivision = new Map(divisiones.map((d) => [d.id, d.name]));
 
   const sinJuez = heats.flatMap((h) =>
     h.lanes.filter((l) => l.team_id && !l.judge_id),
@@ -50,12 +51,51 @@ export default async function ControlPage({
   // contrario de lo que pasa cuando un atleta acaba de terminar.
   const sinVerificar = cola.filter(estaPendienteDeVerificar).length;
 
-  // Cuantos marcajes llegaron por heat: define si una largada se puede deshacer.
-  const marcajesDelHeat = (heatId: string) =>
-    heats
-      .find((h) => h.id === heatId)
-      ?.lanes.reduce((n, l) => n + (porCarril.get(l.id)?.eventCount ?? 0), 0) ??
-    0;
+  // Un solo arreglo de datos ya resueltos, sin Maps: cruza la frontera hacia
+  // el componente de cliente que arma la lista (filtro por division, reloj en
+  // vivo, DNF). Los Maps se resuelven aca porque no viajan bien a traves de
+  // esa frontera, y porque es el unico lugar que ya tiene RLS de su lado.
+  const heatsVista: HeatVista[] = heats.map((heat) => {
+    const marcajesDelHeat = heat.lanes.reduce(
+      (n, l) => n + (porCarril.get(l.id)?.eventCount ?? 0),
+      0,
+    );
+    const conAtleta = heat.lanes.filter((l) => l.team_id !== null);
+
+    return {
+      id: heat.id,
+      name: heat.name,
+      startedAt: heat.started_at,
+      endedAt: heat.ended_at,
+      startSource: heat.start_source,
+      divisionId: heat.division_id,
+      divisionName: heat.division_id ? (nombreDivision.get(heat.division_id) ?? null) : null,
+      marcajesTotales: marcajesDelHeat,
+      conAtletaCount: conAtleta.length,
+      sinJuezCount: conAtleta.filter((l) => l.judge_id === null).length,
+      lanes: heat.lanes.map((lane) => {
+        const info = porCarril.get(lane.id);
+        const estado = info?.status ?? lane.status;
+        const terminado = estado === "finished" || estado === "dnf" || estado === "dq";
+
+        return {
+          laneId: lane.id,
+          laneNumber: lane.lane_number,
+          bib: lane.bib,
+          athletes: lane.athletes,
+          teamLabel: lane.teamLabel,
+          judgeId: lane.judge_id,
+          judgeName: lane.judge_id ? (porJuez.get(lane.judge_id) ?? "asignado") : null,
+          status: estado,
+          totalMs: info?.totalMs ?? null,
+          eventCount: info?.eventCount ?? 0,
+          puedeMarcarDnf: Boolean(
+            lane.team_id && heat.started_at && !heat.ended_at && !terminado,
+          ),
+        };
+      }),
+    };
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -84,178 +124,15 @@ export default async function ControlPage({
         />
       </section>
 
-      {heats.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-neutral-700 p-6 text-center text-sm text-neutral-500">
-          No hay heats armados todavía.
-        </p>
-      ) : (
-        heats.map((heat) => (
-          <section
-            key={heat.id}
-            className="rounded-2xl border border-neutral-800 p-4 sm:p-5"
-          >
-            {/*
-              En celular el titulo y la accion van apilados, y el boton ocupa el
-              ancho completo. Antes compartian una fila con flex-wrap y el boton
-              quedaba flotando al medio, sin alinearse ni a un lado ni al otro.
-            */}
-            <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h2 className="font-semibold">{heat.name}</h2>
-                <p className="text-sm text-neutral-500">
-                  {/*
-                    En el huso del EVENTO, no en el del servidor. Esta pagina se
-                    renderiza en Vercel (UTC): un heat largado 20:55 en Bogota
-                    salia "1:55" del dia siguiente.
-                  */}
-                  {heat.started_at
-                    ? `Inició ${horaEnEvento(heat.started_at, event.timezone)}`
-                    : "Sin iniciar"}
-                  {heat.start_source === "device_offline" && (
-                    <span className="ml-2 text-amber-400">
-                      salida provisional
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              {!heat.started_at ? (
-                <LargarHeat eventId={id} heat={heat} />
-              ) : (
-                marcajesDelHeat(heat.id) === 0 && (
-                  // Todavia no llego ningun marcaje: se puede deshacer sin
-                  // destruir tiempos de nadie.
-                  <div className="shrink-0">
-                    <FormularioDeEstado
-                      accion={deshacer.bind(null, id, heat.id)}
-                      estadoInicial={{ error: null }}
-                      etiqueta="Deshacer inicio"
-                      mensajeDeCarga="Deshaciendo el inicio del heat…"
-                      className="w-full rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 sm:w-auto"
-                    />
-                  </div>
-                )
-              )}
-            </header>
-
-            {/*
-              Cada carril es una fila de tres columnas fijas: numero, quien
-              corre y su juez, y el estado. Las dos celdas de texto van en dos
-              lineas para no pelear por el ancho, asi la tabla se lee igual en
-              un celular de 360px que en una pantalla grande.
-            */}
-            <ul className="mt-4 divide-y divide-neutral-800">
-              {heat.lanes.map((lane) => {
-                const info = porCarril.get(lane.id);
-                const tieneTiempo =
-                  info?.totalMs !== null && info?.totalMs !== undefined;
-
-                return (
-                  <li key={lane.id} className="flex items-center gap-3 py-3">
-                    <span className="w-6 shrink-0 text-center font-mono text-sm text-neutral-600">
-                      {lane.lane_number}
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      {/*
-                        Quien corre va primero y con el dorsal al lado. Antes
-                        estaba solo el dorsal y debajo el juez, y como el juez a
-                        veces aparece con su email, un numero sobre un email se
-                        leia como si el email fuera del atleta.
-                      */}
-                      <p className="flex items-baseline gap-2">
-                        <span className="font-mono text-sm font-bold tabular-nums text-neutral-300">
-                          {lane.bib !== null ? `#${lane.bib}` : "—"}
-                        </span>
-                        <span className="truncate text-sm font-medium">
-                          {lane.athletes ?? lane.teamLabel ?? (
-                            <span className="text-neutral-600">
-                              carril libre
-                            </span>
-                          )}
-                        </span>
-                      </p>
-                      <p className="truncate text-xs">
-                        {lane.judge_id ? (
-                          <span className="text-neutral-500">
-                            Juez: {porJuez.get(lane.judge_id) ?? "asignado"}
-                          </span>
-                        ) : (
-                          <span className="text-amber-400">sin juez</span>
-                        )}
-                        {lane.athletes && lane.teamLabel && (
-                          <span className="text-neutral-600">
-                            {" "}
-                            · {lane.teamLabel}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="shrink-0 text-right">
-                      <p className="font-mono text-sm tabular-nums">
-                        {tieneTiempo ? (
-                          formatElapsed(info.totalMs!)
-                        ) : (
-                          <EstadoCarril estado={info?.status ?? lane.status} />
-                        )}
-                      </p>
-                      <p className="text-xs text-neutral-600">
-                        {info ? `${info.eventCount} marcajes` : "sin datos"}
-                      </p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))
-      )}
-    </div>
-  );
-}
-
-/**
- * Boton de largada.
- *
- * Se deshabilita hasta que TODOS los carriles con atleta tengan juez. La base lo
- * rechaza igual, pero un boton gris que dice por que es mucho mejor que un
- * click que falla en silencio: es la regla de la competencia, no un capricho de
- * la app. Ningun atleta corre sin alguien que le tome los parciales.
- */
-function LargarHeat({
-  eventId,
-  heat,
-}: {
-  eventId: string;
-  heat: {
-    id: string;
-    lanes: Array<{ team_id: string | null; judge_id: string | null }>;
-  };
-}) {
-  const conAtleta = heat.lanes.filter((l) => l.team_id !== null);
-  const sinJuez = conAtleta.filter((l) => l.judge_id === null).length;
-  const listo = conAtleta.length > 0 && sinJuez === 0;
-
-  return (
-    // En celular ocupa el ancho completo y el texto va alineado a la izquierda,
-    // como el resto de la tarjeta. Recien en pantalla ancha se va a la derecha.
-    <div className="shrink-0 sm:max-w-[17rem] sm:text-right">
-      <FormularioDeEstado
-        accion={largar.bind(null, eventId, heat.id)}
-        estadoInicial={{ error: null }}
-        etiqueta="INICIAR HEAT"
-        mensajeDeCarga="Largando el heat…"
-        disabled={!listo}
-        className="w-full rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2.5"
+      <TorreDeHeats
+        eventId={id}
+        timezone={event.timezone}
+        divisiones={divisiones.map((d) => ({ id: d.id, name: d.name }))}
+        heats={heatsVista}
+        largar={largar}
+        deshacer={deshacer}
+        marcarDnfAccion={marcarDnfAccion}
       />
-      {!listo && (
-        <p className="mt-2 text-xs text-amber-400">
-          {conAtleta.length === 0
-            ? "Este heat no tiene atletas en sus carriles."
-            : `Faltan ${sinJuez} juez/jueces: cada atleta necesita el suyo antes de iniciar.`}
-        </p>
-      )}
     </div>
   );
 }
@@ -295,18 +172,6 @@ function Indicador({
   );
 }
 
-function EstadoCarril({ estado }: { estado: string }) {
-  const copy: Record<string, { texto: string; clase: string }> = {
-    idle: { texto: "esperando", clase: "text-neutral-600" },
-    running: { texto: "en carrera", clase: "text-lime-400" },
-    finished: { texto: "terminó", clase: "text-emerald-400" },
-    dnf: { texto: "DNF", clase: "text-neutral-500" },
-    dq: { texto: "DQ", clase: "text-red-400" },
-  };
-  const c = copy[estado] ?? { texto: estado, clase: "text-neutral-500" };
-  return <span className={`text-xs ${c.clase}`}>{c.texto}</span>;
-}
-
 async function largar(
   eventId: string,
   heatId: string,
@@ -325,4 +190,14 @@ async function deshacer(
 ) {
   "use server";
   return cancelHeatStart(eventId, heatId);
+}
+
+async function marcarDnfAccion(
+  eventId: string,
+  laneId: string,
+  _prev: FormState,
+  _formData: FormData,
+) {
+  "use server";
+  return marcarDnf(eventId, laneId);
 }

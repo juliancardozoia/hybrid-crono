@@ -201,11 +201,16 @@ export interface JudgeOption {
 export async function getJudges(eventId: string): Promise<JudgeOption[]> {
   const supabase = await createClient();
 
+  // Sin aprobar todavia no cuenta: es lo mismo que decide event_staff_role()
+  // para el resto del sistema. Sin este filtro, una postulacion publica sin
+  // revisar aparecia como elegible en el selector de "asignar juez" de un
+  // carril, antes de que la organizacion la hubiera aprobado.
   const { data } = await supabase
     .from("event_staff")
     .select("user_id, role, invited_email")
     .eq("event_id", eventId)
-    .not("user_id", "is", null);
+    .not("user_id", "is", null)
+    .not("approved_at", "is", null);
 
   if (!data) return [];
 

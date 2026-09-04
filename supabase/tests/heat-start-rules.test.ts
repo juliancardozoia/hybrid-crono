@@ -85,6 +85,86 @@ describe("start_heat exige jueces", () => {
   });
 });
 
+describe("start_heat exige que los jueces no esten ocupados en otro heat en curso", () => {
+  it("no larga un segundo heat con un juez que ya esta en el primero", async () => {
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, () => s.db.query("select start_heat($1)", [s.heatId]));
+
+    await asUser(s.db, s.users.owner, async () => {
+      // Un equipo NUEVO: los tres del fixture ya corren en s.heatId, y un
+      // equipo no puede correr dos veces la misma prueba.
+      const equipo2 = await s.db.query<{ id: string }>(
+        "insert into teams (event_id, division_id, bib_number) values ($1, $2, 200) returning id",
+        [s.eventId, s.divisionId],
+      );
+
+      const heat2 = await s.db.query<{ id: string }>(
+        "insert into heats (event_id, name, lane_count) values ($1, 'Heat 2', 1) returning id",
+        [s.eventId],
+      );
+      const lane2 = await s.db.query<{ id: string }>(
+        `insert into lanes (heat_id, event_id, lane_number, team_id)
+         values ($1, $2, 1, $3) returning id`,
+        [heat2.rows[0].id, s.eventId, equipo2.rows[0].id],
+      );
+
+      // El organizador PRE-ASIGNA (no es judgeA autoclamando): es el
+      // escenario real reportado, un juez asignado con anticipacion a dos
+      // heats que terminan solapando.
+      await s.db.query("select transfer_lane($1, $2, null)", [lane2.rows[0].id, s.users.judgeA]);
+
+      const msg = await expectDenied(() =>
+        s.db.query("select start_heat($1)", [heat2.rows[0].id]),
+      );
+      expect(msg).toContain("Ya están en otro heat en curso");
+    });
+  });
+
+  it("larga sin problema si el otro heat ya terminó (ended_at)", async () => {
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query("select start_heat($1)", [s.heatId]);
+      await s.db.query("update heats set ended_at = now() where id = $1", [s.heatId]);
+
+      const equipo2 = await s.db.query<{ id: string }>(
+        "insert into teams (event_id, division_id, bib_number) values ($1, $2, 201) returning id",
+        [s.eventId, s.divisionId],
+      );
+
+      const heat2 = await s.db.query<{ id: string }>(
+        "insert into heats (event_id, name, lane_count) values ($1, 'Heat 2', 1) returning id",
+        [s.eventId],
+      );
+      const lane2 = await s.db.query<{ id: string }>(
+        `insert into lanes (heat_id, event_id, lane_number, team_id)
+         values ($1, $2, 1, $3) returning id`,
+        [heat2.rows[0].id, s.eventId, equipo2.rows[0].id],
+      );
+      await s.db.query("update lanes set judge_id = $1 where id = $2", [
+        s.users.judgeA,
+        lane2.rows[0].id,
+      ]);
+
+      const res = await s.db.query<{ status: string }>("select status from start_heat($1)", [
+        heat2.rows[0].id,
+      ]);
+      expect(res.rows[0].status).toBe("running");
+    });
+  });
+
+  it("cubrir varios carriles del MISMO heat no cuenta como estar ocupado", async () => {
+    // asignarJueces() ya pone al mismo juez en los 3 carriles de s.heatId:
+    // si esto no funcionara, ningun heat de este fixture podria largar.
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ status: string }>("select status from start_heat($1)", [
+        s.heatId,
+      ]);
+      expect(res.rows[0].status).toBe("running");
+    });
+  });
+});
+
 describe("cancel_heat_start", () => {
   it("deshace una largada hecha por error", async () => {
     await asignarJueces();

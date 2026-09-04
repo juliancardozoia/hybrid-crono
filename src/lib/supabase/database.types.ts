@@ -763,6 +763,7 @@ export type Database = {
           arena_id: string | null
           created_at: string
           division_id: string | null
+          ended_at: string | null
           event_id: string
           id: string
           lane_count: number
@@ -779,6 +780,7 @@ export type Database = {
           arena_id?: string | null
           created_at?: string
           division_id?: string | null
+          ended_at?: string | null
           event_id: string
           id?: string
           lane_count?: number
@@ -795,6 +797,7 @@ export type Database = {
           arena_id?: string | null
           created_at?: string
           division_id?: string | null
+          ended_at?: string | null
           event_id?: string
           id?: string
           lane_count?: number
@@ -2517,6 +2520,15 @@ export type Database = {
         Args: { p_heat_id: string; p_team_ids: string[] }
         Returns: undefined
       }
+      auto_distribuir_heats: {
+        Args: { p_event_id: string; p_lanes_por_heat: number }
+        Returns: {
+          division_id: string
+          division_name: string
+          equipos_asignados: number
+          heats_creados: number
+        }[]
+      }
       can_admin_org: { Args: { p_org_id: string }; Returns: boolean }
       can_delete_registrations: {
         Args: { p_event_id: string }
@@ -2533,6 +2545,7 @@ export type Database = {
           arena_id: string | null
           created_at: string
           division_id: string | null
+          ended_at: string | null
           event_id: string
           id: string
           lane_count: number
@@ -3139,6 +3152,7 @@ export type Database = {
           arena_id: string | null
           created_at: string
           division_id: string | null
+          ended_at: string | null
           event_id: string
           id: string
           lane_count: number

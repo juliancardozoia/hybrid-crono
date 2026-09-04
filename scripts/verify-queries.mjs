@@ -43,31 +43,16 @@ const CONSULTAS = [
       athletes (first_name, last_name)
     `,
   },
+  // getJudgeLanes (judge/queries.ts) y fetchLaneBundle (judge/lib/bundle.ts)
+  // ya NO seleccionan de estas tablas directo: pasan por judge_visible_lanes()
+  // y judge_lane_bundle(), dos funciones security definer que arman el nombre
+  // del atleta adentro para que un juez de evento no necesite acceso de tabla
+  // a athletes/teams/divisions (ver "Un juez de EVENTO no ve la competencia"
+  // en CLAUDE.md). No hay embed de PostgREST que verificar ahi: son RPC.
   {
-    donde: "features/judge/queries.ts · getJudgeLanes",
+    donde: "features/heats/actions.ts · marcarDnf",
     tabla: "lanes",
-    select: `
-      id, lane_number, status, judge_id, event_id, team_id,
-      heats (id, name, started_at, events (name, status)),
-      teams (
-        bib_number, name,
-        divisions (name),
-        team_members (athletes (first_name, last_name))
-      )
-    `,
-  },
-  {
-    donde: "features/judge/lib/bundle.ts · fetchLaneBundle",
-    tabla: "lanes",
-    select: `
-      id, event_id, lane_number, start_offset_ms, judge_id, workout_id,
-      heats (id, name, started_at, events (name)),
-      teams (
-        bib_number, name,
-        divisions (id, name, course_template_id),
-        team_members (athletes (first_name, last_name))
-      )
-    `,
+    select: "heats (started_at)",
   },
   {
     donde: "features/events/config/queries.ts · getTeams",
@@ -81,16 +66,11 @@ const CONSULTAS = [
     select:
       "*, lanes (*, teams (bib_number, name, team_members (athletes (first_name, last_name))))",
   },
-  {
-    donde: "features/events/config/queries.ts · getJudges",
-    tabla: "org_members",
-    select: "user_id, role, profiles (full_name, email)",
-  },
-  {
-    donde: "features/org/members.ts · getMiembros",
-    tabla: "org_members",
-    select: "user_id, role, profiles (full_name, email)",
-  },
+  // getJudges (events/config/queries.ts) ya no hace este embed: lee
+  // event_staff (jueces son por EVENTO, no por organizacion) con dos
+  // consultas planas resueltas en JS, sin embed que PostgREST pueda romper.
+  // org/members.ts se elimino junto con la pantalla de miembros de
+  // organizacion -- ver "TODO el acceso es por evento" en CLAUDE.md.
   {
     donde: "features/org/queries.ts · getMyOrganizations",
     tabla: "org_members",
