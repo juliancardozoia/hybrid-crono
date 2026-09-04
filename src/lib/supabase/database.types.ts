@@ -52,6 +52,7 @@ export type Database = {
       athletes: {
         Row: {
           birth_date: string | null
+          box: string | null
           country: string | null
           created_at: string
           document_id: string | null
@@ -64,10 +65,12 @@ export type Database = {
           last_name: string
           phone: string | null
           profile_id: string | null
+          shirt_size: string | null
           state_province: string | null
         }
         Insert: {
           birth_date?: string | null
+          box?: string | null
           country?: string | null
           created_at?: string
           document_id?: string | null
@@ -80,10 +83,12 @@ export type Database = {
           last_name: string
           phone?: string | null
           profile_id?: string | null
+          shirt_size?: string | null
           state_province?: string | null
         }
         Update: {
           birth_date?: string | null
+          box?: string | null
           country?: string | null
           created_at?: string
           document_id?: string | null
@@ -96,6 +101,7 @@ export type Database = {
           last_name?: string
           phone?: string | null
           profile_id?: string | null
+          shirt_size?: string | null
           state_province?: string | null
         }
         Relationships: [
@@ -1598,6 +1604,7 @@ export type Database = {
           accepted_terms_at: string | null
           answers: Json
           birth_date: string | null
+          box: string | null
           country: string | null
           created_at: string
           document_id: string | null
@@ -1620,6 +1627,7 @@ export type Database = {
           accepted_terms_at?: string | null
           answers?: Json
           birth_date?: string | null
+          box?: string | null
           country?: string | null
           created_at?: string
           document_id?: string | null
@@ -1642,6 +1650,7 @@ export type Database = {
           accepted_terms_at?: string | null
           answers?: Json
           birth_date?: string | null
+          box?: string | null
           country?: string | null
           created_at?: string
           document_id?: string | null
@@ -2036,6 +2045,7 @@ export type Database = {
       }
       teams: {
         Row: {
+          approved: boolean
           bib_number: number
           created_at: string
           division_id: string
@@ -2045,6 +2055,7 @@ export type Database = {
           status: Database["public"]["Enums"]["team_status"]
         }
         Insert: {
+          approved?: boolean
           bib_number: number
           created_at?: string
           division_id: string
@@ -2054,6 +2065,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["team_status"]
         }
         Update: {
+          approved?: boolean
           bib_number?: number
           created_at?: string
           division_id?: string
@@ -2446,10 +2458,12 @@ export type Database = {
       admin_create_registration: {
         Args: {
           p_division_id: string
+          p_estado?: string
           p_integrantes: Json
           p_team_name: string
         }
         Returns: {
+          approved: boolean
           bib_number: number
           created_at: string
           division_id: string
@@ -2623,6 +2637,7 @@ export type Database = {
           accepted_terms_at: string | null
           answers: Json
           birth_date: string | null
+          box: string | null
           country: string | null
           created_at: string
           document_id: string | null
@@ -2833,6 +2848,7 @@ export type Database = {
           accepted_terms_at: string | null
           answers: Json
           birth_date: string | null
+          box: string | null
           country: string | null
           created_at: string
           document_id: string | null
@@ -3116,6 +3132,7 @@ export type Database = {
           accepted_terms_at: string | null
           answers: Json
           birth_date: string | null
+          box: string | null
           country: string | null
           created_at: string
           document_id: string | null
@@ -3144,6 +3161,25 @@ export type Database = {
       scoreboard_document: {
         Args: { p_detalle?: boolean; p_event_id: string }
         Returns: Json
+      }
+      set_team_approval: {
+        Args: { p_approved: boolean; p_team_id: string }
+        Returns: {
+          approved: boolean
+          bib_number: number
+          created_at: string
+          division_id: string
+          event_id: string
+          id: string
+          name: string | null
+          status: Database["public"]["Enums"]["team_status"]
+        }
+        SetofOptions: {
+          from: "*"
+          to: "teams"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       shares_org_with: { Args: { p_user_id: string }; Returns: boolean }
       start_heat: {

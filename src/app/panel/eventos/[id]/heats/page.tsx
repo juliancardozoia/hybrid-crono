@@ -28,11 +28,18 @@ export default async function HeatsPage({
     }
   }
 
-  // Un equipo retirado no compite mas: no tiene sentido ofrecerlo para un
-  // carril nuevo. Si ya estaba en uno, ese heat lo sigue mostrando igual —
-  // esto solo achica la lista de "para asignar".
+  // Un equipo retirado no compite mas, y uno sin aprobar todavia no puede
+  // correr (se aprueba desde /atletas): ninguno de los dos tiene sentido
+  // ofrecerlo para un carril nuevo. Si ya estaba en uno, ese heat lo sigue
+  // mostrando igual — esto solo achica la lista de "para asignar". La
+  // garantia real vive en Postgres (`assign_heat_lanes` la exige de nuevo);
+  // esto es solo para no ofrecer una opcion que va a fallar.
+  const sinAprobar = teams.filter(
+    (t) => t.status !== "withdrawn" && !t.approved,
+  ).length;
+
   const opciones: TeamOption[] = teams
-    .filter((t) => t.status !== "withdrawn")
+    .filter((t) => t.status !== "withdrawn" && t.approved)
     .map((t) => ({
       id: t.id,
       label: `#${t.bib_number} · ${
@@ -51,6 +58,11 @@ export default async function HeatsPage({
         Los heats son las tandas de largada. Cada carril lleva un equipo y lo sigue un juez.
         {sinAsignar > 0 && (
           <span className="ml-1 text-amber-400">Quedan {sinAsignar} equipo(s) sin heat.</span>
+        )}
+        {sinAprobar > 0 && (
+          <span className="ml-1 text-amber-400">
+            {sinAprobar} equipo(s) sin aprobar todavía — aprobalos desde Atletas para poder asignarlos.
+          </span>
         )}
       </p>
 

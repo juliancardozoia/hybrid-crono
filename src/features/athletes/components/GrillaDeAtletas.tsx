@@ -38,12 +38,21 @@ export function GrillaDeAtletas({
   divisiones,
   canManage,
   alQuitar,
+  alCambiarAprobacion,
 }: {
   teams: TeamWithMembers[];
   divisiones: Array<{ id: string; name: string }>;
   canManage: boolean;
   alQuitar?: (
     teamId: string,
+    prev: FormState,
+    formData: FormData,
+  ) => Promise<FormState>;
+  /** El toggle de la columna "Estado": aprueba o desaprueba un equipo. Solo
+   *  un equipo aprobado puede asignarse a un heat. */
+  alCambiarAprobacion?: (
+    teamId: string,
+    approved: boolean,
     prev: FormState,
     formData: FormData,
   ) => Promise<FormState>;
@@ -118,12 +127,13 @@ export function GrillaDeAtletas({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-neutral-800">
-          <table className="w-full min-w-[44rem] text-sm">
+          <table className="w-full min-w-[50rem] text-sm">
             <thead>
               <tr className="border-b border-neutral-800 bg-neutral-900/40 text-left text-neutral-500">
                 <th className="px-4 py-3 font-medium">#</th>
                 <th className="px-3 py-3 font-medium">Atleta / Equipo</th>
                 <th className="px-3 py-3 font-medium">Categoría</th>
+                <th className="px-3 py-3 font-medium">Estado</th>
                 <th className="px-3 py-3 font-medium">Correo</th>
                 <th className="px-3 py-3 font-medium">WhatsApp</th>
                 <th className="px-4 py-3" />
@@ -164,6 +174,39 @@ export function GrillaDeAtletas({
                     {t.divisionName}
                   </td>
                   <td className="px-3 py-3">
+                    {canManage && alCambiarAprobacion ? (
+                      <FormularioDeEstado
+                        accion={alCambiarAprobacion.bind(
+                          null,
+                          t.id,
+                          !t.approved,
+                        )}
+                        estadoInicial={{ error: null }}
+                        etiqueta={t.approved ? "Aprobado" : "Pendiente"}
+                        pendienteTexto="…"
+                        mensajeDeCarga={
+                          t.approved ? "Marcando pendiente…" : "Aprobando…"
+                        }
+                        title={
+                          t.approved
+                            ? "Click para marcar pendiente"
+                            : "Click para aprobar — solo un equipo aprobado puede asignarse a un heat"
+                        }
+                        className={
+                          t.approved
+                            ? "rounded-full bg-lime-400/15 px-3 py-1.5 text-xs font-semibold text-lime-400 hover:bg-lime-400/25"
+                            : "rounded-full bg-amber-400/15 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-400/25"
+                        }
+                      />
+                    ) : (
+                      <span
+                        className={`text-xs font-semibold ${t.approved ? "text-lime-400" : "text-amber-400"}`}
+                      >
+                        {t.approved ? "Aprobado" : "Pendiente"}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
                     {t.members.length === 0 ? (
                       <span className="text-neutral-600">—</span>
                     ) : (
@@ -193,9 +236,9 @@ export function GrillaDeAtletas({
                                 target="_blank"
                                 rel="noreferrer noopener"
                                 title={`Escribir por WhatsApp a ${m.first_name}`}
-                                className="rounded-lg p-1.5 text-emerald-500 transition-colors hover:bg-neutral-800 hover:text-emerald-400"
+                                className="rounded-lg p-1 text-emerald-500 transition-colors hover:bg-neutral-800 hover:text-emerald-400"
                               >
-                                <Icono nombre="whatsapp" className="h-3.5 w-3.5" />
+                                <Icono nombre="whatsapp" className="h-5 w-5" grosor={1.6} />
                               </a>
                             ) : (
                               <span className="text-neutral-600">—</span>

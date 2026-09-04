@@ -719,9 +719,34 @@ lugar donde nace un equipo".
 una, sin invitar a nadie por correo— y llama a `confirm_registration()` para materializar el
 equipo. Es la MISMA funcion que usa el portal publico: no hay una segunda copia de esa logica.
 
-- **Queda CONFIRMADA directo, sin pedir pago**, aunque la categoria tenga precio: es la
-  organizacion registrando a alguien que ya esta ahi (cortesia, efectivo en la puerta, un
-  walk-in), no un tramite por el portal. El cobro real sigue pasando por la inscripcion publica.
+- **`p_estado` decide si el equipo queda aprobado o no, pero SIEMPRE se crea.** El primer intento
+  hizo que `'pendiente'` saltara `confirm_registration()` por completo —el equipo no nacia hasta
+  que alguien lo aprobara desde Inscripciones—, y eso rompio la premisa real: un atleta recien
+  cargado desaparecia de `/atletas` en vez de mostrarse ahi. La version que quedo llama a
+  `confirm_registration()` en los DOS casos (el equipo, sus atletas y su dorsal existen de una,
+  sea cual sea el estado) y despues, si `p_estado = 'pendiente'`, hace
+  `update teams set approved = false`. `teams.approved` (default `true`) es una bandera puramente
+  OPERATIVA, separada de `registrations.status` a proposito: "aprobado para competir" no es un paso
+  mas del tramite de inscripcion, es una decision que la organizacion puede tomar y deshacer en
+  cualquier momento sin que eso implique cancelar ni reabrir la inscripcion.
+- **El toggle vive en la propia grilla.** La columna "Estado" de `/atletas` (`GrillaDeAtletas`,
+  boton lima "Aprobado" / ambar "Pendiente") llama a `set_team_approval(team_id, approved)` —
+  permiso `can_register_event`, igual que `admin_create_registration`— y flipea la bandera sin
+  tocar ningun otro dato del equipo ni de la inscripcion.
+- **La garantia "solo un equipo aprobado va a un heat" se exige DOS VECES en Postgres, no una.**
+  `auto_distribuir_heats` suma `and t.approved` al filtro de equipos elegibles (junto al de
+  `status <> 'withdrawn'` que ya tenia). `assign_heat_lanes` —la asignacion MANUAL desde
+  `/heats`— agrega un guard explicito que rechaza cualquier equipo sin aprobar en el arreglo que
+  recibe, con los nombres de los equipos en el mensaje. El selector del cliente
+  (`heats/page.tsx`) ya saca los equipos no aprobados de la lista para que el organizador no
+  llegue a intentarlo, pero esa es comodidad de UI — la garantia real esta en las dos funciones.
+- **`create or replace function` no reemplaza una funcion si cambia la ARIDAD.** Agregarle
+  `p_estado` con default a una funcion que ya tenia 3 parametros dejo DOS funciones con el mismo
+  nombre (3 y 4 argumentos) hasta que una migracion aparte hizo `drop function` de la firma vieja.
+  Sin ese drop, cualquier llamada con 3 argumentos revienta con "is not unique". Vale para
+  cualquier funcion existente a la que se le agregue un parametro nuevo, tenga o no default.
+- **El cobro real sigue pasando por la inscripcion publica.** `approved` no tiene nada que ver con
+  plata: un alta manual nunca genera orden ni cobra, este atado o no.
 - **`created_by` es quien llama la funcion (el organizador), NUNCA el atleta.** Reusar
   `start_registration` tal cual hubiera sido un error real: esa funcion pone al CALLER como
   integrante #1 con su propio correo y `profile_id`, asi que el organizador hubiera quedado
@@ -742,6 +767,16 @@ equipo. Es la MISMA funcion que usa el portal publico: no hay una segunda copia 
 mismo nivel que el nombre o la fecha de nacimiento, no algo que cada competencia define distinto
 —eso ya existe, es `registration_fields`. `confirm_registration()` se redefinio para copiarlos al
 materializar el atleta.
+
+**`box` y `shirt_size` siguen la misma logica, agregados despues.** `shirt_size` ya existia en
+`registration_members` desde la inscripcion publica (`save_member_data` la valida contra
+`events.shirt_sizes`) pero `confirm_registration()` no la copiaba a `athletes` — se pedia y se
+perdia. `box` (el gimnasio del atleta) no existia en ningun lado. Las dos son columnas fijas en
+`athletes` Y `registration_members`, igual que pais/documento/provincia, y el modal de alta manual
+las pide en la seccion de **campos opcionales** — `box` siempre, `shirt_size` solo si
+`events.shirt_sizes` no esta vacio. `admin_create_registration` valida la talla contra esa misma
+lista, igual que `save_member_data`. `box` no se agrego a `GrillaDeAtletas` a proposito: se guarda,
+pero no hay todavia ningun lugar de la app que lo muestre.
 
 **`/atletas` es una GRILLA con buscador y filtro, no una lista con un formulario fijo al pie.**
 `GrillaDeAtletas` filtra del lado del cliente —el padron completo de un evento (cientos de filas,

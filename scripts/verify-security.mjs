@@ -99,6 +99,8 @@ for (const fn of [
   // Jueces con alcance acotado: reemplazan el acceso directo a athletes/teams.
   "puede_leer_evento", "judge_visible_lanes", "judge_lane_bundle",
   "auto_distribuir_heats",
+  // Aprobacion de equipos: toggle "Estado" en /atletas.
+  "set_team_approval",
 ]) {
   const { error } = await anon.rpc(fn, {});
   error ? ok(`${fn} bloqueada`) : mal(`${fn} es INVOCABLE por anon`);

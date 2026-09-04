@@ -10,6 +10,8 @@ const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
 const selector =
   "w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
+const subtitulo =
+  "text-xs font-medium tracking-wide text-neutral-500 uppercase";
 
 // Como se le llama a la subdivision segun el pais. Es cosmetico —el dato se
 // guarda igual en `state_province` sea cual sea la etiqueta— pero "Provincia"
@@ -50,13 +52,20 @@ const inicial: FormState = { error: null };
  * nacimiento, pais y documento. No hay un paso de "invitar y esperar" como en
  * la inscripcion publica — el organizador ya tiene los datos de la persona que
  * tiene en frente, y haria esperar sin necesidad.
+ *
+ * REQUERIDOS PRIMERO, OPCIONALES DESPUES — en cada bloque de integrante, y
+ * tambien en el formulario entero: "Estado de registro" cierra el formulario
+ * porque aplica a la inscripcion completa, no a cada persona.
  */
 export function AltaDeAtleta({
   eventId,
   divisiones,
+  tallas,
 }: {
   eventId: string;
   divisiones: DivisionParaAlta[];
+  /** `events.shirt_sizes`. Vacio = la competencia no entrega remera. */
+  tallas: string[];
 }) {
   const [abierto, setAbierto] = useState(false);
   const [divisionId, setDivisionId] = useState(divisiones[0]?.id ?? "");
@@ -123,9 +132,20 @@ export function AltaDeAtleta({
                 key={`${divisionId}-${i}`}
                 indice={i}
                 soloUno={teamSize === 1}
+                tallas={tallas}
               />
             ))}
           </div>
+
+          <label className="flex flex-col gap-1.5 border-t border-neutral-800 pt-5">
+            <span className="text-sm font-medium">Estado de registro</span>
+            <select name="estado" defaultValue="aprobado" className={selector}>
+              <option value="aprobado">Aprobado</option>
+              <option value="pendiente">
+                Pendiente
+              </option>
+            </select>
+          </label>
 
           {state.error && (
             <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
@@ -150,9 +170,11 @@ export function AltaDeAtleta({
 function BloqueDeIntegrante({
   indice,
   soloUno,
+  tallas,
 }: {
   indice: number;
   soloUno: boolean;
+  tallas: string[];
 }) {
   const [pais, setPais] = useState("");
   const etiquetaSubdivision =
@@ -166,85 +188,125 @@ function BloqueDeIntegrante({
         </p>
       )}
 
-      <div className="flex flex-col gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Nombre</span>
-            <input name={`firstName_${indice}`} required className={campo} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Apellido</span>
-            <input name={`lastName_${indice}`} required className={campo} />
-          </label>
-        </div>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
+          <p className={subtitulo}>Campos requeridos</p>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Email</span>
-            <input
-              name={`email_${indice}`}
-              type="email"
-              required
-              className={campo}
-            />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Fecha de nacimiento</span>
-            <input
-              name={`birthDate_${indice}`}
-              type="date"
-              required
-              className={campo}
-            />
-          </label>
-        </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Nombre</span>
+              <input name={`firstName_${indice}`} required className={campo} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Apellido</span>
+              <input name={`lastName_${indice}`} required className={campo} />
+            </label>
+          </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">País</span>
-            <select
-              name={`country_${indice}`}
-              required
-              defaultValue=""
-              onChange={(e) => setPais(e.target.value)}
-              className={selector}
-            >
-              <option value="" disabled>
-                Elige un país…
-              </option>
-              {PAISES.map((p) => (
-                <option key={p.codigo} value={p.codigo}>
-                  {p.nombre}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Email</span>
+              <input
+                name={`email_${indice}`}
+                type="email"
+                required
+                className={campo}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Fecha de nacimiento</span>
+              <input
+                name={`birthDate_${indice}`}
+                type="date"
+                required
+                className={campo}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">País</span>
+              <select
+                name={`country_${indice}`}
+                required
+                defaultValue=""
+                onChange={(e) => setPais(e.target.value)}
+                className={selector}
+              >
+                <option value="" disabled>
+                  Elige un país…
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Documento (DNI)</span>
-            <input name={`documentId_${indice}`} required className={campo} />
-          </label>
+                {PAISES.map((p) => (
+                  <option key={p.codigo} value={p.codigo}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Documento (DNI)</span>
+              <input name={`documentId_${indice}`} required className={campo} />
+            </label>
+          </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">
-              {etiquetaSubdivision} (opcional)
-            </span>
-            <input name={`stateProvince_${indice}`} className={campo} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Sexo (opcional)</span>
-            <select
-              name={`gender_${indice}`}
-              defaultValue=""
-              className={selector}
-            >
-              <option value="">Sin especificar</option>
-              <option value="male">Masculino</option>
-              <option value="female">Femenino</option>
-              <option value="other">Otro</option>
-            </select>
-          </label>
+        <div className="flex flex-col gap-3">
+          <p className={subtitulo}>Campos opcionales</p>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">{etiquetaSubdivision}</span>
+              <input name={`stateProvince_${indice}`} className={campo} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Sexo</span>
+              <select
+                name={`gender_${indice}`}
+                defaultValue=""
+                className={selector}
+              >
+                <option value="">Sin especificar</option>
+                <option value="male">Masculino</option>
+                <option value="female">Femenino</option>
+                <option value="other">Otro</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Box</span>
+              <input name={`box_${indice}`} className={campo} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Teléfono</span>
+              <input
+                name={`phone_${indice}`}
+                type="tel"
+                placeholder="+57 300 1234567"
+                className={campo}
+              />
+            </label>
+          </div>
+
+          {tallas.length > 0 && (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Talla de ropa</span>
+              <select
+                name={`shirtSize_${indice}`}
+                defaultValue=""
+                className={selector}
+              >
+                <option value="">Sin elegir</option>
+                {tallas.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       </div>
     </div>

@@ -166,11 +166,14 @@ export interface IntegranteManual {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string | null;
   birthDate: string | null;
   gender: AthleteGender | null;
   country: string | null;
   documentId: string | null;
   stateProvince: string | null;
+  box: string | null;
+  shirtSize: string | null;
 }
 
 function traducir(error: { code?: string; message?: string } | null): string {
@@ -204,9 +207,15 @@ function traducir(error: { code?: string; message?: string } | null): string {
  * (`confirm_registration`): un solo lugar donde nace un equipo, sea cual sea
  * la puerta por la que entro.
  *
- * QUEDA CONFIRMADO DIRECTO, sin pedir pago aunque la categoria tenga precio:
- * es la organizacion registrando a alguien que ya esta ahi, no un tramite por
- * el portal.
+ * El organizador elige el ESTADO DE REGISTRO en el modal, pero las dos
+ * opciones materializan el equipo DE UNA — tiene que verse en /atletas desde
+ * el primer momento. "aprobado" (default) deja el equipo listo para
+ * competir. "pendiente" lo crea igual, sin pedir pago aunque la categoria
+ * tenga precio, pero con `teams.approved = false`: no aparece para asignar a
+ * ningun heat hasta que alguien lo apruebe con el toggle de la columna
+ * "Estado" en la grilla (`setTeamApproval`). Es una bandera operativa
+ * (`teams.approved`), separada de `registrations.status` — no es un paso mas
+ * del tramite de inscripcion.
  *
  * La importacion CSV (`confirmImport`, mas abajo) sigue por `import_teams` a
  * proposito: es una carga MASIVA de un padron ya armado, no una persona
@@ -221,16 +230,20 @@ export async function crearRegistroManual(
   const divisionId = String(formData.get("divisionId") ?? "");
   const teamName = String(formData.get("teamName") ?? "").trim() || null;
   const teamSize = Number(formData.get("teamSize") ?? 1);
+  const estado = String(formData.get("estado") ?? "aprobado");
 
   if (!divisionId) return { error: "Elige una categoría." };
   if (!Number.isInteger(teamSize) || teamSize < 1)
     return { error: "Categoría inválida." };
+  if (estado !== "aprobado" && estado !== "pendiente")
+    return { error: "Estado de registro inválido." };
 
   const integrantes: IntegranteManual[] = [];
   for (let i = 0; i < teamSize; i++) {
     const firstName = String(formData.get(`firstName_${i}`) ?? "").trim();
     const lastName = String(formData.get(`lastName_${i}`) ?? "").trim();
     const email = String(formData.get(`email_${i}`) ?? "").trim();
+    const birthDate = String(formData.get(`birthDate_${i}`) ?? "").trim();
     const country = String(formData.get(`country_${i}`) ?? "").trim();
     const documentId = String(formData.get(`documentId_${i}`) ?? "").trim();
 
@@ -238,6 +251,8 @@ export async function crearRegistroManual(
       return { error: `Completa nombre y apellido del integrante ${i + 1}.` };
     }
     if (!email) return { error: `Falta el correo del integrante ${i + 1}.` };
+    if (!birthDate)
+      return { error: `Falta la fecha de nacimiento del integrante ${i + 1}.` };
     if (!country) return { error: `Falta el país del integrante ${i + 1}.` };
     if (!documentId)
       return { error: `Falta el documento del integrante ${i + 1}.` };
@@ -246,13 +261,16 @@ export async function crearRegistroManual(
       firstName,
       lastName,
       email,
-      birthDate: String(formData.get(`birthDate_${i}`) ?? "").trim() || null,
+      phone: String(formData.get(`phone_${i}`) ?? "").trim() || null,
+      birthDate,
       gender: (String(formData.get(`gender_${i}`) ?? "") ||
         null) as AthleteGender | null,
       country,
       documentId,
       stateProvince:
         String(formData.get(`stateProvince_${i}`) ?? "").trim() || null,
+      box: String(formData.get(`box_${i}`) ?? "").trim() || null,
+      shirtSize: String(formData.get(`shirtSize_${i}`) ?? "").trim() || null,
     });
   }
 
@@ -264,6 +282,7 @@ export async function crearRegistroManual(
     // acepta porque el parametro SQL no tiene default.
     p_team_name: teamName ?? "",
     p_integrantes: integrantes as never,
+    p_estado: estado,
   });
 
   if (error) return { error: traducir(error) };
@@ -282,6 +301,30 @@ export async function deleteTeam(
   // Los atletas quedan: pueden estar en otro equipo, y borrarlos en cascada
   // seria destruir datos que el organizador no pidio borrar.
   const { error } = await supabase.from("teams").delete().eq("id", teamId);
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return { error: null };
+}
+
+/**
+ * El toggle "Estado" de la grilla de atletas: aprueba o desaprueba un
+ * equipo sin tocar su inscripcion ni sus datos.
+ *
+ * NO repite el chequeo de permiso del lado de la app — la funcion SQL
+ * (`set_team_approval`, permiso `can_register_event`) es el unico lugar que
+ * decide, igual que el resto de las acciones de inscripcion.
+ */
+export async function setTeamApproval(
+  eventId: string,
+  teamId: string,
+  approved: boolean,
+): Promise<FormState> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_team_approval", {
+    p_team_id: teamId,
+    p_approved: approved,
+  });
   if (error) return { error: traducir(error) };
 
   refrescar(eventId);

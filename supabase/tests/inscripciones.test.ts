@@ -630,11 +630,14 @@ describe("admin_create_registration: el alta manual", () => {
       firstName: "Carla",
       lastName: "Ruiz",
       email: "carla@correo.com",
+      phone: "+57 300 1234567",
       birthDate: "1994-05-01",
       gender: "female",
       country: "CO",
       documentId: "1020304050",
       stateProvince: "Antioquia",
+      box: "CrossFit Andes",
+      shirtSize: "M",
     };
 
     let equipo: { id: string; bib_number: number } | undefined;
@@ -656,8 +659,12 @@ describe("admin_create_registration: el alta manual", () => {
         document_id: string;
         state_province: string;
         email: string;
+        phone: string;
+        box: string;
+        shirt_size: string;
       }>(
-        `select a.first_name, a.country, a.document_id, a.state_province, a.email
+        `select a.first_name, a.country, a.document_id, a.state_province, a.email, a.phone,
+                a.box, a.shirt_size
          from athletes a join team_members tm on tm.athlete_id = a.id
          where tm.team_id = $1`,
         [equipo!.id],
@@ -669,6 +676,9 @@ describe("admin_create_registration: el alta manual", () => {
         document_id: "1020304050",
         state_province: "Antioquia",
         email: "carla@correo.com",
+        phone: "+57 300 1234567",
+        box: "CrossFit Andes",
+        shirt_size: "M",
       });
 
       // Aunque la categoria tiene precio, el alta manual no genera una orden
@@ -725,5 +735,180 @@ describe("admin_create_registration: el alta manual", () => {
         ),
       ),
     );
+  });
+
+  it("con estado 'pendiente' crea el equipo IGUAL (se ve en /atletas), pero sin aprobar", async () => {
+    const integrante = {
+      firstName: "Marta",
+      lastName: "Soto",
+      email: "marta@correo.com",
+      birthDate: "1990-01-01",
+      country: "CO",
+      documentId: "555444333",
+    };
+
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ id: string; approved: boolean }>(
+        "select id, approved from admin_create_registration($1, $2, $3::jsonb, 'pendiente')",
+        [s.divisionId, null, JSON.stringify([integrante])],
+      );
+      expect(res.rows[0].id).toBeTruthy();
+      expect(res.rows[0].approved).toBe(false);
+
+      // El atleta existe de una: "pendiente" no es "sin crear todavia".
+      const atletas = await s.db.query(
+        "select 1 from athletes where document_id = '555444333'",
+      );
+      expect(atletas.rows).toHaveLength(1);
+
+      // Es una bandera de equipo (`teams.approved`), no un paso mas del
+      // tramite: la inscripcion ya quedo 'confirmada', igual que con
+      // 'aprobado'.
+      const registro = await s.db.query<{ status: string; team_id: string | null }>(
+        `select status, team_id from registrations
+         where event_id = $1 and division_id = $2
+         order by created_at desc limit 1`,
+        [s.eventId, s.divisionId],
+      );
+      expect(registro.rows[0].status).toBe("confirmada");
+      expect(registro.rows[0].team_id).toBe(res.rows[0].id);
+    });
+  });
+
+  it("rechaza un estado de registro que no sea 'aprobado' ni 'pendiente'", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await expect(
+        s.db.query(
+          "select admin_create_registration($1, $2, $3::jsonb, 'lo_que_sea')",
+          [
+            s.divisionId,
+            null,
+            JSON.stringify([{ firstName: "X", lastName: "Y", email: "x@correo.com", birthDate: "1990-01-01", country: "CO", documentId: "1" }]),
+          ],
+        ),
+      ).rejects.toThrow(/estado de registro/i);
+    });
+  });
+
+  it("rechaza una talla que la competencia no ofrece", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await expect(
+        s.db.query(
+          "select admin_create_registration($1, $2, $3::jsonb)",
+          [
+            s.divisionId,
+            null,
+            JSON.stringify([{
+              firstName: "X", lastName: "Y", email: "talla@correo.com",
+              birthDate: "1990-01-01", country: "CO", documentId: "2",
+              shirtSize: "XXXL",
+            }]),
+          ],
+        ),
+      ).rejects.toThrow(/talla/i);
+    });
+  });
+});
+
+describe("set_team_approval: el toggle 'Estado' de /atletas", () => {
+  async function crear(estado: "aprobado" | "pendiente", documentId: string) {
+    let teamId = "";
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ id: string }>(
+        `select id from admin_create_registration($1, $2, $3::jsonb, $4)`,
+        [
+          s.divisionId,
+          null,
+          JSON.stringify([{
+            firstName: "T", lastName: documentId, email: `${documentId}@correo.com`,
+            birthDate: "1990-01-01", country: "CO", documentId,
+          }]),
+          estado,
+        ],
+      );
+      teamId = res.rows[0].id;
+    });
+    return teamId;
+  }
+
+  it("aprueba un equipo pendiente", async () => {
+    const teamId = await crear("pendiente", "aprobar-1");
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ approved: boolean }>(
+        "select approved from set_team_approval($1, true)",
+        [teamId],
+      );
+      expect(res.rows[0].approved).toBe(true);
+    });
+  });
+
+  it("tambien puede desaprobar un equipo ya aprobado", async () => {
+    const teamId = await crear("aprobado", "desaprobar-1");
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ approved: boolean }>(
+        "select approved from set_team_approval($1, false)",
+        [teamId],
+      );
+      expect(res.rows[0].approved).toBe(false);
+    });
+  });
+
+  it("un forastero no puede cambiar la aprobacion de un equipo", async () => {
+    const teamId = await crear("pendiente", "forastero-1");
+    await asUser(s.db, s.users.forastero, () =>
+      expectDenied(() =>
+        s.db.query("select set_team_approval($1, true)", [teamId]),
+      ),
+    );
+  });
+
+  it("un equipo pendiente no entra en la distribucion automatica de heats", async () => {
+    const pendienteId = await crear("pendiente", "auto-pendiente-1");
+    const aprobadoId = await crear("aprobado", "auto-aprobado-1");
+
+    await asUser(s.db, s.users.owner, async () => {
+      // auto_distribuir_heats saca su pool de `event_staff`, no de
+      // `org_members`: hace falta invitar explicitamente a alguien, aunque
+      // ya sea juez de la organizacion (mismo patron que
+      // distribucion-automatica.test.ts).
+      await s.db.query(
+        `select invite_event_staff($1, 'juez.a@box.com', 'judge')`,
+        [s.eventId],
+      );
+
+      const res = await s.db.query<{ equipos_asignados: number }>(
+        "select equipos_asignados from auto_distribuir_heats($1, 4) where division_id = $2",
+        [s.eventId, s.divisionId],
+      );
+
+      const asignados = await s.db.query<{ team_id: string }>(
+        `select l.team_id from lanes l join heats h on h.id = l.heat_id
+         where h.event_id = $1 and h.division_id = $2 and l.team_id is not null`,
+        [s.eventId, s.divisionId],
+      );
+      const ids = asignados.rows.map((r) => r.team_id);
+      expect(ids).toContain(aprobadoId);
+      expect(ids).not.toContain(pendienteId);
+      expect(res.rows[0].equipos_asignados).toBe(ids.length);
+    });
+  });
+
+  it("assign_heat_lanes (la asignacion manual) rechaza un equipo sin aprobar", async () => {
+    const pendienteId = await crear("pendiente", "manual-pendiente-1");
+
+    await asUser(s.db, s.users.owner, async () => {
+      const heat = await s.db.query<{ id: string }>(
+        `insert into heats (event_id, division_id, name, lane_count)
+         values ($1, $2, 'Heat manual test', 4) returning id`,
+        [s.eventId, s.divisionId],
+      );
+
+      await expect(
+        s.db.query("select assign_heat_lanes($1, $2::uuid[])", [
+          heat.rows[0].id,
+          [pendienteId],
+        ]),
+      ).rejects.toThrow(/no están aprobados/i);
+    });
   });
 });

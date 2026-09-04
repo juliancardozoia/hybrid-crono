@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { deleteTeam, type FormState } from "@/features/athletes/actions";
+import {
+  deleteTeam,
+  setTeamApproval,
+  type FormState,
+} from "@/features/athletes/actions";
 import { getDivisions, getTeams } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { AltaDeAtleta } from "@/features/athletes/components/AltaDeAtleta";
@@ -13,11 +17,15 @@ import { GrillaDeAtletas } from "@/features/athletes/components/GrillaDeAtletas"
  * divisiones, que ya llega resuelta.
  *
  * EL ALTA MANUAL ENTRA POR EL MISMO CAMINO QUE LA INSCRIPCION PUBLICA —ver
- * `crearRegistroManual` en `features/athletes/actions.ts`— asi que "estado del
- * registro" no hace falta mostrarlo aca: todo lo que aparece en esta grilla
- * viene de `teams`, que por definicion son inscripciones ya CONFIRMADAS. Los
- * tramites a medias (esperando pago, esperando integrantes) se ven en
- * "Inscripciones", que es la pantalla que ya responde esa pregunta.
+ * `crearRegistroManual` en `features/athletes/actions.ts`. El organizador
+ * elige el estado al crear, pero las dos opciones materializan el equipo de
+ * una: TODO atleta que se crea se ve aca desde el primer momento. Lo que
+ * cambia es `teams.approved` — la columna "Estado" de la grilla es el toggle
+ * para aprobarlo o desaprobarlo, y solo un equipo aprobado puede asignarse a
+ * un heat (`auto_distribuir_heats` y `assign_heat_lanes` lo exigen del lado
+ * de Postgres). Los tramites a medias de la inscripcion PUBLICA (esperando
+ * pago, esperando integrantes) siguen viendose en "Inscripciones" — eso no
+ * cambio: `approved` es ortogonal a `registrations.status`.
  */
 export default async function AtletasPage({
   params,
@@ -25,7 +33,7 @@ export default async function AtletasPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { canManage } = await requireEventAccess(id);
+  const { canManage, event } = await requireEventAccess(id);
 
   const [teams, divisions] = await Promise.all([
     getTeams(id),
@@ -35,6 +43,16 @@ export default async function AtletasPage({
   async function quitar(teamId: string, _prev: FormState, _formData: FormData) {
     "use server";
     return deleteTeam(id, teamId);
+  }
+
+  async function cambiarAprobacion(
+    teamId: string,
+    approved: boolean,
+    _prev: FormState,
+    _formData: FormData,
+  ) {
+    "use server";
+    return setTeamApproval(id, teamId, approved);
   }
 
   return (
@@ -70,6 +88,7 @@ export default async function AtletasPage({
                   name: d.name,
                   teamSize: d.team_size,
                 }))}
+                tallas={event.shirt_sizes ?? []}
               />
             )}
           </div>
@@ -87,6 +106,7 @@ export default async function AtletasPage({
         divisiones={divisions.map((d) => ({ id: d.id, name: d.name }))}
         canManage={canManage}
         alQuitar={canManage ? quitar : undefined}
+        alCambiarAprobacion={canManage ? cambiarAprobacion : undefined}
       />
     </div>
   );
