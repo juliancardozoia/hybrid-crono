@@ -42,7 +42,9 @@ export function NuevaPenalizacion({ eventId }: { eventId: string }) {
             <Select
               label="Tipo"
               name="kind"
+              required
               options={[
+                { value: "", label: "Elige un tipo…" },
                 { value: "time_add", label: "Suma tiempo" },
                 { value: "no_rep", label: "Repetición inválida (no suma)" },
                 { value: "dq", label: "Descalifica" },

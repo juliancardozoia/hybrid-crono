@@ -8,6 +8,7 @@ import { MONEDAS } from "@/features/pagos/lib/monedas";
 import { CodigosDeDescuento } from "@/features/pagos/components/CodigosDeDescuento";
 import { pasoAnterior, pasoSiguiente } from "@/features/events/lib/asistente";
 import { useCargaMientras } from "@/shared/components/Carga";
+import { Selector } from "@/shared/components/Selector";
 import type {
   DiscountCodeRow,
   DivisionRegistration,
@@ -16,8 +17,7 @@ import type {
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400";
-const selector =
-  "w-64 appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
+const selector = "w-64 py-2.5 text-sm";
 
 interface ProveedorConfigurado {
   provider: PaymentProvider;
@@ -96,13 +96,13 @@ export function FormularioInscripcionAsistente({
           <h3 className="text-sm font-semibold text-neutral-400 uppercase">
             Moneda de la competencia
           </h3>
-          <select name="currency" defaultValue={moneda} className={selector}>
+          <Selector name="currency" defaultValue={moneda} className={selector}>
             {MONEDAS.map((m) => (
               <option key={m.codigo} value={m.codigo}>
                 {m.codigo} — {m.nombre}
               </option>
             ))}
-          </select>
+          </Selector>
           <p className="text-xs text-neutral-600">
             Aplica a todos los medios de cobro y a todas las categorías.
           </p>

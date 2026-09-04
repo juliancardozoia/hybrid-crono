@@ -27,6 +27,7 @@ const COMPARACION: Array<{ que: string; free: string; pro: string }> = [
 ];
 
 const PASARELAS = [
+  { value: "", label: "Elige una pasarela…" },
   { value: "stripe", label: "Stripe" },
   { value: "mercadopago", label: "Mercado Pago" },
   { value: "paypal", label: "PayPal" },

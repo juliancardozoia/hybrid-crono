@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
+import { Selector } from "@/shared/components/Selector";
 import { getLeaderboard, type Leaderboard, type LeaderboardRow } from "../queries";
 
 /**
@@ -107,17 +108,17 @@ export function LeaderboardLive({
           {data.divisions.length > 1 && (
             <label className="mb-4 flex items-center gap-2 text-sm">
               <span className="text-neutral-500">Categoría</span>
-              <select
+              <Selector
                 value={divisionActiva ?? ""}
                 onChange={(e) => setDivision(e.target.value)}
-                className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm sm:flex-none"
+                className="min-w-0 flex-1 py-2 text-sm sm:flex-none"
               >
                 {data.divisions.map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
                 ))}
-              </select>
+              </Selector>
             </label>
           )}
 

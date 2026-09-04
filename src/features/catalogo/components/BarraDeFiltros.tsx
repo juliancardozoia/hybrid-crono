@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Selector } from "@/shared/components/Selector";
 import { nombreDePais } from "@/shared/utils/paises";
 import type { OpcionesDeFiltro } from "../queries";
 import { crearTraductor } from "@/shared/i18n/diccionario";
@@ -58,8 +59,7 @@ const MESES: ClaveDeTexto[] = [
   "mes.12",
 ];
 
-const selector =
-  "w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400 disabled:opacity-50";
+const selector = "w-full";
 
 function Campo({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
@@ -138,7 +138,7 @@ export function BarraDeFiltros({
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Campo etiqueta={t("filtros.pais")}>
-          <select
+          <Selector
             value={searchParams.get("pais") ?? ""}
             onChange={(e) => aplicar({ pais: e.target.value })}
             className={selector}
@@ -152,11 +152,11 @@ export function BarraDeFiltros({
                 {nombreDePais(p.codigo) || p.codigo} ({p.cantidad})
               </option>
             ))}
-          </select>
+          </Selector>
         </Campo>
 
         <Campo etiqueta={t("filtros.mes")}>
-          <select
+          <Selector
             value={searchParams.get("mes") ?? ""}
             onChange={(e) => aplicar({ mes: e.target.value })}
             className={selector}
@@ -171,11 +171,11 @@ export function BarraDeFiltros({
                 </option>
               );
             })}
-          </select>
+          </Selector>
         </Campo>
 
         <Campo etiqueta={t("filtros.anio")}>
-          <select
+          <Selector
             value={searchParams.get("anio") ?? ""}
             onChange={(e) => aplicar({ anio: e.target.value })}
             className={selector}
@@ -187,11 +187,11 @@ export function BarraDeFiltros({
                 {a.cantidad ? ` (${a.cantidad})` : ""}
               </option>
             ))}
-          </select>
+          </Selector>
         </Campo>
 
         <Campo etiqueta={t("filtros.formato")}>
-          <select
+          <Selector
             value={searchParams.get("formato") ?? ""}
             onChange={(e) => aplicar({ formato: e.target.value })}
             className={selector}
@@ -201,7 +201,7 @@ export function BarraDeFiltros({
                 {t(f.clave)}
               </option>
             ))}
-          </select>
+          </Selector>
         </Campo>
       </div>
 

@@ -2312,6 +2312,119 @@ Cada una de estas costó un bug real. Están documentadas en el código donde ap
   corre todos los índices fuera de rango primero (sumando, no restando: hay un
   `check (order_index >= 0)`) y después asigna los definitivos.
 
+## Los `<select>` son UN componente, no treinta estilos sueltos
+
+`src/shared/components/Selector.tsx` es el único `<select>` de la app. Antes once archivos
+definian su propia constante local `selector` (variando el padding sin ninguna razón), nueve más
+hardcodeaban la clase inline, y uno (`CodigosDeDescuento`) directamente reusaba la clase de un
+`<input>` de texto — ese select se veía idéntico a un campo de texto, sin ninguna señal de que era
+desplegable. La mitad de la app además usaba `appearance-none` sin agregar una flecha de
+reemplazo, así que perdía la del navegador y no quedaba ninguna.
+
+- **La flecha es el icono `flecha` (una `>`) rotado 90°**, no un icono nuevo — mismo criterio que
+  el resto de `Icono.tsx`: reusar los pocos trazos que ya existen.
+- **`className` se aplica a los DOS elementos: el `<div>` que envuelve (por el icono, que necesita
+  `position: relative`) y el `<select>` de adentro.** El select vive DENTRO del div, así que un
+  `flex-1`/`w-64`/`w-20` pasado por `className` tiene que llegarle al div —el que en verdad ocupa
+  un lugar en el `flex`/`grid` del llamador— o nunca estira nada; el select ya tiene `w-full` fijo
+  en la base, así que siempre llena a su contenedor. Las clases de texto/padding (`py-3`,
+  `text-sm`) que también viajan ahí no le hacen nada visible a un div vacío, así que aplicarlas dos
+  veces es inofensivo.
+- **`src/shared/components/SimpleForm.tsx`'s `Select`** (el que usan `NuevoHeat`, `NuevaDivision`,
+  `NuevaPenalizacion`, `NuevoCircuito`, el selector de pasarela y el de tipo de segmento) ahora
+  renderiza `Selector` por dentro — mismo look, sin tocar ninguno de esos call sites.
+
+### Un `<select>` obligatorio no puede arrancar con la primera opción ya elegida
+
+Bug real, reportado dos veces: "Crear atleta" arrancaba con la primera categoría ya seleccionada
+(`useState(divisiones[0]?.id ?? "")`) y "Formato" del evento arrancaba en "Carrera híbrida"
+(`defaultValue={evento?.format ?? "carrera_hibrida"}`) — las dos veces sin que el organizador
+tocara nada. Con una lista de opciones donde NINGUNA es neutral (elegir mal la categoría inscribe
+al atleta en la equivocada; elegir mal el formato define qué motor de puntuación corre toda la
+competencia), un `<select>` sin placeholder hace exactamente eso: "elige" por la persona.
+
+Se auditaron los ~55 `<select>` de la app. La regla que separa un bug de un default legítimo:
+
+- **Sin placeholder, obligatorio, sin opción neutral real** → bug. Corregidos: categoría en
+  `AltaDeAtleta`, formato del evento en `FichaDelEvento` (el placeholder solo aparece al CREAR —
+  `!evento` — nunca al editar uno que ya tiene formato real), pasarela de cobro en
+  `/organizacion/plan`, tipo de segmento en `/circuito`, tipo de penalización en
+  `NuevaPenalizacion`. Los cuatro últimos ya validaban el campo vacío del lado del servidor (o se
+  les agregó la validación en el mismo cambio) — el bug era pura UI.
+- **Con una opción neutral real** (`"Sin especificar"`, `"Todas las categorías"`, `"Ninguno"`,
+  `"La del evento"`) → no es un bug, es un default explícito y documentado. No se tocó.
+- **Ligado a un preset elegido a mano un paso antes** (los campos de `NuevaPrueba` cambian con los
+  botones de preset de arriba) → tampoco es el bug: el usuario ya decidió, el select solo refleja
+  esa decisión.
+- **`FichaDelEvento`'s `format` es el único caso donde el placeholder depende de si el evento ya
+  existe.** Al editar, `evento.format` siempre tiene un valor real (se exigió al crear), así que
+  ofrecer el placeholder ahí solo agregaría una opción que nunca hace falta.
+- `src/features/events/actions.ts`: el fallback silencioso `texto(formData, "format") ??
+  "carrera_hibrida"` se sacó por la misma razón — sin él, un envío sin formato quedaba indefinido
+  en vez de rechazado, y `validar()` ahora exige `campos.format` antes de llegar a la base.
+
+## El toast de error no reaparecía si el mismo mensaje se repetía
+
+`useToastDeEstado` (`Notificaciones.tsx`) mostraba un error correctamente la primera vez, pero si
+la MISMA acción fallaba de nuevo con el mismo texto, el segundo toast no aparecía — había que
+refrescar la página para volver a verlo. La causa: el efecto dependía de `estado.error` (el
+STRING), y React compara las dependencias de un efecto por valor con `Object.is` — un segundo
+error idéntico al primero no cambia ese valor, así que el efecto directamente no vuelve a correr
+(ni siquiera llega a evaluar el guard interno pensado para deduplicar).
+
+El fix depende del OBJETO `estado`, no de `estado.error`: `useActionState` devuelve una referencia
+nueva en cada submit, se repita o no el texto, así que comparar `estado !== anterior.current`
+dispara el efecto en cada intento real. Mismo bug, copiado a mano con `useRef` para el toast de
+éxito de `DistribuirHeats.tsx` (`state.resumen`) — mismo fix ahí también.
+
+**Si agregás un patrón "avisar cuando cambia un campo de un `FormState`", andá por acá.** El
+sistema base (`useNotificaciones()`, un array de toasts con `id: crypto.randomUUID()`) nunca tuvo
+este bug — es específico de "efecto que reacciona al VALOR de un campo devuelto por
+`useActionState`", no del sistema de notificaciones en sí.
+
+## "Deshacer Inicio" pide confirmación, y limpia `ended_at` por las dudas
+
+Dos ajustes a `cancel_heat_start` y su botón en `TorreDeHeats.tsx` (la pantalla de Control):
+
+- **El botón abre un `Modal` de confirmación antes de ejecutar** — mismo patrón que "Eliminar
+  categoría" en `ParametrosDeCategoria.tsx`. Antes disparaba la acción directo al click, sin nada
+  de por medio; un click accidental reiniciaba el heat sin aviso. Sigue sin poder usarse si ya hay
+  marcajes (`heat.marcajesTotales === 0` en el llamador, `v_marcajes = 0` en la función), así que
+  la confirmación es sobre "¿de verdad querés reiniciar el heat?", no sobre perder tiempos.
+- **`cancel_heat_start` ahora pone `ended_at = null` explícitamente.** No había ningún caso real en
+  que esto importara —`ended_at` solo se llena cuando TODOS los carriles con atleta llegan a un
+  estado terminal, y eso siempre implica al menos un `timing_event`, que es justo lo que la función
+  exige en cero para dejar deshacer— pero es un acoplamiento frágil, no una garantía explícita.
+  Se agregó como defensa: si el día de mañana un estado terminal deja de depender de un
+  `timing_event`, deshacer el inicio no puede dejar pegada una fecha de cierre en un heat que
+  volvió a "sin iniciar". Después de deshacer, `start_heat()` puede volver a correr sin ningún
+  residuo: no lee `ended_at` del heat que arranca, solo de OTROS heats del mismo juez.
+
+## Un heat cerrado tiene que seguir mostrando cuándo arrancó
+
+`TarjetaDeHeat` (`TorreDeHeats.tsx`) tenía un `if/else if` de tres ramas mutuamente excluyentes
+para la fecha: sin iniciar / iniciado (con el reloj en vivo) / finalizado. La rama de "finalizado"
+mostraba SOLO la hora de cierre, y la de inicio desaparecía de la pantalla en cuanto el heat
+cerraba — aunque el dato siguiera en `heat.startedAt`. Ahora esa rama muestra las dos: "Inició
+14:32 · Finalizó 14:58".
+
+## Un error que no reconoce el traductor no puede tirarse a la basura
+
+`src/features/events/config/actions.ts`'s `traducir()` terminaba en `return "No se pudo
+guardar.";` a secas — cualquier error de Postgres que no fuera 23505/23503/23514/42501 salía como
+ese string fijo, **descartando `error.message` por completo**. Es lo que pasó al intentar "Marcar
+como lista" con otra competencia ya activa en el plan gratuito: el trigger `events_limitar_activos`
+rechaza el cambio con un mensaje perfectamente legible ("El plan gratuito corre una competencia a
+la vez, y 'X' todavía está activa", código `PL001`), y esta función lo tiraba antes de que llegara
+a la pantalla. Confirmado contra la base real: la organización de "HYROX SESSION #02" está en plan
+gratuito y ya tenía otra competencia (`SESSION 2`) en `live`.
+
+Mismo fix que ya usa `workouts/actions.ts`: `esLimiteDePlan(error)` primero (devuelve el mensaje
+del servidor tal cual, escrito para el organizador), y el fallback final pasa a `error.message ??
+"No se pudo guardar."` en vez de descartarlo. **Si un `traducir()` propio termina en un string fijo
+sin mirar `error.message`, tiene este mismo bug** — es la única forma de perder un mensaje que
+Postgres sí mandó bien.
+
 ## Convenciones
 
 - Todo el código, comentarios y UI en **español** (sin tildes en comentarios de código, por

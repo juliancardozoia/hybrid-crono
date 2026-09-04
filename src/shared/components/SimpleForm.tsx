@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { BotonDeEnvio } from "./BotonDeEnvio";
+import { Selector } from "./Selector";
 
 export interface SimpleFormState {
   error: string | null;
@@ -103,18 +104,18 @@ export function Select({
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
-      <select
+      <Selector
         name={name}
         defaultValue={defaultValue}
         required={required}
-        className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-lime-400"
+        className="w-full py-3"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </select>
+      </Selector>
     </label>
   );
 }

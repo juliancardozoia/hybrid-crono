@@ -5,6 +5,7 @@ import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
+import { Selector } from "@/shared/components/Selector";
 import type { TeamWithMembers } from "@/features/events/config/queries";
 import type { FormState } from "@/features/athletes/actions";
 
@@ -102,10 +103,10 @@ export function GrillaDeAtletas({
           className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
         />
         {divisiones.length > 1 && (
-          <select
+          <Selector
             value={divisionId}
             onChange={(e) => setDivisionId(e.target.value)}
-            className="w-auto appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400"
+            className="w-auto py-2 text-sm"
           >
             <option value="">Todas las categorías</option>
             {divisiones.map((d) => (
@@ -113,7 +114,7 @@ export function GrillaDeAtletas({
                 {d.name}
               </option>
             ))}
-          </select>
+          </Selector>
         )}
       </div>
 

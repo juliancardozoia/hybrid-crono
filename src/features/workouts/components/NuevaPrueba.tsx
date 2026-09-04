@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { crearPrueba, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 import type { ScoreDirDb, ScoreUnitDb, TimeScheme } from "@/lib/supabase/types";
 
 /**
@@ -99,8 +100,7 @@ const UNIDADES: Array<{ value: ScoreUnitDb; label: string }> = [
 
 const campo =
   "rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400";
-const selector =
-  "rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-lime-400";
+const selector = "w-full py-3";
 
 export function NuevaPrueba({ eventId }: { eventId: string }) {
   const [state, formAction] = useActionState(crearPrueba, {
@@ -158,7 +158,7 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Formato</span>
-            <select
+            <Selector
               name="timeScheme"
               defaultValue={preset.timeScheme}
               className={selector}
@@ -168,12 +168,12 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Qué mide</span>
-            <select
+            <Selector
               name="scoreUnit"
               defaultValue={preset.scoreUnit}
               className={selector}
@@ -183,26 +183,26 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Quién gana</span>
-            <select
+            <Selector
               name="scoreDir"
               defaultValue={preset.scoreDir}
               className={selector}
             >
               <option value="menor_gana">El menor valor</option>
               <option value="mayor_gana">El mayor valor</option>
-            </select>
+            </Selector>
           </label>
 
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Formato de equipo</span>
-            <select
+            <Selector
               name="teamMode"
               defaultValue="individual"
               className={selector}
@@ -214,7 +214,7 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
               </option>
               <option value="relevo">Relevo</option>
               <option value="reparto_libre">Reparto libre</option>
-            </select>
+            </Selector>
           </label>
         </div>
 

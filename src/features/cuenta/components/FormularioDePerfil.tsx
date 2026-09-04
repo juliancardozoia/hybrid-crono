@@ -4,14 +4,14 @@ import { useActionState } from "react";
 import { guardarPerfil, type FormState } from "../actions";
 import { PAISES } from "@/shared/utils/paises";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 import type { Perfil } from "../queries";
 
 const initial: FormState = { error: null, message: null };
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none transition-colors focus:border-lime-400";
-const selector =
-  "w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none transition-colors focus:border-lime-400";
+const selector = "w-full py-3";
 
 /**
  * Los datos del competidor.
@@ -61,7 +61,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Prefijo</span>
-          <select
+          <Selector
             name="phoneCountry"
             defaultValue={perfil.phoneCountry ?? ""}
             className={selector}
@@ -72,7 +72,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
                 {p.prefijo} {p.nombre}
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
 
         <label className="flex flex-col gap-1.5">
@@ -101,7 +101,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">País</span>
-          <select
+          <Selector
             name="country"
             defaultValue={perfil.country ?? ""}
             className={selector}
@@ -112,7 +112,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
                 {p.nombre}
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
 
         <label className="flex flex-col gap-1.5">

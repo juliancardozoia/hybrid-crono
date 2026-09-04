@@ -36,7 +36,11 @@ function camposDeLaFicha(formData: FormData) {
     name: String(formData.get("name") ?? "").trim(),
     description: texto(formData, "description"),
     event_type: (texto(formData, "eventType") ?? "presencial") as EventType,
-    format: (texto(formData, "format") ?? "carrera_hibrida") as EventFormat,
+    // Sin fallback silencioso a proposito: el formato decide si la
+    // competencia corre un circuito o pruebas de CrossFit, y elegirlo sin
+    // que el organizador se de cuenta es justo el bug que esto evita. La
+    // validacion de que no venga vacio esta en `validar()`.
+    format: (texto(formData, "format") ?? "") as EventFormat,
     timezone,
     country: texto(formData, "country"),
     state: texto(formData, "state"),
@@ -62,6 +66,7 @@ function camposDeLaFicha(formData: FormData) {
 /** Lo que el organizador puede provocar y conviene explicarle. */
 function validar(campos: ReturnType<typeof camposDeLaFicha>, formData: FormData): string | null {
   if (campos.name.length < 3) return "El nombre tiene que tener al menos 3 caracteres.";
+  if (!campos.format) return "Elige el formato de la competencia.";
 
   for (const [campo, etiqueta] of [
     ["startsAt", "de inicio"],

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Selector } from "@/shared/components/Selector";
+import { Modal } from "@/shared/components/Modal";
 import { RelojDeHeat } from "./RelojDeHeat";
 
 export interface CarrilVista {
@@ -95,10 +97,10 @@ export function TorreDeHeats({
       {divisionesConHeat.length > 1 && (
         <label className="flex items-center gap-2 self-start text-sm">
           <span className="text-neutral-500">Categoría</span>
-          <select
+          <Selector
             value={divisionId}
             onChange={(e) => setDivisionId(e.target.value)}
-            className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+            className="py-2 text-sm"
           >
             <option value="">Todas</option>
             {divisionesConHeat.map((d) => (
@@ -106,7 +108,7 @@ export function TorreDeHeats({
                 {d.name}
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
       )}
 
@@ -169,7 +171,13 @@ function TarjetaDeHeat({
             {!heat.startedAt ? (
               "Sin iniciar"
             ) : heat.endedAt ? (
-              <>Finalizó {horaEnEvento(heat.endedAt, timezone)}</>
+              // Se conservan LAS DOS fechas: antes esta rama solo mostraba
+              // "Finalizó", y la hora de inicio desaparecia de la pantalla
+              // en cuanto el heat cerraba, aunque el dato siguiera ahi.
+              <>
+                Inició {horaEnEvento(heat.startedAt, timezone)} · Finalizó{" "}
+                {horaEnEvento(heat.endedAt, timezone)}
+              </>
             ) : (
               <>
                 Inició {horaEnEvento(heat.startedAt, timezone)} ·{" "}
@@ -189,13 +197,7 @@ function TarjetaDeHeat({
             // Todavia no llego ningun marcaje: se puede deshacer sin
             // destruir tiempos de nadie.
             <div className="shrink-0">
-              <FormularioDeEstado
-                accion={deshacer.bind(null, eventId, heat.id)}
-                estadoInicial={{ error: null }}
-                etiqueta="Deshacer inicio"
-                mensajeDeCarga="Deshaciendo el inicio del heat…"
-                className="w-full rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 sm:w-auto"
-              />
+              <DeshacerInicio eventId={eventId} heat={heat} deshacer={deshacer} />
             </div>
           )
         )}
@@ -284,6 +286,72 @@ function TarjetaDeHeat({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * "Deshacer Inicio", con confirmacion.
+ *
+ * ANTES DISPARABA LA ACCION DIRECTO AL CLICK, sin nada de por medio — a
+ * diferencia de otros botones destructivos de la app (ver "Eliminar
+ * categoría" en `ParametrosDeCategoria.tsx`), que siempre piden confirmar en
+ * un segundo paso. Un click accidental reiniciaba el heat sin aviso.
+ *
+ * Solo aparece cuando `heat.marcajesTotales === 0` (ver el llamador), asi que
+ * deshacer nunca destruye un tiempo ya tomado — el riesgo real es reiniciar
+ * un heat que en realidad SI arranco, no perder datos.
+ */
+function DeshacerInicio({
+  eventId,
+  heat,
+  deshacer,
+}: {
+  eventId: string;
+  heat: HeatVista;
+  deshacer: AccionHeat;
+}) {
+  const [confirmar, setConfirmar] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmar(true)}
+        className="w-full rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 sm:w-auto"
+      >
+        Deshacer Inicio
+      </button>
+
+      <Modal
+        abierto={confirmar}
+        alCerrar={() => setConfirmar(false)}
+        titulo="Deshacer inicio"
+        ancho="max-w-sm"
+      >
+        <div className="text-left">
+          <p className="text-sm text-neutral-300">
+            ¿Deshacer el inicio de <span className="font-medium">{heat.name}</span>? El heat vuelve
+            a quedar sin iniciar y se puede largar de nuevo cuando corresponda.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmar(false)}
+              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
+            >
+              Cancelar
+            </button>
+            <FormularioDeEstado
+              accion={deshacer.bind(null, eventId, heat.id)}
+              estadoInicial={{ error: null }}
+              etiqueta="Deshacer Inicio"
+              mensajeDeCarga="Deshaciendo el inicio del heat…"
+              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+            />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

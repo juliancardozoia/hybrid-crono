@@ -5,6 +5,7 @@ import { HeatCard, type TeamOption } from "./HeatCard";
 import { NuevoHeat } from "./NuevoHeat";
 import { DistribuirHeats } from "./DistribuirHeats";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Selector } from "@/shared/components/Selector";
 import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
 
 interface FormState {
@@ -92,10 +93,10 @@ export function PantallaDeHeats({
         {divisionesConHeat.length > 1 ? (
           <label className="flex items-center gap-2 text-sm">
             <span className="text-neutral-500">Categoría</span>
-            <select
+            <Selector
               value={divisionId}
               onChange={(e) => setDivisionId(e.target.value)}
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+              className="py-2 text-sm"
             >
               <option value="">Todas</option>
               {divisionesConHeat.map((d) => (
@@ -103,7 +104,7 @@ export function PantallaDeHeats({
                   {d.name}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
         ) : (
           <span />

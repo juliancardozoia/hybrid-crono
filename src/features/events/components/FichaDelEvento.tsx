@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { ImagenDelEvento } from "./ImagenDelEvento";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 import { PAISES, husoSugerido } from "@/shared/utils/paises";
 import { paraInputLocal } from "@/shared/utils/fecha";
 import type { EventRow } from "@/lib/supabase/types";
@@ -23,8 +24,7 @@ import { TALLAS } from "../lib/tallas";
 
 const campo =
   "rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400";
-const selector =
-  "rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-lime-400";
+const selector = "w-full py-3";
 
 function Etiqueta({
   children,
@@ -134,25 +134,31 @@ export function FichaDelEvento({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Etiqueta texto="Formato">
-            <select
+            <Selector
               name="format"
-              defaultValue={evento?.format ?? "carrera_hibrida"}
+              required
+              defaultValue={evento?.format ?? ""}
               className={selector}
             >
+              {!evento && (
+                <option value="" disabled>
+                  Elige un formato…
+                </option>
+              )}
               <option value="carrera_hibrida">Carrera híbrida (HYROX)</option>
               <option value="crossfit">CrossFit</option>
-            </select>
+            </Selector>
           </Etiqueta>
 
           <Etiqueta texto="Modalidad">
-            <select
+            <Selector
               name="eventType"
               defaultValue={evento?.event_type ?? "presencial"}
               className={selector}
             >
               <option value="presencial">Presencial</option>
               <option value="virtual">Virtual</option>
-            </select>
+            </Selector>
           </Etiqueta>
         </div>
 
@@ -222,7 +228,7 @@ export function FichaDelEvento({
           texto="Huso horario"
           ayuda="Todas las horas del evento se muestran en este huso, sin importar dónde esté quien mira."
         >
-          <select
+          <Selector
             value={huso}
             onChange={(e) => setHuso(e.target.value)}
             className={selector}
@@ -234,14 +240,14 @@ export function FichaDelEvento({
                 {z}
               </option>
             ))}
-          </select>
+          </Selector>
         </Etiqueta>
       </Seccion>
 
       <Seccion titulo="Dónde">
         <div className="grid gap-4 sm:grid-cols-2">
           <Etiqueta texto="País">
-            <select
+            <Selector
               name="country"
               value={pais}
               onChange={(e) => {
@@ -258,7 +264,7 @@ export function FichaDelEvento({
                   {p.nombre}
                 </option>
               ))}
-            </select>
+            </Selector>
           </Etiqueta>
           <Etiqueta texto="Departamento o provincia">
             <input

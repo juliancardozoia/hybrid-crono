@@ -4,12 +4,12 @@ import { useActionState, useState } from "react";
 import { crearRegistroManual, type FormState } from "../actions";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
+import { Selector } from "@/shared/components/Selector";
 import { PAISES } from "@/shared/utils/paises";
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
-const selector =
-  "w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
+const selector = "w-full py-2.5 text-sm";
 const subtitulo =
   "text-xs font-medium tracking-wide text-neutral-500 uppercase";
 
@@ -68,7 +68,7 @@ export function AltaDeAtleta({
   tallas: string[];
 }) {
   const [abierto, setAbierto] = useState(false);
-  const [divisionId, setDivisionId] = useState(divisiones[0]?.id ?? "");
+  const [divisionId, setDivisionId] = useState("");
   const [state, formAction, pending] = useActionState(
     crearRegistroManual,
     inicial,
@@ -102,18 +102,22 @@ export function AltaDeAtleta({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">Categoría</span>
-              <select
+              <Selector
                 name="divisionId"
+                required
                 value={divisionId}
                 onChange={(e) => setDivisionId(e.target.value)}
                 className={selector}
               >
+                <option value="" disabled>
+                  Elige una categoría…
+                </option>
                 {divisiones.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </Selector>
             </label>
 
             {teamSize > 1 && (
@@ -139,12 +143,10 @@ export function AltaDeAtleta({
 
           <label className="flex flex-col gap-1.5 border-t border-neutral-800 pt-5">
             <span className="text-sm font-medium">Estado de registro</span>
-            <select name="estado" defaultValue="aprobado" className={selector}>
+            <Selector name="estado" defaultValue="aprobado" className={selector}>
               <option value="aprobado">Aprobado</option>
-              <option value="pendiente">
-                Pendiente
-              </option>
-            </select>
+              <option value="pendiente">Pendiente</option>
+            </Selector>
           </label>
 
           {state.error && (
@@ -227,7 +229,7 @@ function BloqueDeIntegrante({
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">País</span>
-              <select
+              <Selector
                 name={`country_${indice}`}
                 required
                 defaultValue=""
@@ -242,7 +244,7 @@ function BloqueDeIntegrante({
                     {p.nombre}
                   </option>
                 ))}
-              </select>
+              </Selector>
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">Documento (DNI)</span>
@@ -261,7 +263,7 @@ function BloqueDeIntegrante({
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">Sexo</span>
-              <select
+              <Selector
                 name={`gender_${indice}`}
                 defaultValue=""
                 className={selector}
@@ -270,7 +272,7 @@ function BloqueDeIntegrante({
                 <option value="male">Masculino</option>
                 <option value="female">Femenino</option>
                 <option value="other">Otro</option>
-              </select>
+              </Selector>
             </label>
           </div>
 
@@ -293,7 +295,7 @@ function BloqueDeIntegrante({
           {tallas.length > 0 && (
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">Talla de ropa</span>
-              <select
+              <Selector
                 name={`shirtSize_${indice}`}
                 defaultValue=""
                 className={selector}
@@ -304,7 +306,7 @@ function BloqueDeIntegrante({
                     {t}
                   </option>
                 ))}
-              </select>
+              </Selector>
             </label>
           )}
         </div>

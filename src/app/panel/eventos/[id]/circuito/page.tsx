@@ -166,7 +166,9 @@ export default async function CircuitoPage({
                       <Select
                         label="Tipo"
                         name="kind"
+                        required
                         options={[
+                          { value: "", label: "Elige un tipo…" },
                           { value: "station", label: "Estación" },
                           { value: "run", label: "Corrida" },
                           { value: "transition", label: "Transición" },

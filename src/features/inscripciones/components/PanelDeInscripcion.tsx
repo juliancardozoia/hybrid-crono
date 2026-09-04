@@ -18,6 +18,7 @@ import type { PagoDeInscripcion } from "@/features/pagos/queries";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
+import { Selector } from "@/shared/components/Selector";
 
 /**
  * El panel del trámite: quién falta, qué falta y el botón de enviar.
@@ -50,8 +51,7 @@ const ESTADO: Record<
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400";
-const selector =
-  "w-full rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-lime-400";
+const selector = "w-full py-3";
 
 export function PanelDeInscripcion({
   registro,
@@ -356,7 +356,7 @@ function MisDatos({
         </label>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Sexo</span>
-          <select
+          <Selector
             name="gender"
             defaultValue={miembro.gender ?? ""}
             className={selector}
@@ -365,7 +365,7 @@ function MisDatos({
             <option value="male">Masculino</option>
             <option value="female">Femenino</option>
             <option value="other">Otro</option>
-          </select>
+          </Selector>
         </label>
       </div>
 
@@ -383,7 +383,7 @@ function MisDatos({
         {tallas.length > 0 && (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Talla de remera</span>
-            <select
+            <Selector
               name="shirtSize"
               defaultValue={miembro.shirt_size ?? ""}
               className={selector}
@@ -394,7 +394,7 @@ function MisDatos({
                   {t}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
         )}
       </div>
@@ -403,7 +403,7 @@ function MisDatos({
         <label key={c.key} className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{c.label}</span>
           {c.type === "seleccion" ? (
-            <select
+            <Selector
               name={`campo-${c.key}`}
               required={c.required}
               defaultValue={respuestas[c.key] ?? ""}
@@ -415,7 +415,7 @@ function MisDatos({
                   {o}
                 </option>
               ))}
-            </select>
+            </Selector>
           ) : (
             <input
               name={`campo-${c.key}`}

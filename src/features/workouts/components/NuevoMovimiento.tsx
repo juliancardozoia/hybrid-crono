@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { agregarMovimiento, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 
 /**
  * Alta de un movimiento dentro de un bloque.
@@ -30,8 +31,7 @@ const CATEGORIA: Record<string, string> = {
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400";
-const selector =
-  "w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400";
+const selector = "w-full py-2 text-sm";
 
 export function NuevoMovimiento({
   eventId,
@@ -70,7 +70,7 @@ export function NuevoMovimiento({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-neutral-400">Movimiento</span>
-          <select
+          <Selector
             name="movementId"
             value={movementId}
             onChange={(e) => {
@@ -96,7 +96,7 @@ export function NuevoMovimiento({
             {/* El escape para lo que el catalogo no tiene. La plataforma ve
                 estos nombres para promoverlos despues. */}
             <option value="otro">Otro (escribirlo)</option>
-          </select>
+          </Selector>
         </label>
 
         {esOtro ? (
@@ -113,7 +113,7 @@ export function NuevoMovimiento({
         ) : (
           <label className="flex flex-col gap-1">
             <span className="text-xs text-neutral-400">Unidad</span>
-            <select
+            <Selector
               name="unit"
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
@@ -124,7 +124,7 @@ export function NuevoMovimiento({
               <option value="calorias">Calorías</option>
               <option value="segundos">Segundos</option>
               <option value="kg">Kilos</option>
-            </select>
+            </Selector>
           </label>
         )}
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Selector } from "@/shared/components/Selector";
 import type { Inscritos } from "../queries";
 
 /**
@@ -55,17 +56,17 @@ export function ListaDeLargada({ datos }: { datos: Inscritos }) {
           <span className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
             Categoría
           </span>
-          <select
+          <Selector
             value={division.nombre}
             onChange={(e) => setElegida(e.target.value)}
-            className="w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none transition-colors focus:border-lime-400"
+            className="w-full py-3"
           >
             {conEquipos.map((d) => (
               <option key={d.nombre} value={d.nombre}>
                 {d.nombre} ({d.equipos.length})
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
       )}
 

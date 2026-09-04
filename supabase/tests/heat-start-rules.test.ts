@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { asUser, expectDenied } from "./harness";
+import { asAdmin, asUser, expectDenied } from "./harness";
 import { seedScenario, type Scenario } from "./fixtures";
 
 let s: Scenario;
@@ -190,6 +190,29 @@ describe("cancel_heat_start", () => {
         [s.heatId],
       );
       expect(res.rows.every((r) => r.status === "idle")).toBe(true);
+    });
+  });
+
+  // Defensa explicita, no un caso que se pueda alcanzar hoy por el camino
+  // normal: `ended_at` solo se llena cuando todos los carriles con atleta
+  // llegan a un estado terminal, y eso siempre implica al menos un
+  // timing_event -- que es justo lo que este mismo guard exige en cero mas
+  // abajo. Se fuerza `ended_at` a mano (como admin) para probar que, aunque
+  // ese acoplamiento cambie el dia de mañana, deshacer el inicio limpia el
+  // campo igual y no deja un heat "iniciado de nuevo" con fecha de cierre.
+  it("limpia ended_at aunque haya quedado seteado", async () => {
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, () => s.db.query("select start_heat($1)", [s.heatId]));
+    await asAdmin(s.db, () =>
+      s.db.query("update heats set ended_at = now() where id = $1", [s.heatId]),
+    );
+
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ ended_at: string | null }>(
+        "select ended_at from cancel_heat_start($1)",
+        [s.heatId],
+      );
+      expect(res.rows[0].ended_at).toBeNull();
     });
   });
 

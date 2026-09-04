@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { guardarMonedaDelEvento, type FormState } from "../actions";
 import { MONEDAS } from "../lib/monedas";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 
 /**
  * La moneda de la competencia.
@@ -42,17 +43,13 @@ export function MonedaDelEvento({
 
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Moneda de la competencia</span>
-        <select
-          name="currency"
-          defaultValue={actual}
-          className="w-64 appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm outline-none transition-colors focus:border-lime-400"
-        >
+        <Selector name="currency" defaultValue={actual} className="w-64 py-2.5 text-sm">
           {MONEDAS.map((m) => (
             <option key={m.codigo} value={m.codigo}>
               {m.codigo} — {m.nombre}
             </option>
           ))}
-        </select>
+        </Selector>
       </label>
 
       <BotonDeEnvio

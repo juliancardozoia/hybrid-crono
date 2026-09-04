@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { guardarScore } from "../actions";
 import { formatElapsed } from "@/shared/timing/clock";
+import { Selector } from "@/shared/components/Selector";
 import type { ScoreStatusDb, ScoreUnitDb } from "@/lib/supabase/types";
 
 /**
@@ -61,8 +62,7 @@ function comoTexto(unidad: ScoreUnitDb, valor: number | null): string {
 
 const campo =
   "w-full rounded-lg border border-neutral-700 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-lime-400 disabled:opacity-40";
-const selector =
-  "w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm outline-none focus:border-lime-400";
+const selector = "w-full py-1.5 text-sm";
 
 export function GrillaDeScores({
   eventId,
@@ -163,7 +163,7 @@ function Fila({
       <div className="grid gap-2 sm:grid-cols-[8rem_1fr_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-neutral-500">Estado</span>
-          <select
+          <Selector
             value={status}
             onChange={(e) => setStatus(e.target.value as ScoreStatusDb)}
             className={selector}
@@ -173,7 +173,7 @@ function Fila({
                 {e.label}
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
 
         <label className="flex flex-col gap-1">

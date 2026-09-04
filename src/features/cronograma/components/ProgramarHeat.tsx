@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { programarHeat, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 
 /**
  * Arena y horario de un heat.
@@ -17,8 +18,7 @@ import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400";
-const selector =
-  "w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400";
+const selector = "w-full py-2";
 
 export function ProgramarHeat({
   eventId,
@@ -54,7 +54,7 @@ export function ProgramarHeat({
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-neutral-500">Arena</span>
-          <select
+          <Selector
             name="arenaId"
             defaultValue={arenaId ?? ""}
             className={selector}
@@ -65,7 +65,7 @@ export function ProgramarHeat({
                 {a.name}
               </option>
             ))}
-          </select>
+          </Selector>
         </label>
 
         <label className="flex flex-col gap-1">

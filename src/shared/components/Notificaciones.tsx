@@ -157,10 +157,18 @@ export function useNotificaciones(): NotificacionesContexto {
  */
 export function useToastDeEstado(estado: { error: string | null }) {
   const { error } = useNotificaciones();
-  const anterior = useRef<string | null>(null);
+  const anterior = useRef<typeof estado | null>(null);
 
+  // Compara el OBJETO `estado`, no `estado.error`: `useActionState` devuelve
+  // una referencia nueva en cada submit, aunque el texto del error se repita
+  // igual que la vez anterior. Comparar por valor del string —lo que hacia
+  // esto antes— es lo que dejaba el efecto sin correr de nuevo (las
+  // dependencias de React se comparan con `Object.is`) y el segundo error
+  // consecutivo, identico al primero, nunca disparaba un segundo toast.
   useEffect(() => {
-    if (estado.error && estado.error !== anterior.current) error(estado.error);
-    anterior.current = estado.error;
-  }, [estado.error, error]);
+    if (estado !== anterior.current) {
+      if (estado.error) error(estado.error);
+      anterior.current = estado;
+    }
+  }, [estado, error]);
 }

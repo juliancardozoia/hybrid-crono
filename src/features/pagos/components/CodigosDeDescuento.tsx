@@ -3,6 +3,7 @@
 import { useActionState, useTransition } from "react";
 import { borrarCodigo, crearCodigo, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import type { DiscountCodeRow } from "@/lib/supabase/types";
@@ -94,7 +95,7 @@ export function CodigosDeDescuento({
         {divisiones.length > 0 && (
           <label className="mb-3 flex flex-col gap-1">
             <span className="text-xs text-neutral-500">Aplica a</span>
-            <select name="divisionId" defaultValue="" className={campo}>
+            <Selector name="divisionId" defaultValue="" className="w-full py-2">
               {/* Vacío = toda la competencia. Es el caso más común —un
                   "early bird" para todos— y por eso va primero. */}
               <option value="">Toda la competencia</option>
@@ -103,7 +104,7 @@ export function CodigosDeDescuento({
                   Solo {d.name}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
         )}
 
@@ -120,14 +121,10 @@ export function CodigosDeDescuento({
 
           <label className="flex flex-col gap-1">
             <span className="text-xs text-neutral-500">Tipo</span>
-            <select
-              name="kind"
-              defaultValue="porcentaje"
-              className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400"
-            >
+            <Selector name="kind" defaultValue="porcentaje" className="w-full py-2">
               <option value="porcentaje">Porcentaje</option>
               <option value="monto">Monto fijo</option>
-            </select>
+            </Selector>
           </label>
 
           <label className="flex flex-col gap-1">

@@ -12,6 +12,7 @@ import {
   PENALIZACIONES_DEMO,
 } from "@/features/events/lib/courseTemplates";
 import { requireManage } from "@/features/events/lib/access";
+import { esLimiteDePlan } from "@/features/planes/lib/errores";
 
 export interface FormState {
   error: string | null;
@@ -22,15 +23,25 @@ const OK: FormState = { error: null };
 /**
  * Traduce los errores de Postgres que el organizador puede provocar.
  * El resto se reporta generico: un mensaje de constraint no le sirve a nadie.
+ *
+ * ANTES DESCARTABA `error.message` EN EL FALLBACK. Cualquier error que no
+ * fuera 23505/23503/23514/42501 —incluido `PL001`, el limite del plan
+ * gratuito ("el plan gratuito corre una competencia a la vez")— salia como
+ * el string fijo "No se pudo guardar.", sin ningun rastro del motivo real.
+ * Es lo que paso al intentar "Marcar como lista" con otra competencia ya
+ * activa: el trigger `events_limitar_activos` rechazaba el cambio con un
+ * mensaje perfectamente legible, y esta funcion lo tiraba a la basura.
  */
 function traducir(error: { code?: string; message?: string } | null): string {
   if (!error) return "No se pudo guardar.";
+  // Un limite del plan trae su propio mensaje, escrito para el organizador.
+  if (esLimiteDePlan(error)) return error.message ?? "Esto es del plan Pro.";
   if (error.code === "23505")
     return "Ya existe un registro con ese nombre o código.";
   if (error.code === "23503") return "Falta algo que este registro necesita.";
   if (error.code === "23514") return "Algún valor está fuera de rango.";
   if (error.code === "42501") return "No tienes permiso para esta operación.";
-  return "No se pudo guardar.";
+  return error.message ?? "No se pudo guardar.";
 }
 
 function refrescar(eventId: string) {
@@ -127,10 +138,11 @@ export async function addSegment(
   const eventId = String(formData.get("eventId") ?? "");
   const templateId = String(formData.get("templateId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  const kind = String(formData.get("kind") ?? "station") as SegmentKind;
+  const kind = String(formData.get("kind") ?? "") as SegmentKind;
 
   await requireManage(eventId);
   if (name.length < 2) return { error: "Escribe un nombre al segmento." };
+  if (!kind) return { error: "Elige el tipo de segmento." };
 
   const supabase = await createClient();
 
@@ -386,7 +398,7 @@ export async function createPenaltyType(
     .toUpperCase()
     .replace(/[^A-Z0-9_]/g, "_");
   const label = String(formData.get("label") ?? "").trim();
-  const kind = String(formData.get("kind") ?? "time_add") as PenaltyKind;
+  const kind = String(formData.get("kind") ?? "") as PenaltyKind;
   const seconds =
     kind === "time_add" ? Number(formData.get("seconds") ?? 0) : 0;
 
@@ -399,6 +411,7 @@ export async function createPenaltyType(
     };
   }
   if (label.length < 2) return { error: "Escribe una descripción." };
+  if (!kind) return { error: "Elige el tipo de penalización." };
   // La base tiene la misma regla; validar aca da un mensaje entendible en vez
   // de un error de constraint.
   if (kind === "time_add" && seconds <= 0) {

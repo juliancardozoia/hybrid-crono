@@ -4,6 +4,7 @@ import { startTransition, useActionState, useState } from "react";
 import { assignLanes, setLaneJudge, type FormState } from "../actions";
 import { fechaHoraEnEvento } from "@/shared/utils/fecha";
 import { useCargaMientras } from "@/shared/components/Carga";
+import { Selector } from "@/shared/components/Selector";
 import type {
   HeatWithLanes,
   JudgeOption,
@@ -170,7 +171,7 @@ export function HeatCard({
               {carriles.map((numero) => (
                 <label key={numero} className="flex items-center gap-2">
                   <span className="w-6 text-sm text-neutral-500">{numero}</span>
-                  <select
+                  <Selector
                     name={`lane-${numero}`}
                     value={seleccion[numero] ?? ""}
                     onChange={(e) =>
@@ -179,7 +180,7 @@ export function HeatCard({
                         [numero]: e.target.value,
                       }))
                     }
-                    className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-lime-400"
+                    className="flex-1 py-2 text-sm"
                   >
                     <option value="">— vacío —</option>
                     {opcionesPara(numero).map((t) => (
@@ -187,7 +188,7 @@ export function HeatCard({
                         {t.label}
                       </option>
                     ))}
-                  </select>
+                  </Selector>
                 </label>
               ))}
             </div>
@@ -237,7 +238,7 @@ export function HeatCard({
                 </span>
 
                 <div className="flex min-w-[14rem] flex-1 items-center gap-2">
-                  <select
+                  <Selector
                     name="judgeId"
                     value={juezPorCarril[lane.id] ?? ""}
                     onChange={(e) =>
@@ -246,7 +247,7 @@ export function HeatCard({
                         [lane.id]: e.target.value,
                       }))
                     }
-                    className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm outline-none focus:border-lime-400"
+                    className="flex-1 py-1.5 text-sm"
                   >
                     <option value="">— sin juez —</option>
                     {judges.map((j) => (
@@ -254,7 +255,7 @@ export function HeatCard({
                         {j.label}
                       </option>
                     ))}
-                  </select>
+                  </Selector>
                   <button
                     type="button"
                     onClick={() => asignarJuez(lane.id)}

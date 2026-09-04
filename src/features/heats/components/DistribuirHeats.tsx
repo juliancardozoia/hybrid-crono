@@ -27,17 +27,24 @@ export function DistribuirHeats({ eventId }: { eventId: string }) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(autoDistribuirHeats, inicial);
   const { exito } = useNotificaciones();
-  const resumenAvisado = useRef<string | null>(null);
+  const estadoAvisado = useRef<typeof state | null>(null);
 
   // El resumen ("N heats en M categorías...") se avisa como toast porque el
   // modal se cierra solo al terminar sin error (BotonesDeModal), y ahí
   // adentro ya no quedaría nadie para leerlo.
+  //
+  // SE COMPARA EL OBJETO `state`, NO `state.resumen`: `useActionState`
+  // devuelve una referencia nueva en cada corrida, aunque el texto del
+  // resumen sea igual al de la corrida anterior (mismos N heats, mismas
+  // categorías). Comparar por valor del string dejaba el efecto sin
+  // volver a correr y el segundo toast no aparecía — mismo bug que
+  // `useToastDeEstado` en Notificaciones.tsx.
   useEffect(() => {
-    if (state.resumen && state.resumen !== resumenAvisado.current) {
-      exito(state.resumen);
-      resumenAvisado.current = state.resumen;
+    if (state !== estadoAvisado.current) {
+      if (state.resumen) exito(state.resumen);
+      estadoAvisado.current = state;
     }
-  }, [state.resumen, exito]);
+  }, [state, exito]);
 
   return (
     <>

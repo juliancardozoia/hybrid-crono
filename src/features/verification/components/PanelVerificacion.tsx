@@ -10,6 +10,7 @@ import {
 } from "../actions";
 import { estaPendienteDeVerificar } from "../lib/estado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Selector } from "@/shared/components/Selector";
 import type { QueueRow } from "../queries";
 
 const inicial: FormState = { error: null, mensaje: null };
@@ -175,9 +176,9 @@ export function PanelVerificacion({
           <input type="hidden" name="eventId" value={eventId} />
           <label className="flex flex-col gap-1.5">
             <span className="text-sm">Categoría</span>
-            <select
+            <Selector
               name="divisionId"
-              className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm"
+              className="py-2.5 text-sm"
             >
               <option value="">Todas</option>
               {divisiones.map((d) => (
@@ -185,7 +186,7 @@ export function PanelVerificacion({
                   {d.name}
                 </option>
               ))}
-            </select>
+            </Selector>
           </label>
           <Boton
             label="Marcar como verificados"
@@ -212,9 +213,9 @@ export function PanelVerificacion({
             <input type="hidden" name="eventId" value={eventId} />
             <label className="flex flex-col gap-1.5">
               <span className="text-sm">Categoría</span>
-              <select
+              <Selector
                 name="divisionId"
-                className="rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-2.5 text-sm"
+                className="py-2.5 text-sm"
               >
                 <option value="">Todo el evento</option>
                 {divisiones.map((d) => (
@@ -222,7 +223,7 @@ export function PanelVerificacion({
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </Selector>
             </label>
             <Boton
               label="Publicar oficiales"

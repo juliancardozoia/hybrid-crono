@@ -12,6 +12,7 @@ import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
+import { Selector } from "@/shared/components/Selector";
 import type { CategoriaConfigurada } from "@/features/events/config/queries";
 import type {
   CourseTemplate,
@@ -23,8 +24,7 @@ const inicial: FormState = { error: null };
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
-const selector =
-  "w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
+const selector = "w-full py-2.5 text-sm";
 
 const SEXO: Record<string, string> = {
   male: "Masculino",
@@ -303,7 +303,7 @@ function CamposBasicos({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Integrantes</span>
-          <select
+          <Selector
             name="teamSize"
             defaultValue={String(categoria.teamSize)}
             className={selector}
@@ -312,12 +312,12 @@ function CamposBasicos({
             <option value="2">2 — parejas</option>
             <option value="3">3</option>
             <option value="4">4</option>
-          </select>
+          </Selector>
         </label>
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Sexo</span>
-          <select
+          <Selector
             name="genderRule"
             defaultValue={categoria.genderRule as GenderRule}
             className={selector}
@@ -326,7 +326,7 @@ function CamposBasicos({
             <option value="male">Masculino</option>
             <option value="female">Femenino</option>
             <option value="mixed">Mixta (uno de cada sexo)</option>
-          </select>
+          </Selector>
         </label>
       </div>
 
@@ -356,7 +356,7 @@ function CamposBasicos({
       {esHibrida && (
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">Circuito</span>
-          <select
+          <Selector
             name="courseTemplateId"
             defaultValue={categoria.courseTemplateId ?? ""}
             className={selector}
@@ -367,7 +367,7 @@ function CamposBasicos({
                 {t.name}
               </option>
             ))}
-          </select>
+          </Selector>
           <span className="text-xs text-neutral-600">
             Las estaciones y distancias se configuran en Circuito, no por
             categoría.
@@ -411,7 +411,7 @@ function CamposCupoYPuntuacion({
         {mostrarTabla ? (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Sistema de puntuación</span>
-            <select
+            <Selector
               name="scoringTableId"
               defaultValue={categoria.scoringTableId ?? ""}
               className={selector}
@@ -422,7 +422,7 @@ function CamposCupoYPuntuacion({
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Selector>
             <span className="text-xs text-neutral-600">
               Cómo se convierte el puesto de cada prueba en puntos.
             </span>
@@ -555,14 +555,14 @@ function Movimientos({
               autoFocus
             />
           ) : (
-            <select name="movementId" defaultValue="" className={selector}>
+            <Selector name="movementId" defaultValue="" className={selector}>
               <option value="">Elige un movimiento…</option>
               {catalogo.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
               ))}
-            </select>
+            </Selector>
           )}
 
           <div className="flex gap-2">
@@ -573,14 +573,14 @@ function Movimientos({
               placeholder="Peso"
               className={campo}
             />
-            <select
+            <Selector
               name="loadUnit"
               defaultValue="kg"
               className={`${selector} w-20`}
             >
               <option value="kg">kg</option>
               <option value="lb">lb</option>
-            </select>
+            </Selector>
           </div>
 
           <AgregarMovimiento />
