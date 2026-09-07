@@ -117,7 +117,10 @@ export type AnomalyCode =
   // Del reductor de WODs. Se suman a la lista en vez de tener su propio tipo
   // para que la cola de anomalias de la torre de control siga siendo una sola.
   | "marca_sobrante"
-  | "movimiento_desconocido";
+  | "movimiento_desconocido"
+  // Llegó con elapsed >= el cap o la ventana: no cuenta para el resultado,
+  // pero queda en el log para que se pueda auditar un reclamo.
+  | "marca_despues_del_limite";
 
 export type Anomaly = {
   code: AnomalyCode;

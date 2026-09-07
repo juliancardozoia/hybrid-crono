@@ -142,17 +142,31 @@ export function NuevoMovimiento({
           />
         </label>
 
+        {/* El peso se escribe en la unidad del reglamento y se guarda en
+            kilos: quien programó "95 lb" tiene que ver "95 lb" de vuelta, no
+            "43,09 kg". La conversión la hace la acción con el mismo helper que
+            usa el resto de la app. */}
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-neutral-400">Carga (kg)</span>
-          <input
-            name="loadKg"
-            type="number"
-            step="0.5"
-            min="0"
-            className={campo}
-            disabled={elegido ? !elegido.allowsLoad : false}
-            placeholder={elegido && !elegido.allowsLoad ? "sin carga" : ""}
-          />
+          <span className="text-xs text-neutral-400">Carga</span>
+          <div className="flex gap-1.5">
+            <input
+              name="load"
+              type="text"
+              inputMode="decimal"
+              className={campo}
+              disabled={elegido ? !elegido.allowsLoad : false}
+              placeholder={elegido && !elegido.allowsLoad ? "sin carga" : ""}
+            />
+            <select
+              name="loadUnit"
+              defaultValue="kg"
+              disabled={elegido ? !elegido.allowsLoad : false}
+              className={`${campo} w-16`}
+            >
+              <option value="kg">kg</option>
+              <option value="lb">lb</option>
+            </select>
+          </div>
         </label>
 
         <div className="flex flex-col justify-end gap-2 pb-1">

@@ -1,6 +1,13 @@
 /**
  * Kilos y libras.
  *
+ * VIVE EN `shared/` Y NO EN UNA FEATURE. Empezo en `features/events/lib/`
+ * cuando el unico que convertia pesos era el modal de categorias. Hoy lo
+ * necesitan tambien `catalogo` (la ficha publica muestra "95 lb" al atleta),
+ * `workouts` (el constructor) y `judge` (la pantalla del juez): una funcion
+ * pura importada por cuatro features desde adentro de una quinta es
+ * exactamente lo que `shared/` existe para evitar.
+ *
  * El peso se guarda SIEMPRE en kilos: es la unidad canonica del deporte fuera de
  * Estados Unidos, la que usa el resto del esquema (`load_kg` en cuatro tablas) y
  * la que compara el motor de puntuacion. Guardar el numero tal cual con su

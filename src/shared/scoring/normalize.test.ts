@@ -11,6 +11,7 @@ function prueba(parcial: Partial<PartSpec> = {}): PartSpec {
     capUnit: null,
     tiebreakUnit: null,
     tiebreakDir: null,
+    tiebreakPartId: null,
     ...parcial,
   };
 }

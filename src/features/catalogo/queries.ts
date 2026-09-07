@@ -1,5 +1,5 @@
 import { createPublicClient } from "@/lib/supabase/public";
-import type { EventFormat, EventType } from "@/lib/supabase/types";
+import type { EventFormat, EventType, LoadUnit } from "@/lib/supabase/types";
 
 /**
  * Lecturas del catalogo publico.
@@ -143,6 +143,8 @@ export interface MovimientoPublico {
   /** Un valor por ronda. Longitud 1 = igual en todas. */
   objetivo: number[] | null;
   cargaKg: number | null;
+  /** En la que lo escribio el organizador: "95 lb" no es "43,09 kg". */
+  cargaUnidad: LoadUnit;
   maxReps: boolean;
   notas: string | null;
   /** El peso y las reps de cada categoria: Rx y Scaled no levantan lo mismo. */
@@ -150,6 +152,7 @@ export interface MovimientoPublico {
     division: string;
     objetivo: number[] | null;
     cargaKg: number | null;
+    cargaUnidad: LoadUnit;
     notas: string | null;
   }>;
 }
@@ -172,6 +175,14 @@ export interface ParteDeWodPublica {
   timeCapMs: number | null;
   windowMs: number | null;
   intervalMs: number | null;
+  /**
+   * El tope de tiempo de cada categoria, cuando alguna lo cambia.
+   *
+   * Viene vacio si todas comparten el de la parte, que es el caso normal: si
+   * Elite tiene 12 minutos y Scaled 15, el atleta lo tiene que leer antes de
+   * elegir en cual se anota.
+   */
+  capPorCategoria: Array<{ division: string; timeCapMs: number }>;
   divisiones: string[];
   blocks: BloquePublico[];
 }
@@ -225,6 +236,23 @@ export interface EventoPublico {
     capacity: number | null;
     /** Null cuando no hay limite; si no, cuantos quedan. */
     cuposDisponibles: number | null;
+    /**
+     * El estandar declarado de la categoria: que se levanta y cuanto.
+     *
+     * Es lo que decide una inscripcion, y por eso NO depende de que ninguna
+     * prueba este liberada: existe antes de que haya un solo WOD cargado. Es
+     * opcional, asi que lo normal es que venga vacio.
+     */
+    movimientos: Array<{
+      nombre: string;
+      /** Canonico. Null = el movimiento no lleva peso (un burpee). */
+      cargaKg: number | null;
+      /** En la que lo escribio el organizador, para devolverla igual. */
+      cargaUnidad: "kg" | "lb";
+      /** Lo que no es peso: "24 pulgadas" en un box jump. */
+      spec: string | null;
+      notas: string | null;
+    }>;
   }>;
   workouts: Array<{
     name: string;

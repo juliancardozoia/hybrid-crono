@@ -3,11 +3,13 @@
 import { useActionState, useState, useTransition } from "react";
 import {
   agregarMovimientoDeCategoria,
+  editarMovimientoDeCategoria,
   guardarCategoria,
+  moverMovimientoDeCategoria,
   quitarMovimientoDeCategoria,
   type FormState,
 } from "@/features/events/config/categorias";
-import { formatearCarga } from "@/features/events/lib/carga";
+import { desdeKilos } from "@/shared/unidades/carga";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
@@ -77,7 +79,6 @@ export function FilaDeCategoria({
   formato,
   segmentos,
   catalogo,
-  tablas,
   templates,
   alQuitar,
 }: {
@@ -86,7 +87,6 @@ export function FilaDeCategoria({
   formato: EventFormat;
   segmentos: Segmento[];
   catalogo: MovimientoDelCatalogo[];
-  tablas: Array<{ id: string; name: string }>;
   templates: CourseTemplate[];
   alQuitar?: (prev: FormState, formData: FormData) => Promise<FormState>;
 }) {
@@ -199,7 +199,6 @@ export function FilaDeCategoria({
             <div className="border-t border-neutral-800 pt-6">
               <CamposCupoYPuntuacion
                 categoria={categoria}
-                tablas={tablas}
                 mostrarTabla={esCrossfit}
               />
             </div>
@@ -382,11 +381,9 @@ function CamposBasicos({
 
 function CamposCupoYPuntuacion({
   categoria,
-  tablas,
   mostrarTabla,
 }: {
   categoria: CategoriaConfigurada;
-  tablas: Array<{ id: string; name: string }>;
   mostrarTabla: boolean;
 }) {
   return (
@@ -408,39 +405,22 @@ function CamposCupoYPuntuacion({
           </span>
         </label>
 
-        {mostrarTabla ? (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Sistema de puntuación</span>
-            <Selector
-              name="scoringTableId"
-              defaultValue={categoria.scoringTableId ?? ""}
-              className={selector}
-            >
-              <option value="">La del evento</option>
-              {tablas.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </Selector>
-            <span className="text-xs text-neutral-600">
-              Cómo se convierte el puesto de cada prueba en puntos.
-            </span>
-          </label>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Puntuación</span>
-            <p className="rounded-xl border border-neutral-800 bg-neutral-900/50 px-3 py-2.5 text-sm text-neutral-400">
-              Por tiempo, menor gana
-            </p>
-            {/* Una carrera se gana llegando antes. No hay tabla de puntos que
-                elegir, y ofrecerla sería inventar una decisión que no existe. */}
-            <span className="text-xs text-neutral-600">
-              Es una carrera: el resultado es el tiempo del circuito.
-            </span>
-            <input type="hidden" name="scoringTableId" value="" />
-          </div>
-        )}
+        {/* Ya no hay sistema de puntuación que elegir: hay UNO y se adapta
+            solo al tamaño de la categoría. Se muestra igual —en vez de no
+            decir nada— porque el organizador necesita saber con qué se van a
+            repartir los puntos, y la tabla concreta se previsualiza en
+            Puntuación. */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Puntuación</span>
+          <p className="rounded-xl border border-neutral-800 bg-neutral-900/50 px-3 py-2.5 text-sm text-neutral-400">
+            {mostrarTabla ? "Games 2026 Dynamic" : "Por tiempo, menor gana"}
+          </p>
+          <span className="text-xs text-neutral-600">
+            {mostrarTabla
+              ? "El 1.º saca 100 y el último 0, con la curva ajustada a los atletas de esta categoría."
+              : "Es una carrera: el resultado es el tiempo del circuito."}
+          </span>
+        </div>
       </div>
 
       {/* Solo si compite mas de una persona: en individual no hay integrante
@@ -492,59 +472,74 @@ function Movimientos({
   categoria: CategoriaConfigurada;
   catalogo: MovimientoDelCatalogo[];
 }) {
-  const [state, formAction] = useActionState(
-    agregarMovimientoDeCategoria,
-    inicial,
-  );
-  const [, startTransition] = useTransition();
-  const [otro, setOtro] = useState(false);
-  const { error: avisarError } = useNotificaciones();
-
   return (
     <section className="flex flex-col gap-4">
       <div>
         <h4 className="font-semibold">Movimientos y pesos</h4>
         <p className="mt-0.5 text-sm text-neutral-500">
           Los estándares de esta categoría. Es lo que un atleta mira para
-          decidir si se anota.
+          decidir si se anota, y se publica en la ficha de la competencia
+          aunque todavía no haya ninguna prueba cargada.
         </p>
       </div>
 
       {categoria.movimientos.length > 0 && (
-        <ul className="flex flex-wrap gap-2">
-          {categoria.movimientos.map((m) => (
-            <li
+        <ul className="flex flex-col gap-2">
+          {categoria.movimientos.map((m, i) => (
+            <FilaDeMovimiento
               key={m.id}
-              className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 py-1.5 pr-2 pl-3 text-sm"
-            >
-              <span className="font-medium">{m.nombre}</span>
-              {m.loadKg !== null && (
-                <span className="text-lime-300">
-                  {formatearCarga(m.loadKg, m.loadUnit)}
-                </span>
-              )}
-              {m.spec && <span className="text-neutral-500">{m.spec}</span>}
-              <button
-                type="button"
-                onClick={() =>
-                  startTransition(async () => {
-                    const r = await quitarMovimientoDeCategoria(eventId, m.id);
-                    if (r.error) avisarError(r.error);
-                  })
-                }
-                className="px-1 text-neutral-600 hover:text-red-400"
-                title="Quitar"
-              >
-                ✕
-              </button>
-            </li>
+              eventId={eventId}
+              movimiento={m}
+              primero={i === 0}
+              ultimo={i === categoria.movimientos.length - 1}
+            />
           ))}
         </ul>
       )}
 
+      {/* `key` por cantidad de movimientos: cuando un alta sale bien, el
+          servidor revalida, la lista crece y el formulario se REMONTA limpio
+          —selector incluido— sin que haga falta sincronizar estado con el
+          reset nativo de React 19. Si el alta falla, la cantidad no cambia y
+          lo escrito sigue ahí. */}
+      <AltaDeMovimiento
+        key={categoria.movimientos.length}
+        eventId={eventId}
+        divisionId={categoria.id}
+        catalogo={catalogo}
+      />
+    </section>
+  );
+}
+
+function AltaDeMovimiento({
+  eventId,
+  divisionId,
+  catalogo,
+}: {
+  eventId: string;
+  divisionId: string;
+  catalogo: MovimientoDelCatalogo[];
+}) {
+  const [state, formAction] = useActionState(
+    agregarMovimientoDeCategoria,
+    inicial,
+  );
+  const [otro, setOtro] = useState(false);
+  const [elegido, setElegido] = useState("");
+
+  // El campo de peso solo aparece si el movimiento LO ADMITE. `allows_load`
+  // viene del catálogo y hasta ahora se recibía y se descartaba: pedirle un
+  // peso a un burpee o a un double-under es ofrecer un dato que no existe.
+  // Uno escrito a mano sí lo ofrece: de ese no sabemos nada.
+  const permiteCarga =
+    otro || catalogo.find((m) => m.id === elegido)?.allows_load === true;
+
+  return (
+    <div className="flex flex-col gap-3">
       <form action={formAction} className="flex flex-col gap-3">
         <input type="hidden" name="eventId" value={eventId} />
-        <input type="hidden" name="divisionId" value={categoria.id} />
+        <input type="hidden" name="divisionId" value={divisionId} />
 
         <div className="grid gap-3 sm:grid-cols-[2fr_1fr_auto]">
           {otro ? (
@@ -555,7 +550,12 @@ function Movimientos({
               autoFocus
             />
           ) : (
-            <Selector name="movementId" defaultValue="" className={selector}>
+            <Selector
+              name="movementId"
+              value={elegido}
+              onChange={(e) => setElegido(e.target.value)}
+              className={selector}
+            >
               <option value="">Elige un movimiento…</option>
               {catalogo.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -565,23 +565,29 @@ function Movimientos({
             </Selector>
           )}
 
-          <div className="flex gap-2">
-            <input
-              name="load"
-              type="text"
-              inputMode="decimal"
-              placeholder="Peso"
-              className={campo}
-            />
-            <Selector
-              name="loadUnit"
-              defaultValue="kg"
-              className={`${selector} w-20`}
-            >
-              <option value="kg">kg</option>
-              <option value="lb">lb</option>
-            </Selector>
-          </div>
+          {permiteCarga ? (
+            <div className="flex gap-2">
+              <input
+                name="load"
+                type="text"
+                inputMode="decimal"
+                placeholder="Peso"
+                className={campo}
+              />
+              <Selector
+                name="loadUnit"
+                defaultValue="kg"
+                className={`${selector} w-20`}
+              >
+                <option value="kg">kg</option>
+                <option value="lb">lb</option>
+              </Selector>
+            </div>
+          ) : (
+            <span className="self-center text-sm text-neutral-600">
+              {elegido ? "Sin peso" : ""}
+            </span>
+          )}
 
           <AgregarMovimiento />
         </div>
@@ -609,7 +615,152 @@ function Movimientos({
       >
         {otro ? "← Elegir del catálogo" : "¿No está en la lista? Escríbelo"}
       </button>
-    </section>
+    </div>
+  );
+}
+
+/**
+ * Un movimiento ya cargado: se corrige en el lugar y se mueve de posición.
+ *
+ * ANTES ERA UN CHIP CON UNA ✕. Cambiar "43 kg" por "45 kg" obligaba a borrar la
+ * fila y volver a buscar el movimiento entre los 148 del catálogo, y el orden
+ * en que se publicaban era el de carga y no había forma de tocarlo.
+ *
+ * NO VA DENTRO DE UN `<form action={...}>`, y no es un detalle: React 19 llama
+ * al `form.reset()` nativo al terminar una acción, y estos campos tienen que
+ * CONSERVAR lo que se acaba de guardar. Es exactamente el caso de `HeatCard`:
+ * la acción se invoca a mano dentro de `startTransition`.
+ *
+ * El botón aparece solo si algo cambió: tres campos por movimiento con un
+ * botón siempre encendido al lado convierten la lista en una pared de botones
+ * idénticos donde no se distingue cuál está pendiente.
+ *
+ * SE LLAMA "Actualizar", NO "Guardar". El modal ya tiene su Guardar —uno solo,
+ * el de la categoría— y un segundo botón con el mismo nombre haría dudar de
+ * cuál confirma qué. Es la misma distinción que ya vale para "Agregar":
+ * corregir un ítem de una lista no es confirmar el formulario.
+ */
+function FilaDeMovimiento({
+  eventId,
+  movimiento,
+  primero,
+  ultimo,
+}: {
+  eventId: string;
+  movimiento: CategoriaConfigurada["movimientos"][number];
+  primero: boolean;
+  ultimo: boolean;
+}) {
+  const original =
+    movimiento.loadKg === null
+      ? ""
+      : String(desdeKilos(movimiento.loadKg, movimiento.loadUnit));
+
+  const [carga, setCarga] = useState(original);
+  const [unidad, setUnidad] = useState<"kg" | "lb">(movimiento.loadUnit);
+  const [spec, setSpec] = useState(movimiento.spec ?? "");
+  const [pendiente, startTransition] = useTransition();
+  const { error: avisarError } = useNotificaciones();
+
+  const sucio =
+    carga !== original ||
+    unidad !== movimiento.loadUnit ||
+    spec !== (movimiento.spec ?? "");
+
+  const correr = (accion: () => Promise<FormState>) =>
+    startTransition(async () => {
+      const r = await accion();
+      if (r.error) avisarError(r.error);
+    });
+
+  const guardar = () => {
+    const datos = new FormData();
+    datos.set("eventId", eventId);
+    datos.set("movimientoId", movimiento.id);
+    datos.set("load", carga);
+    datos.set("loadUnit", unidad);
+    datos.set("spec", spec);
+    correr(() => editarMovimientoDeCategoria(inicial, datos));
+  };
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-sm">
+      <span className="min-w-32 flex-1 font-medium">{movimiento.nombre}</span>
+
+      <input
+        value={carga}
+        onChange={(e) => setCarga(e.target.value)}
+        type="text"
+        inputMode="decimal"
+        placeholder="Sin peso"
+        className={`${campo} w-24`}
+      />
+      <Selector
+        value={unidad}
+        onChange={(e) => setUnidad(e.target.value as "kg" | "lb")}
+        className="w-20 py-2 text-sm"
+      >
+        <option value="kg">kg</option>
+        <option value="lb">lb</option>
+      </Selector>
+      <input
+        value={spec}
+        onChange={(e) => setSpec(e.target.value)}
+        placeholder="Detalle"
+        className={`${campo} w-40`}
+      />
+
+      {sucio && (
+        <button
+          type="button"
+          onClick={guardar}
+          disabled={pendiente}
+          className="rounded-xl bg-lime-400 px-3 py-2 text-xs font-semibold text-lime-950 disabled:opacity-60"
+        >
+          {pendiente ? "Guardando…" : "Actualizar"}
+        </button>
+      )}
+
+      <div className="flex items-center">
+        <button
+          type="button"
+          disabled={primero || pendiente}
+          onClick={() =>
+            correr(() =>
+              moverMovimientoDeCategoria(eventId, movimiento.id, "arriba"),
+            )
+          }
+          className="px-1.5 text-neutral-600 hover:text-neutral-300 disabled:opacity-30"
+          title="Subir"
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          disabled={ultimo || pendiente}
+          onClick={() =>
+            correr(() =>
+              moverMovimientoDeCategoria(eventId, movimiento.id, "abajo"),
+            )
+          }
+          className="px-1.5 text-neutral-600 hover:text-neutral-300 disabled:opacity-30"
+          title="Bajar"
+        >
+          ▼
+        </button>
+        <button
+          type="button"
+          disabled={pendiente}
+          onClick={() =>
+            correr(() => quitarMovimientoDeCategoria(eventId, movimiento.id))
+          }
+          className="px-1.5 text-neutral-600 hover:text-red-400 disabled:opacity-30"
+          title="Quitar"
+        >
+          ✕
+        </button>
+      </div>
+    </li>
   );
 }
 

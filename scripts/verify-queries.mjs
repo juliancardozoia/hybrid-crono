@@ -71,6 +71,18 @@ const CONSULTAS = [
   // consultas planas resueltas en JS, sin embed que PostgREST pueda romper.
   // org/members.ts se elimino junto con la pantalla de miembros de
   // organizacion -- ver "TODO el acceso es por evento" en CLAUDE.md.
+  //
+  // getHeats TAMPOCO embebe `workouts (name)`, aunque la FK compuesta
+  // (workout_id, event_id) existe y PostgREST lo resolveria. Es una decision:
+  // ese select de arriba ya es el embed mas grande de la app -- baja hasta los
+  // atletas de cada carril -- y es la pantalla que se abre el dia del evento.
+  // El nombre de la prueba se trae plano con getPruebas y se une en memoria,
+  // igual que en /cronograma. Si algun dia se agrega el embed, va listado aca:
+  // hoy `heats -> workouts` es la UNICA relacion entre esas dos tablas, pero
+  // una segunda (un `heats.tiebreak_workout_id`, por ejemplo) haria que
+  // PostgREST devolviera PGRST201 y la pantalla de heats quedara vacia sin
+  // error visible -- exactamente lo que `lanes.workout_id` ya esquivo por
+  // diseno usando un trigger en vez de una FK compuesta.
   {
     donde: "features/org/queries.ts · getMyOrganizations",
     tabla: "org_members",

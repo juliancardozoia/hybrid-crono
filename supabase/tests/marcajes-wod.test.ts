@@ -177,3 +177,35 @@ describe("ingesta de marcajes de WOD", () => {
     );
   });
 });
+
+/**
+ * Lo que el juez se lleva al celular.
+ *
+ * `judge_lane_bundle()` es lo unico que el bundle offline consulta para saber
+ * QUE se cronometra: si devuelve mal, el juez abre el WOD equivocado y no hay
+ * nada en pantalla que se lo diga.
+ */
+describe("judge_lane_bundle", () => {
+  it("dice qué prueba corre el carril", async () => {
+    await asUser(s.db, s.users.judgeA, async () => {
+      const res = await s.db.query<{ workout_name: string | null; workout_id: string }>(
+        "select workout_id, workout_name from judge_lane_bundle($1)",
+        [lane],
+      );
+      // El fixture corre el circuito, que `ensure_circuit_part()` creó solo.
+      expect(res.rows[0].workout_name).toBe("Circuito");
+      expect(res.rows[0].workout_id).not.toBeNull();
+    });
+  });
+
+  it("el selector de carriles también lo dice", async () => {
+    // Con tres WODs en la competencia, "Heat 2" no alcanza para saber cuál es.
+    await asUser(s.db, s.users.judgeA, async () => {
+      const res = await s.db.query<{ workout_name: string | null }>(
+        "select workout_name from judge_visible_lanes() where lane_id = $1",
+        [lane],
+      );
+      expect(res.rows[0].workout_name).toBe("Circuito");
+    });
+  });
+});

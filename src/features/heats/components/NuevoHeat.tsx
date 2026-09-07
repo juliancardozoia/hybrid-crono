@@ -20,13 +20,20 @@ const inicial: FormState = { error: null };
  * opción extra "Mixto — varias divisiones" que no era ninguna categoría real
  * —era `divisionId = null`— y se sacó: mezclar categorías en un heat es
  * justo lo que impide numerar "Heat 1, 2, 3" por categoría.
+ *
+ * LA PRUEBA SE PREGUNTA SOLO SI HAY MÁS DE UNA. Una carrera híbrida tiene una
+ * sola y el modal sigue teniendo exactamente dos campos, como antes; un
+ * CrossFit con tres WODs suma el selector, porque ahí "¿cuál de las tres
+ * corre este heat?" no la puede contestar nadie más que el organizador.
  */
 export function NuevoHeat({
   eventId,
   divisiones,
+  pruebas,
 }: {
   eventId: string;
   divisiones: Array<{ id: string; name: string }>;
+  pruebas: Array<{ id: string; name: string }>;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(createHeat, inicial);
@@ -52,6 +59,25 @@ export function NuevoHeat({
           className="flex flex-col gap-4"
         >
           <input type="hidden" name="eventId" value={eventId} />
+
+          {/* Con una sola prueba viaja oculta: preguntar algo que tiene una
+              única respuesta posible es un campo de más en el camino. Con
+              ninguna todavía, no se manda nada y la pone el trigger. */}
+          {pruebas.length === 1 && (
+            <input type="hidden" name="workoutId" value={pruebas[0].id} />
+          )}
+
+          {pruebas.length > 1 && (
+            <Select
+              label="Prueba"
+              name="workoutId"
+              required
+              options={[
+                { value: "", label: "Elige una prueba…" },
+                ...pruebas.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          )}
 
           <FieldRow>
             <Select

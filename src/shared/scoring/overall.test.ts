@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compareTiebreakVectors, computeOverall } from "./overall";
-import { TABLA_CF_GAMES_40, TABLA_CF_OPEN, TABLA_TIEMPO_TOTAL } from "./points";
+import { compareTiebreakVectors, computeOverall, resolverTiebreaksDeOtraPrueba } from "./overall";
+import { TABLA_TIEMPO_TOTAL, tablaDinamica } from "./points";
+
+/** Una categoria de 40: el 1.o saca 100 y el 40.o cero. */
+const TABLA_DE_40 = tablaDinamica(40);
 import { scoreFromLaneResult } from "./fromTiming";
 import { rankResults } from "../timing/reducer";
 import type { LaneResult, LaneStatus } from "../timing/types";
@@ -15,6 +18,7 @@ function parteReps(id: string, orderIndex: number): PartSpec {
     capUnit: null,
     tiebreakUnit: null,
     tiebreakDir: null,
+    tiebreakPartId: null,
   };
 }
 
@@ -31,6 +35,112 @@ function reps(partId: string, teamId: string, value: number): RawScore {
 }
 
 const siempre = (tabla: ScoringTable) => () => tabla;
+
+describe("el desempate que viene de otra prueba", () => {
+  /** Igual que `parteReps`, pero con un `tiebreakPartId` explicito. */
+  function parteConTiebreakDeOtra(id: string, tiebreakPartId: string | null): PartSpec {
+    return { ...parteReps(id, 0), tiebreakPartId };
+  }
+
+  it("no toca nada si ninguna parte declara tiebreakPartId", () => {
+    const parts = [parteReps("final", 0)];
+    const scores = [reps("final", "c1", 100)];
+    // Misma referencia de contenido, no la misma instancia: sigue siendo una
+    // copia, para no compartir mutabilidad con el arreglo de entrada.
+    expect(resolverTiebreaksDeOtraPrueba(parts, scores)).toEqual(scores);
+  });
+
+  it("usa el valor principal del equipo en la prueba de origen", () => {
+    // "El desempate de la final es el tiempo de la clasificatoria."
+    const parts = [parteConTiebreakDeOtra("final", "clasificatoria")];
+    const scores = [
+      reps("final", "c1", 50),
+      reps("clasificatoria", "c1", 620_000),
+    ];
+
+    const resueltos = resolverTiebreaksDeOtraPrueba(parts, scores);
+    const final = resueltos.find((s) => s.partId === "final" && s.teamId === "c1");
+    expect(final?.tiebreak).toBe(620_000);
+    // La prueba de origen no se toca: sigue siendo su propio score.
+    const clasificatoria = resueltos.find((s) => s.partId === "clasificatoria");
+    expect(clasificatoria?.tiebreak).toBeNull();
+  });
+
+  it("sin marca en la prueba de origen, no hay desempate — no es un error", () => {
+    const parts = [parteConTiebreakDeOtra("final", "clasificatoria")];
+    // El equipo corrio la final pero no la clasificatoria.
+    const scores = [reps("final", "c1", 50)];
+
+    const [final] = resolverTiebreaksDeOtraPrueba(parts, scores);
+    expect(final.tiebreak).toBeNull();
+  });
+
+  it("un DNF en la prueba de origen tampoco da desempate", () => {
+    // `value` solo esta poblado cuando el status es 'valido': un capeado o un
+    // DNF en la clasificatoria no tienen un tiempo que prestarle a la final.
+    const parts = [parteConTiebreakDeOtra("final", "clasificatoria")];
+    const scores: RawScore[] = [
+      reps("final", "c1", 50),
+      { partId: "clasificatoria", teamId: "c1", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null },
+    ];
+
+    const [final] = resolverTiebreaksDeOtraPrueba(parts, scores);
+    expect(final.tiebreak).toBeNull();
+  });
+
+  it("cada equipo lee SU propio score en la prueba de origen", () => {
+    const parts = [parteConTiebreakDeOtra("final", "clasificatoria")];
+    const scores = [
+      reps("final", "c1", 50),
+      reps("final", "c2", 50),
+      reps("clasificatoria", "c1", 600_000),
+      reps("clasificatoria", "c2", 610_000),
+    ];
+
+    const resueltos = resolverTiebreaksDeOtraPrueba(parts, scores);
+    expect(resueltos.find((s) => s.partId === "final" && s.teamId === "c1")?.tiebreak).toBe(
+      600_000,
+    );
+    expect(resueltos.find((s) => s.partId === "final" && s.teamId === "c2")?.tiebreak).toBe(
+      610_000,
+    );
+  });
+});
+
+describe("la tabla de puntos puede variar por parte", () => {
+  // `tableFor` siempre soportó devolver una tabla distinta por parte —es la
+  // firma que existe "para soportar la jerarquia evento -> categoria ->
+  // prueba"—, pero hasta que `part_divisions.scoring_table_id` tuvo un
+  // consumidor real, ningun test lo ejercia con algo que no fuera una
+  // constante.
+  it("cada parte usa la tabla que le corresponde, no una sola para todas", () => {
+    const partes = [parteReps("e1", 0), parteReps("e2", 1)];
+    const scores = [
+      reps("e1", "a1", 100), reps("e1", "a2", 90),
+      reps("e2", "a1", 100), reps("e2", "a2", 90),
+    ];
+
+    // e1 con CF-Open (los puntos son la posicion); e2 con una tabla de solo
+    // dos valores, para que la diferencia sea imposible de confundir con una
+    // coincidencia.
+    const tablaEspecial: ScoringTable = { id: "t2", name: "Especial", points: [500, 200], dir: "mayor_gana" };
+
+    const general = computeOverall({
+      parts: partes,
+      tableFor: (part) => (part.id === "e2" ? tablaEspecial : TABLA_TIEMPO_TOTAL),
+      teamIds: ["a1", "a2"],
+      scores,
+    });
+
+    const a1 = general.find((e) => e.teamId === "a1")!;
+    const puntosE1 = a1.placements.find((p) => p.partId === "e1")!.points;
+    const puntosE2 = a1.placements.find((p) => p.partId === "e2")!.points;
+
+    expect(puntosE1).toBe(1); // CF-Open sin tabla: los puntos SON la posicion.
+    expect(puntosE2).toBe(500); // La tabla especial de esa parte.
+    expect(a1.totalPoints).toBe(501);
+  });
+});
 
 describe("compareTiebreakVectors", () => {
   it("gana quien tiene el mejor puesto en el primer indice donde difieren", () => {
@@ -82,7 +192,7 @@ describe("la tabla general", () => {
 
   const general = computeOverall({
     parts: partes,
-    tableFor: siempre(TABLA_CF_OPEN),
+    tableFor: siempre(TABLA_TIEMPO_TOTAL),
     teamIds: equipos,
     scores,
   });
@@ -150,7 +260,7 @@ describe("la direccion de la suma", () => {
   it("en CF-Open gana quien menos suma", () => {
     const general = computeOverall({
       parts: partes,
-      tableFor: siempre(TABLA_CF_OPEN),
+      tableFor: siempre(TABLA_TIEMPO_TOTAL),
       teamIds: equipos,
       scores,
     });
@@ -159,18 +269,19 @@ describe("la direccion de la suma", () => {
     expect(general[1].totalPoints).toBe(4);
   });
 
-  it("en CF-Games gana quien mas suma, con los mismos resultados", () => {
-    // Mismo dataset, tabla invertida: el podio no puede cambiar de dueno solo
-    // por como se reparten los puntos.
+  it("con una tabla de puntos gana quien mas suma, con los mismos resultados", () => {
+    // Mismo dataset, direccion invertida: el podio no puede cambiar de dueno
+    // solo por como se reparten los puntos.
     const general = computeOverall({
       parts: partes,
-      tableFor: siempre(TABLA_CF_GAMES_40),
+      tableFor: siempre(TABLA_DE_40),
       teamIds: equipos,
       scores,
     });
     expect(general[0].teamId).toBe("a");
-    expect(general[0].totalPoints).toBe(200);
-    expect(general[1].totalPoints).toBe(188);
+    // Dos primeros puestos contra dos segundos.
+    expect(general[0].totalPoints).toBe(TABLA_DE_40.points[0] * 2);
+    expect(general[1].totalPoints).toBe(TABLA_DE_40.points[1] * 2);
   });
 });
 
@@ -178,7 +289,7 @@ describe("casos de borde", () => {
   it("dos equipos identicos en todo comparten posicion", () => {
     const general = computeOverall({
       parts: [parteReps("e1", 0)],
-      tableFor: siempre(TABLA_CF_OPEN),
+      tableFor: siempre(TABLA_TIEMPO_TOTAL),
       teamIds: ["a", "b"],
       scores: [reps("e1", "a", 100), reps("e1", "b", 100)],
     });
@@ -189,7 +300,7 @@ describe("casos de borde", () => {
   it("un evento sin pruebas devuelve el padron con cero puntos", () => {
     const general = computeOverall({
       parts: [],
-      tableFor: siempre(TABLA_CF_OPEN),
+      tableFor: siempre(TABLA_TIEMPO_TOTAL),
       teamIds: ["a", "b"],
       scores: [],
     });
@@ -201,7 +312,7 @@ describe("casos de borde", () => {
     expect(
       computeOverall({
         parts: [parteReps("e1", 0)],
-        tableFor: siempre(TABLA_CF_OPEN),
+        tableFor: siempre(TABLA_TIEMPO_TOTAL),
         teamIds: [],
         scores: [],
       }),
@@ -252,6 +363,7 @@ describe("equivalencia con el ranking de circuitos", () => {
       capUnit: null,
       tiebreakUnit: null,
       tiebreakDir: null,
+      tiebreakPartId: null,
     };
 
     const general = computeOverall({
@@ -275,6 +387,7 @@ describe("equivalencia con el ranking de circuitos", () => {
       capUnit: null,
       tiebreakUnit: null,
       tiebreakDir: null,
+      tiebreakPartId: null,
     };
 
     const general = computeOverall({

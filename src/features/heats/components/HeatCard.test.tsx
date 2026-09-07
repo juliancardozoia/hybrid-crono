@@ -41,8 +41,8 @@ import type { HeatWithLanes } from "@/features/events/config/queries";
 afterEach(cleanup);
 
 const equipos: TeamOption[] = [
-  { id: "team-a", label: "#1 · Ana Diaz", asignadoEn: null },
-  { id: "team-b", label: "#2 · Beto Ruiz", asignadoEn: null },
+  { id: "team-a", label: "#1 · Ana Diaz", asignadoEn: {} },
+  { id: "team-b", label: "#2 · Beto Ruiz", asignadoEn: {} },
 ];
 
 // Un heat recien creado: sin carriles asignados todavia.

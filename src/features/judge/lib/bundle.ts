@@ -11,7 +11,7 @@
  */
 
 import { createClient } from "@/lib/supabase/client";
-import type { PenaltyPayload, Segment } from "@/shared/timing/types";
+import type { PenaltyPayload, Segment, TimingEvent } from "@/shared/timing/types";
 import type { WodStructure } from "@/shared/timing/wod";
 import { armarEstructuraDeWod } from "@/shared/timing/wodStructure";
 import { getDb } from "./db";
@@ -41,6 +41,15 @@ export interface LaneBundle {
    * es un circuito y se cronometra con la pantalla de siempre.
    */
   wod?: ParteDeWod[];
+  /**
+   * El nombre de la prueba que corre este carril.
+   *
+   * OPCIONAL como `wod`, y por el mismo motivo: un bundle guardado antes de
+   * esta version no lo trae, y un juez con marcajes pendientes en IndexedDB
+   * tiene que poder seguir trabajando. Sin el, la pantalla simplemente no lo
+   * menciona.
+   */
+  workoutName?: string;
   cachedAt: number;
 }
 
@@ -72,6 +81,7 @@ interface LaneQueryRow {
   start_offset_ms: number;
   judge_id: string | null;
   workout_id: string;
+  workout_name: string | null;
   bib_number: number | null;
   team_name: string | null;
   athletes: string | null;
@@ -174,6 +184,7 @@ export async function fetchLaneBundle(laneId: string): Promise<LaneBundle | null
     })),
     judgeId: row.judge_id,
     wod,
+    workoutName: row.workout_name ?? undefined,
     cachedAt: Date.now(),
   };
 }
@@ -205,7 +216,39 @@ async function armarPartesDeWod(
   if (partes.length === 0) return [];
 
   const supabase = createClient();
-  const partIds = partes.map((p) => p.id);
+
+  /**
+   * QUE PARTES CORRE ESTA CATEGORIA, y con que tope de tiempo.
+   *
+   * Sin este filtro el juez se bajaba TODAS las partes en vivo de la prueba,
+   * corriera su categoria o no: un juez de Scaled veia en su pantalla un WOD
+   * que su atleta no hace. `part_divisions` es la respuesta a "quien corre
+   * que" y es explicita a proposito (ver el comentario de la tabla en
+   * 20260901100000).
+   *
+   * Y de paso trae `time_cap_ms`, que es el cap DE ESA CATEGORIA. La columna
+   * existia desde el dia uno y no la leia nadie: Elite y Scaled capeaban en el
+   * mismo minuto aunque el organizador cargara 12 y 15. Como el cap se DERIVA
+   * del reloj en el reductor, el error se materializaba en el score sin que
+   * nadie emitiera un solo evento.
+   */
+  const { data: asignadas } = await supabase
+    .from("part_divisions")
+    .select("part_id, time_cap_ms")
+    .eq("division_id", divisionId)
+    .in(
+      "part_id",
+      partes.map((p) => p.id),
+    );
+
+  const capPorParte = new Map(
+    (asignadas ?? []).map((a) => [a.part_id, a.time_cap_ms]),
+  );
+
+  const suyas = partes.filter((p) => capPorParte.has(p.id));
+  if (suyas.length === 0) return [];
+
+  const partIds = suyas.map((p) => p.id);
 
   const [{ data: bloques }, { data: movimientos }] = await Promise.all([
     supabase
@@ -216,7 +259,7 @@ async function armarPartesDeWod(
     supabase
       .from("part_movements")
       .select(
-        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, max_reps, es_tiebreak",
+        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style",
       )
       .in("part_id", partIds)
       .order("order_index"),
@@ -233,14 +276,14 @@ async function armarPartesDeWod(
       : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
     supabase
       .from("division_movement_specs")
-      .select("part_movement_id, target_per_round, load_kg")
+      .select("part_movement_id, target_per_round, load_kg, load_unit")
       .eq("division_id", divisionId),
   ]);
 
   const nombrePorId = new Map((catalogo ?? []).map((m) => [m.id, m.name]));
   const specPorMovimiento = new Map((specs ?? []).map((sp) => [sp.part_movement_id, sp]));
 
-  return partes.map((parte): ParteDeWod => ({
+  return suyas.map((parte): ParteDeWod => ({
     partId: parte.id,
     label: parte.label,
     orderIndex: parte.order_index,
@@ -251,6 +294,7 @@ async function armarPartesDeWod(
       movimientos: movimientos ?? [],
       nombres: nombrePorId,
       specs: specPorMovimiento,
+      capDeCategoriaMs: capPorParte.get(parte.id) ?? null,
     }),
   }));
 }
@@ -297,4 +341,51 @@ export async function fetchHeatStart(heatId: string): Promise<string | null> {
   const supabase = createClient();
   const { data } = await supabase.from("heats").select("started_at").eq("id", heatId).maybeSingle();
   return data?.started_at ?? null;
+}
+
+/**
+ * Trae el log de marcajes del carril TAL COMO ESTA EN EL SERVIDOR.
+ *
+ * El sync del juez es de solo subida: empuja su cola local y nunca baja nada,
+ * asi que un evento que insertó otra persona -la organizacion, un DNF desde la
+ * torre de control- nunca le llegaba. Esto es lo que cierra ese hueco: se
+ * consulta periodicamente y lo nuevo se mezcla al log local (ver
+ * `mergeRemoteEvents` en el store).
+ */
+export async function fetchLaneEvents(laneId: string): Promise<TimingEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("judge_lane_events", { p_lane_id: laneId });
+  if (error || !data) return [];
+
+  return (
+    data as Array<{
+      id: string;
+      lane_id: string;
+      seq: number;
+      type: TimingEvent["type"];
+      segment_id: string | null;
+      elapsed_ms: number;
+      payload: Record<string, unknown> | null;
+      recorded_by: string;
+      device_id: string | null;
+      client_captured_at: string | null;
+      supersedes_id: string | null;
+      voided: boolean;
+      void_reason: string | null;
+    }>
+  ).map((e) => ({
+    id: e.id,
+    laneId: e.lane_id,
+    seq: e.seq,
+    type: e.type,
+    segmentId: e.segment_id,
+    elapsedMs: e.elapsed_ms,
+    payload: e.payload ?? {},
+    recordedBy: e.recorded_by,
+    deviceId: e.device_id ?? "",
+    clientCapturedAt: e.client_captured_at ? new Date(e.client_captured_at).getTime() : 0,
+    supersedesId: e.supersedes_id,
+    voided: e.voided,
+    voidReason: e.void_reason,
+  }));
 }

@@ -273,7 +273,6 @@ export interface CategoriaConfigurada {
   ageMin: number | null;
   ageMax: number | null;
   courseTemplateId: string | null;
-  scoringTableId: string | null;
   capacity: number | null;
   /** Solo aplica si compite mas de una persona. */
   permiteCambios: boolean;
@@ -305,7 +304,7 @@ export async function getCategoriasConfiguradas(
     await Promise.all([
       supabase
         .from("divisions")
-        .select("id, name, team_size, gender_rule, age_min, age_max, course_template_id, scoring_table_id")
+        .select("id, name, team_size, gender_rule, age_min, age_max, course_template_id")
         .eq("event_id", eventId)
         .order("name"),
       supabase
@@ -350,7 +349,6 @@ export async function getCategoriasConfiguradas(
     ageMin: d.age_min,
     ageMax: d.age_max,
     courseTemplateId: d.course_template_id,
-    scoringTableId: d.scoring_table_id,
     capacity: registroPorDivision.get(d.id)?.capacity ?? null,
     permiteCambios: registroPorDivision.get(d.id)?.allows_member_swap ?? false,
     equiposInscritos: equiposPorDivision.get(d.id) ?? 0,
@@ -404,16 +402,6 @@ export async function getCatalogoDeMovimientos() {
   return data ?? [];
 }
 
-/** Las tablas de puntuacion disponibles para un evento. */
-export async function getTablasDePuntuacion() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("scoring_tables")
-    .select("id, name, builtin_key")
-    .order("name");
-  return data ?? [];
-}
-
 export interface ContactoDeLaOrganizacion {
   email: string;
   nombre: string;
@@ -442,4 +430,156 @@ export async function getContactosDeLaOrganizacion(
     ultimaCompetencia: (f.ultima_competencia as string | null) ?? null,
     fueJuez: Boolean(f.fue_juez),
   }));
+}
+
+/** Un equipo tal como aparece en el pool de una etapa: solo lo que hace falta para reconocerlo. */
+export interface EquipoDeEtapa {
+  teamId: string;
+  bib: number;
+  nombre: string | null;
+}
+
+export interface EtapaDeCategoria {
+  /** "Stage 1 con 40 -> cut -> Stage 2 con 20 -> cut -> Final". */
+  stage: number;
+  /** Quien puede avanzar A esta etapa: todos si viene de la 1, o quien avanzo de la anterior. */
+  pool: EquipoDeEtapa[];
+  /** Quien avanzo, si el corte ya se confirmo. Null = todavia no se decidio. */
+  avanzan: string[] | null;
+}
+
+export interface PuntuacionDeCategoria {
+  divisionId: string;
+  nombre: string;
+  /** Equipos confirmados y no retirados AHORA. */
+  atletasActivos: number;
+  /** La curva congelada, si ya se genero. */
+  snapshot: number[] | null;
+  fieldSize: number | null;
+  bloqueada: boolean;
+  /**
+   * Los cortes de esta categoria, desde la etapa 2 en adelante. Vacio si
+   * ninguna prueba del evento se asigno a una etapa mayor que 1 -- la mayoria
+   * de las competencias no tienen cortes y no hay nada que mostrar aca.
+   */
+  etapas: EtapaDeCategoria[];
+}
+
+/**
+ * Como se reparten los puntos en cada categoria del evento, y sus cortes.
+ *
+ * Devuelve las dos cifras que hay que poder comparar de un vistazo: con
+ * cuantos atletas se congelo la tabla y cuantos hay hoy. Si difieren no es un
+ * error —alguien se retiro despues de bloquear, que es exactamente lo que el
+ * snapshot existe para tolerar— pero el organizador tiene que verlo.
+ *
+ * LA ETAPA ES DEL WORKOUT, NO DE LA PARTE: se resuelve cruzando
+ * `part_divisions` (que categoria corre que parte) con `workout_parts.workout_id`
+ * y `workouts.stage`, sin embeds -- un embed invalido pasa los tests de PGlite
+ * y devuelve PGRST200 recien en produccion, y esto es exactamente lo que
+ * documenta el CLAUDE.md sobre `lanes`/`events`.
+ */
+export async function getPuntuacionDelEvento(
+  eventId: string,
+): Promise<PuntuacionDeCategoria[]> {
+  const supabase = await createClient();
+
+  const [
+    { data: divisiones },
+    { data: equipos },
+    { data: snapshots },
+    { data: workouts },
+    { data: partes },
+    { data: asignaciones },
+    { data: avances },
+  ] = await Promise.all([
+    supabase.from("divisions").select("id, name").eq("event_id", eventId).order("name"),
+    supabase
+      .from("teams")
+      .select("id, division_id, status, bib_number, name")
+      .eq("event_id", eventId),
+    supabase
+      .from("scoring_snapshots")
+      .select("division_id, points, field_size, locked_at")
+      .eq("event_id", eventId)
+      .eq("stage", 1),
+    supabase.from("workouts").select("id, stage").eq("event_id", eventId),
+    supabase.from("workout_parts").select("id, workout_id").eq("event_id", eventId),
+    supabase.from("part_divisions").select("part_id, division_id").eq("event_id", eventId),
+    supabase
+      .from("stage_advancements")
+      .select("division_id, stage, team_id")
+      .eq("event_id", eventId),
+  ]);
+
+  const activosPorDivision = new Map<string, number>();
+  const equipoPorId = new Map(
+    (equipos ?? []).map((t) => [t.id, { teamId: t.id, bib: t.bib_number, nombre: t.name }]),
+  );
+  const equiposActivosPorDivision = new Map<string, string[]>();
+  for (const t of equipos ?? []) {
+    if (t.status === "withdrawn") continue;
+    activosPorDivision.set(t.division_id, (activosPorDivision.get(t.division_id) ?? 0) + 1);
+    const lista = equiposActivosPorDivision.get(t.division_id) ?? [];
+    lista.push(t.id);
+    equiposActivosPorDivision.set(t.division_id, lista);
+  }
+
+  const snapshotPorDivision = new Map((snapshots ?? []).map((s) => [s.division_id, s]));
+
+  // partId -> stage de su workout, y de ahi division -> etapas que corre.
+  const stagePorWorkout = new Map((workouts ?? []).map((w) => [w.id, w.stage]));
+  const stagePorParte = new Map(
+    (partes ?? []).map((p) => [p.id, stagePorWorkout.get(p.workout_id) ?? 1]),
+  );
+  const etapasPorDivision = new Map<string, Set<number>>();
+  for (const a of asignaciones ?? []) {
+    const stage = stagePorParte.get(a.part_id);
+    if (stage === undefined) continue;
+    const set = etapasPorDivision.get(a.division_id) ?? new Set<number>();
+    set.add(stage);
+    etapasPorDivision.set(a.division_id, set);
+  }
+
+  // (division, etapa) -> equipos que avanzaron. Solo hay filas desde la
+  // etapa 2: la 1 la corre todo equipo activo, sin decision que confirmar.
+  const avanzanPorDivisionYEtapa = new Map<string, string[]>();
+  for (const a of avances ?? []) {
+    const clave = `${a.division_id}|${a.stage}`;
+    const lista = avanzanPorDivisionYEtapa.get(clave) ?? [];
+    lista.push(a.team_id);
+    avanzanPorDivisionYEtapa.set(clave, lista);
+  }
+
+  return (divisiones ?? []).map((d) => {
+    const sn = snapshotPorDivision.get(d.id);
+
+    const maxStage = Math.max(1, ...(etapasPorDivision.get(d.id) ?? [1]));
+    const etapas: EtapaDeCategoria[] = [];
+    for (let stage = 2; stage <= maxStage; stage++) {
+      const poolIds =
+        stage === 2
+          ? (equiposActivosPorDivision.get(d.id) ?? [])
+          : (avanzanPorDivisionYEtapa.get(`${d.id}|${stage - 1}`) ?? []);
+
+      etapas.push({
+        stage,
+        pool: poolIds.flatMap((id) => {
+          const t = equipoPorId.get(id);
+          return t ? [t] : [];
+        }),
+        avanzan: avanzanPorDivisionYEtapa.get(`${d.id}|${stage}`) ?? null,
+      });
+    }
+
+    return {
+      divisionId: d.id,
+      nombre: d.name,
+      atletasActivos: activosPorDivision.get(d.id) ?? 0,
+      snapshot: sn ? sn.points.map(Number) : null,
+      fieldSize: sn?.field_size ?? null,
+      bloqueada: Boolean(sn?.locked_at),
+      etapas,
+    };
+  });
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { assignPhysicalPositions, rankPart } from "./place";
-import { TABLA_CF_GAMES_40, TABLA_CF_OPEN } from "./points";
+import { TABLA_TIEMPO_TOTAL, tablaDinamica } from "./points";
+
+/** Una categoria de 40: el 1.o saca 100 y el 40.o cero. */
+const TABLA_DE_40 = tablaDinamica(40);
 import type { PartSpec, RawScore } from "./types";
 
 const POR_REPS: PartSpec = {
@@ -11,6 +14,7 @@ const POR_REPS: PartSpec = {
   capUnit: null,
   tiebreakUnit: null,
   tiebreakDir: null,
+  tiebreakPartId: null,
 };
 
 function reps(teamId: string, value: number): RawScore {
@@ -70,16 +74,19 @@ describe("rankPart", () => {
   it("rankea por marca y reparte los puntos de la tabla", () => {
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_GAMES_40,
+      table: TABLA_DE_40,
       teamIds: ["a", "b", "c"],
       scores: [reps("a", 100), reps("b", 150), reps("c", 120)],
     });
 
+    // Los valores salen de la tabla, no escritos a mano: lo que se prueba es
+    // que cada puesto cobre LO QUE LA TABLA DICE para ese puesto.
     expect(placements.map((p) => [p.teamId, p.position, p.points])).toEqual([
-      ["b", 1, 100],
-      ["c", 2, 94],
-      ["a", 3, 88],
+      ["b", 1, TABLA_DE_40.points[0]],
+      ["c", 2, TABLA_DE_40.points[1]],
+      ["a", 3, TABLA_DE_40.points[2]],
     ]);
+    expect(TABLA_DE_40.points[0]).toBe(100);
   });
 
   it("los empatados cobran los MISMOS puntos, no el promedio", () => {
@@ -88,7 +95,7 @@ describe("rankPart", () => {
     // seria una invencion nuestra.
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_GAMES_40,
+      table: TABLA_DE_40,
       teamIds: ["a", "b", "c", "d"],
       scores: [reps("a", 230), reps("b", 230), reps("c", 230), reps("d", 228)],
     });
@@ -101,10 +108,11 @@ describe("rankPart", () => {
     expect(primeros).toHaveLength(3);
     expect(primeros.every((p) => p.points === 100)).toBe(true);
 
-    // Y el cuarto queda en la posicion fisica 4, con los puntos del 4.
+    // Y el cuarto queda en la posicion fisica 4, con los puntos del 4 — no
+    // los del 2, que es lo que pasaria si el empate no corriera la posicion.
     const ultimo = placements.find((p) => p.teamId === "d");
     expect(ultimo?.position).toBe(4);
-    expect(ultimo?.points).toBe(84);
+    expect(ultimo?.points).toBe(TABLA_DE_40.points[3]);
   });
 
   it("un equipo del padron sin score aparece igual, pendiente y al fondo", () => {
@@ -112,7 +120,7 @@ describe("rankPart", () => {
     // pantalla entera de la carga manual.
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_OPEN,
+      table: TABLA_TIEMPO_TOTAL,
       teamIds: ["a", "b", "sin-marca"],
       scores: [reps("a", 100), reps("b", 90)],
     });
@@ -126,7 +134,7 @@ describe("rankPart", () => {
     const ajeno: RawScore = { ...reps("b", 999), partId: "otra" };
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_OPEN,
+      table: TABLA_TIEMPO_TOTAL,
       teamIds: ["a", "b"],
       scores: [reps("a", 100), ajeno],
     });
@@ -138,7 +146,7 @@ describe("rankPart", () => {
   it("en CF-Open los puntos son la posicion", () => {
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_OPEN,
+      table: TABLA_TIEMPO_TOTAL,
       teamIds: ["a", "b", "c"],
       scores: [reps("a", 100), reps("b", 150), reps("c", 120)],
     });
@@ -148,7 +156,7 @@ describe("rankPart", () => {
   it("devuelve una fila por equipo del padron, ni una mas ni una menos", () => {
     const placements = rankPart({
       part: POR_REPS,
-      table: TABLA_CF_OPEN,
+      table: TABLA_TIEMPO_TOTAL,
       teamIds: ["a", "b", "c", "d", "e"],
       scores: [reps("a", 10)],
     });

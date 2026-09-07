@@ -3,6 +3,7 @@ import { Icono } from "@/shared/components/Icono";
 import { localeDeIntl } from "@/shared/i18n/diccionario";
 import type { Idioma } from "@/shared/i18n/idiomas";
 import { PostularseComoJuez } from "./PostularseComoJuez";
+import { formatearCarga } from "@/shared/unidades/carga";
 import { yaPaso } from "./MarcoDelEvento";
 
 /**
@@ -179,6 +180,33 @@ function Categorias({
                         : `${d.cuposDisponibles} de ${d.capacity} disponibles`}
                 </p>
               </div>
+
+              {/* Los estándares de la categoría: qué se levanta y cuánto.
+                  Es la pregunta por la que se abre esta lista —"¿en cuál
+                  entro?"— y no se contesta con el nombre.
+
+                  Va a lo ancho de la fila, debajo de los datos y del precio,
+                  y no en la columna de la derecha: son varios y competirían
+                  con el precio, que es la decisión de la otra columna.
+
+                  NO depende de que haya un WOD liberado. El estándar existe
+                  meses antes de que haya una sola prueba cargada; es
+                  exactamente para eso que se guarda aparte. */}
+              {d.movimientos.length > 0 && (
+                <ul className="flex w-full flex-wrap gap-x-4 gap-y-1 border-t border-neutral-800/70 pt-2 text-sm text-neutral-400">
+                  {d.movimientos.map((m) => (
+                    <li key={m.nombre}>
+                      {m.nombre}
+                      {m.cargaKg !== null && (
+                        <span className="ml-1.5 font-medium text-lime-300">
+                          {formatearCarga(m.cargaKg, m.cargaUnidad)}
+                        </span>
+                      )}
+                      {m.spec && <span className="ml-1.5 text-neutral-500">{m.spec}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           );
         })}

@@ -118,6 +118,26 @@ export async function loadEvents(laneId: string): Promise<OutboxEvent[]> {
   return rows.sort((a, b) => a.seq - b.seq);
 }
 
+/**
+ * Guarda un evento que llego DEL SERVIDOR, no de un tap local.
+ *
+ * `put` y no `add`: puede ser un evento que este mismo dispositivo ya tenia
+ * (reconfirmar no rompe nada) o uno nuevo insertado por otra persona -la
+ * organizacion, desde la torre de control-. Nace `synced`: ya esta en el
+ * servidor, nunca hay que volver a subirlo.
+ */
+export async function appendRemoteEvent(event: TimingEvent): Promise<OutboxEvent> {
+  const record: OutboxEvent = {
+    ...event,
+    syncState: "synced",
+    syncAttempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+  };
+  await getDb().events.put(record);
+  return record;
+}
+
 export async function loadPending(laneId: string): Promise<OutboxEvent[]> {
   const rows = await loadEvents(laneId);
   return rows.filter((e) => e.syncState === "pending");

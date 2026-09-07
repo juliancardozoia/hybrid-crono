@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import type {
+  LoadUnit,
   MovementRow,
   PartBlockRow,
   PartMovementRow,
-  ScoringTableRow,
   WorkoutPartRow,
   WorkoutRow,
   WorkoutScoreRow,
@@ -38,35 +38,108 @@ export async function getPruebas(eventId: string): Promise<PruebaConPartes[]> {
   }));
 }
 
-export interface EstructuraDeParte {
+/**
+ * Una prueba ENTERA: sus partes, y de cada una su estructura y sus ajustes.
+ *
+ * Reemplaza a `getEstructura(partId)`, que traia una parte suelta. La pantalla
+ * del constructor pasó a ser la prueba completa —con la parte A al lado de la
+ * B— porque "agregar la parte B" no tenia donde vivir cuando la ruta era una
+ * parte: la palabra "prueba" y la palabra "parte" se usaban como sinonimos y
+ * no lo son.
+ *
+ * Siete consultas planas y un join en memoria. Ningun embed, como el resto de
+ * este archivo.
+ */
+export interface ParteCompleta {
   part: WorkoutPartRow;
   blocks: PartBlockRow[];
   movements: PartMovementRow[];
-  divisionIds: string[];
+  /** Categorias que corren esta parte, con su cap propio si lo tiene. */
+  divisiones: Array<{ divisionId: string; timeCapMs: number | null }>;
+  /** Ajustes de cada categoria, por `${divisionId}|${partMovementId}`. */
+  specs: Map<string, SpecDeCategoria>;
 }
 
-export async function getEstructura(partId: string): Promise<EstructuraDeParte | null> {
+export interface SpecDeCategoria {
+  targetPerRound: number[] | null;
+  loadKg: number | null;
+  loadUnit: LoadUnit;
+}
+
+export interface PruebaCompleta {
+  workout: WorkoutRow;
+  partes: ParteCompleta[];
+}
+
+export async function getPruebaCompleta(
+  workoutId: string,
+): Promise<PruebaCompleta | null> {
   const supabase = await createClient();
 
-  const { data: part } = await supabase
-    .from("workout_parts")
+  const { data: workout } = await supabase
+    .from("workouts")
     .select("*")
-    .eq("id", partId)
+    .eq("id", workoutId)
     .maybeSingle();
 
-  if (!part) return null;
+  if (!workout) return null;
 
-  const [{ data: blocks }, { data: movements }, { data: asignadas }] = await Promise.all([
-    supabase.from("part_blocks").select("*").eq("part_id", partId).order("order_index"),
-    supabase.from("part_movements").select("*").eq("part_id", partId).order("order_index"),
-    supabase.from("part_divisions").select("division_id").eq("part_id", partId),
-  ]);
+  const { data: parts } = await supabase
+    .from("workout_parts")
+    .select("*")
+    .eq("workout_id", workoutId)
+    .order("order_index");
+
+  const partIds = (parts ?? []).map((p) => p.id);
+  if (partIds.length === 0) return { workout, partes: [] };
+
+  const [{ data: blocks }, { data: movements }, { data: asignadas }, { data: specs }] =
+    await Promise.all([
+      supabase.from("part_blocks").select("*").in("part_id", partIds).order("order_index"),
+      supabase
+        .from("part_movements")
+        .select("*")
+        .in("part_id", partIds)
+        .order("order_index"),
+      supabase
+        .from("part_divisions")
+        .select("part_id, division_id, time_cap_ms")
+        .in("part_id", partIds),
+      // Los ajustes se piden por EVENTO y se filtran en memoria por los
+      // movimientos de esta prueba. Pedirlos por `part_movement_id` obligaria
+      // a esperar la consulta de movimientos y encadenar un viaje mas, para
+      // una tabla que tiene una fila por (categoria, movimiento) — nada que
+      // justifique el ida y vuelta.
+      supabase
+        .from("division_movement_specs")
+        .select("division_id, part_movement_id, target_per_round, load_kg, load_unit")
+        .eq("event_id", workout.event_id),
+    ]);
+
+  const idsDeMovimientos = new Set((movements ?? []).map((m) => m.id));
 
   return {
-    part,
-    blocks: blocks ?? [],
-    movements: movements ?? [],
-    divisionIds: (asignadas ?? []).map((a) => a.division_id),
+    workout,
+    partes: (parts ?? []).map((part) => ({
+      part,
+      blocks: (blocks ?? []).filter((b) => b.part_id === part.id),
+      movements: (movements ?? []).filter((m) => m.part_id === part.id),
+      divisiones: (asignadas ?? [])
+        .filter((a) => a.part_id === part.id)
+        .map((a) => ({ divisionId: a.division_id, timeCapMs: a.time_cap_ms })),
+      specs: new Map(
+        (specs ?? [])
+          .filter((s) => idsDeMovimientos.has(s.part_movement_id))
+          .map((s) => [
+            `${s.division_id}|${s.part_movement_id}`,
+            {
+              targetPerRound: s.target_per_round,
+              loadKg: s.load_kg,
+              loadUnit: s.load_unit,
+            },
+          ]),
+      ),
+    })),
   };
 }
 
@@ -78,12 +151,6 @@ export async function getCatalogoDeMovimientos(): Promise<MovementRow[]> {
     .eq("active", true)
     .order("category")
     .order("name");
-  return data ?? [];
-}
-
-export async function getTablasDePuntos(): Promise<ScoringTableRow[]> {
-  const supabase = await createClient();
-  const { data } = await supabase.from("scoring_tables").select("*").order("name");
   return data ?? [];
 }
 

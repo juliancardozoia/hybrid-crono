@@ -32,6 +32,12 @@ function refrescar(eventId: string) {
  * había acá se sacó: mezclar categorías en un mismo heat es exactamente lo
  * que impide numerar consecutivo por categoría, y en la práctica nadie la
  * usaba a propósito — un heat sin categoría es indistinguible de un olvido.
+ *
+ * LA PRUEBA ES OBLIGATORIA SOLO SI HAY MÁS DE UNA. Con una sola —toda carrera
+ * híbrida— el formulario no la pregunta y la pone el trigger. Con varias, el
+ * trigger deja de adivinar y falla: elegir "la primera del evento" en silencio
+ * ataba TODOS los heats del CrossFit al WOD 1, y `heat_prueba_inmutable`
+ * volvía ese error irreversible en cuanto el heat tenía carriles.
  */
 export async function createHeat(
   _prev: FormState,
@@ -41,6 +47,7 @@ export async function createHeat(
   await requireManage(eventId);
 
   const divisionId = String(formData.get("divisionId") ?? "").trim();
+  const workoutId = String(formData.get("workoutId") ?? "").trim();
   const laneCount = Number(formData.get("laneCount") ?? 6);
 
   if (!divisionId) return { error: "Elige una categoría." };
@@ -49,7 +56,12 @@ export async function createHeat(
   }
 
   const supabase = await createClient();
-  const name = await siguienteNombreDeHeat(supabase, eventId, divisionId);
+  const name = await siguienteNombreDeHeat(
+    supabase,
+    eventId,
+    divisionId,
+    workoutId || null,
+  );
 
   const nuevo: HeatInsert = {
     event_id: eventId,
@@ -59,17 +71,28 @@ export async function createHeat(
     scheduled_at: null,
   };
 
-  // El cast es por `workout_id`: la columna es NOT NULL pero la llena un trigger
-  // antes del insert. Ver `HeatInsert` en lib/supabase/types.ts.
+  // La prueba va EXPLICITA cuando el evento tiene mas de una, y se omite cuando
+  // tiene una sola: ahi la pone el trigger `heat_toma_prueba_por_defecto`, que
+  // es lo que deja a una carrera hibrida sin tener que elegir nada. El cast es
+  // exactamente para ese caso — `workout_id` es NOT NULL en la tabla pero el
+  // insert no la manda. Ver `HeatInsert` en lib/supabase/types.ts.
   const { error } = await supabase
     .from("heats")
-    .insert(nuevo as HeatInsertConTrigger);
+    .insert(
+      workoutId
+        ? ({ ...nuevo, workout_id: workoutId } satisfies HeatInsertConTrigger)
+        : (nuevo as HeatInsertConTrigger),
+    );
 
   if (error) {
+    // Con varias pruebas cargadas el trigger ya no adivina: exige que se elija.
+    if (errorIncluye(error.message, "varias pruebas")) {
+      return { error: "Elige qué prueba corre este heat." };
+    }
     return {
       error:
         error.code === "23505"
-          ? "Ya hay un heat con ese nombre en esta categoría."
+          ? "Ya hay un heat con ese nombre en esa prueba y categoría."
           : "No se pudo crear el heat.",
     };
   }
@@ -79,22 +102,32 @@ export async function createHeat(
 }
 
 /**
- * "Heat N", con N = el mayor consecutivo ya usado en esta categoría + 1.
+ * "Heat N", con N = el mayor consecutivo ya usado en esta prueba y categoría + 1.
  *
  * Por el MAYOR y no por la CANTIDAD: si se borró el Heat 2 y quedan Heat 1 y
  * Heat 3, la cantidad da 2 y "Heat 2" chocaría con el que ya existe. El
  * mayor existente + 1 nunca choca, aunque deje huecos en la numeración.
+ *
+ * SE CUENTA POR PRUEBA ADEMÁS DE POR CATEGORÍA, igual que la unicidad del
+ * nombre en la base (`unique (event_id, workout_id, division_id, name)`). Sin
+ * eso, el primer heat del WOD 2 de una categoría se llamaría "Heat 4" solo
+ * porque el WOD 1 ya tiene tres — y cada prueba numera desde 1.
  */
 async function siguienteNombreDeHeat(
   supabase: Awaited<ReturnType<typeof createClient>>,
   eventId: string,
   divisionId: string,
+  workoutId: string | null,
 ): Promise<string> {
-  const { data } = await supabase
+  let consulta = supabase
     .from("heats")
     .select("name")
     .eq("event_id", eventId)
     .eq("division_id", divisionId);
+
+  if (workoutId) consulta = consulta.eq("workout_id", workoutId);
+
+  const { data } = await consulta;
 
   const maximo = (data ?? []).reduce((max, h) => {
     const m = /^Heat (\d+)$/.exec(h.name);
@@ -131,6 +164,9 @@ export async function autoDistribuirHeats(
   await requireManage(eventId);
 
   const lanesPorHeat = Number(formData.get("lanesPorHeat") ?? 0);
+  // Vacío = todas las pruebas. El selector solo se pinta si hay más de una.
+  const workoutId = String(formData.get("workoutId") ?? "").trim();
+
   if (!Number.isInteger(lanesPorHeat) || lanesPorHeat < 1 || lanesPorHeat > 32) {
     return { error: "La cantidad de carriles por heat tiene que estar entre 1 y 32." };
   }
@@ -139,6 +175,7 @@ export async function autoDistribuirHeats(
   const { data, error } = await supabase.rpc("auto_distribuir_heats", {
     p_event_id: eventId,
     p_lanes_por_heat: lanesPorHeat,
+    p_workout_id: workoutId || undefined,
   });
 
   if (error) {
@@ -155,11 +192,19 @@ export async function autoDistribuirHeats(
 
   const totalHeats = filas.reduce((n, f) => n + f.heats_creados, 0);
   const totalEquipos = filas.reduce((n, f) => n + f.equipos_asignados, 0);
+  const categorias = new Set(filas.map((f) => f.division_id)).size;
+  // La función devuelve una fila por (prueba, categoría). Con una sola prueba
+  // —el caso de una carrera híbrida— nombrarla sería ruido, así que el resumen
+  // solo la menciona cuando hubo más de una.
+  const pruebas = new Set(filas.map((f) => f.workout_id)).size;
 
   refrescar(eventId);
   return {
     error: null,
-    resumen: `${totalHeats} heat(s) en ${filas.length} categoría(s), ${totalEquipos} equipo(s) distribuidos.`,
+    resumen:
+      pruebas > 1
+        ? `${totalHeats} heat(s) en ${pruebas} prueba(s) y ${categorias} categoría(s), ${totalEquipos} equipo(s) distribuidos.`
+        : `${totalHeats} heat(s) en ${categorias} categoría(s), ${totalEquipos} equipo(s) distribuidos.`,
   };
 }
 
@@ -210,9 +255,13 @@ export async function assignLanes(
         error: "El heat ya inició: no se pueden reasignar los carriles.",
       };
     }
-    // 23505: el indice que impide que un equipo corra dos veces en el evento.
+    // 23505: `lanes_team_once_per_workout`, el indice que impide que un equipo
+    // corra DOS VECES LA MISMA PRUEBA. Es por prueba y no por evento: correr el
+    // WOD 1 y el WOD 2 es lo normal, correr el WOD 1 dos veces no.
     if (error.code === "23505") {
-      return { error: "Uno de esos equipos ya está asignado a otro heat." };
+      return {
+        error: "Uno de esos equipos ya está asignado a otro heat de esta misma prueba.",
+      };
     }
     if (errorIncluye(error.message, "ningun equipo")) {
       return { error: "Asigna al menos un equipo a un carril." };

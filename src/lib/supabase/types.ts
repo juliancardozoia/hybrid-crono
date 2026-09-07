@@ -47,6 +47,8 @@ export type ScoreUnitDb = Enums<"score_unit">;
 export type ScoreDirDb = Enums<"score_dir">;
 export type ScoreStatusDb = Enums<"score_status">;
 export type CaptureMode = Enums<"capture_mode">;
+/** Como registra el juez un movimiento: un tap por rep, un solo toque, o el numero. */
+export type CaptureStyle = Enums<"capture_style">;
 export type BlockKind = Enums<"block_kind">;
 export type TeamMode = Enums<"team_mode">;
 export type MovementUnit = Enums<"movement_unit">;
@@ -86,7 +88,6 @@ export type ResultRow = Tables<"results">;
 export type ResultPublication = Tables<"result_publications">;
 export type LaneAudit = Tables<"lane_audit">;
 export type MovementRow = Tables<"movements">;
-export type ScoringTableRow = Tables<"scoring_tables">;
 export type WorkoutRow = Tables<"workouts">;
 export type WorkoutPartRow = Tables<"workout_parts">;
 export type PartDivisionRow = Tables<"part_divisions">;

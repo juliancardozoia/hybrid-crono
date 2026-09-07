@@ -19,6 +19,7 @@ import { reduceLaneEvents } from "@/shared/timing/reducer";
 import type { LaneResult, PenaltyPayload, Segment, TimingEvent } from "@/shared/timing/types";
 import {
   appendEvent,
+  appendRemoteEvent,
   loadAnchor,
   loadEvents,
   requestPersistentStorage,
@@ -89,6 +90,13 @@ interface RaceState {
   undoLast: () => Promise<void>;
   finishWith: (type: "dnf" | "dq") => Promise<void>;
   refreshPending: () => Promise<void>;
+  /**
+   * Mezcla eventos que llegaron DEL SERVIDOR -no de un tap local- al log del
+   * carril: un DNF marcado desde la torre de control, por ejemplo. Sin esto
+   * el reloj del juez sigue corriendo sobre un heat que para el servidor ya
+   * terminó, porque el sync normal es de solo subida.
+   */
+  mergeRemoteEvents: (remotos: TimingEvent[]) => Promise<void>;
   reset: () => Promise<void>;
   /** Elapsed actual del carril. Fuente unica para estampar marcajes. */
   currentElapsed: () => number;
@@ -257,6 +265,26 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     set({ events, pendingCount: events.filter((e) => e.syncState === "pending").length });
   },
 
+  mergeRemoteEvents: async (remotos) => {
+    const { laneId, events, segments } = get();
+    if (!laneId) return;
+
+    const yaTengo = new Set(events.map((e) => e.id));
+    const nuevos = remotos.filter((e) => !yaTengo.has(e.id));
+    if (nuevos.length === 0) return;
+
+    const guardados = await Promise.all(nuevos.map((e) => appendRemoteEvent(e)));
+    const todos = [...events, ...guardados].sort(
+      (a, b) => a.elapsedMs - b.elapsedMs || a.seq - b.seq,
+    );
+
+    set({
+      events: todos,
+      result: reduceLaneEvents(laneId, todos, segments),
+      pendingCount: todos.filter((e) => e.syncState === "pending").length,
+    });
+  },
+
   reset: async () => {
     const { laneId, segments } = get();
     if (!laneId) return;
@@ -281,10 +309,18 @@ export const useRaceStore = create<RaceState>((set, get) => ({
  * "corriendo". Es idempotente: se agrega una sola vez por carril.
  */
 async function ensureLaneStart(): Promise<void> {
-  const { anchor, events } = useRaceStore.getState();
+  const { anchor } = useRaceStore.getState();
   if (!anchor) return;
-  if (events.some((e) => e.type === "lane_start")) return;
-  await append({ type: "lane_start", elapsedMs: 0 });
+
+  // El chequeo ("¿ya existe?") y la escritura van en la MISMA tarea encolada:
+  // si se chequeara afuera, dos llamadas concurrentes verian las dos "no
+  // existe" con el estado de ANTES de que la otra escriba, y las dos
+  // encolarian un lane_start.
+  await encolar(async () => {
+    const { events } = useRaceStore.getState();
+    if (events.some((e) => e.type === "lane_start")) return;
+    await appendUnaVez({ type: "lane_start", elapsedMs: 0 });
+  });
 }
 
 function armUndo(eventId: string, set: (partial: Partial<RaceState>) => void) {
@@ -293,12 +329,37 @@ function armUndo(eventId: string, set: (partial: Partial<RaceState>) => void) {
   undoTimer = setTimeout(() => set({ undoTarget: null }), UNDO_WINDOW_MS);
 }
 
+// Serializa toda escritura de marcaje -append() y el chequeo-e-inserta de
+// ensureLaneStart()-. Sin esto, dos llamadas concurrentes -por ejemplo
+// ensureLaneStart() disparado dos veces casi al mismo tiempo por
+// applyServerStart() compitiendo con su propio polling de largada- leen el
+// mismo `events` desactualizado: las dos ven que falta el lane_start, las dos
+// calculan el MISMO `seq`, y las dos escriben. `on conflict (id)` no lo
+// atrapa -son ids distintos- y `ingest_timing_events` revienta contra
+// `timing_events_lane_seq_unique`, lo que tira TODO el lote (la funcion es
+// una sola transaccion) y deja el marcaje duplicado atascado en la cola para
+// siempre. Encolar cada tarea detras de la anterior asegura que el `events`
+// que lee cada una ya incluye lo que escribio la que le precedio.
+let colaDeMarcajes: Promise<unknown> = Promise.resolve();
+
+function encolar<T>(tarea: () => Promise<T>): Promise<T> {
+  const resultado = colaDeMarcajes.then(tarea);
+  // Si esta tarea falla, la cola tiene que seguir andando para la proxima: el
+  // propio llamador ya recibe el rechazo via `resultado`.
+  colaDeMarcajes = resultado.catch(() => {});
+  return resultado;
+}
+
 /**
  * Camino unico de todo marcaje: se estampa el elapsed, se escribe en IndexedDB,
  * y recien despues se actualiza la UI. Cuando esta funcion resuelve, el dato ya
  * sobrevive a que el celular se apague.
  */
-async function append(
+function append(partial: Partial<TimingEvent> & { type: TimingEvent["type"] }): Promise<OutboxEvent> {
+  return encolar(() => appendUnaVez(partial));
+}
+
+async function appendUnaVez(
   partial: Partial<TimingEvent> & { type: TimingEvent["type"] },
 ): Promise<OutboxEvent> {
   const state = useRaceStore.getState();

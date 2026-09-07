@@ -35,7 +35,7 @@ const TABLAS = [
   // Fases 9 a 14.
   "payment_providers", "discount_codes", "orders", "payment_attempts",
   "division_registration", "registration_fields", "registrations", "registration_members",
-  "movements", "scoring_tables", "workouts", "workout_parts", "part_divisions",
+  "movements", "scoring_snapshots", "workouts", "workout_parts", "part_divisions",
   "part_blocks", "part_movements", "division_movement_specs", "workout_scores",
   "workout_score_audit", "standings", "event_documents",
   // Fases 15 y 16.
@@ -97,8 +97,25 @@ for (const fn of [
   // Jueces verificados: postulacion publica y aprobacion.
   "apply_as_judge", "approve_event_staff",
   // Jueces con alcance acotado: reemplazan el acceso directo a athletes/teams.
+  // Las dos del juez se recrean con `drop` + `create` en 20260905500000 para
+  // sumarles `workout_name`: agregarle una columna a un `returns table` no lo
+  // hace `create or replace`. El drop se lleva los revoke puestos.
   "puede_leer_evento", "judge_visible_lanes", "judge_lane_bundle",
+  // Lo que le falta al juez para enterarse de un evento que insertó otra
+  // persona (un DNF desde la torre de control): el sync normal es de solo
+  // subida.
+  "judge_lane_events",
+  // Games 2026 Dynamic: la curva se congela por categoria y solo la escribe
+  // quien administra el evento.
+  "guardar_snapshot_de_puntuacion", "bloquear_snapshot_de_puntuacion",
   "auto_distribuir_heats",
+  // El constructor de pruebas. Las cuatro se REDEFINEN o se crean en
+  // 20260905300000, y `auto_distribuir_heats` ademas pasa por un `drop
+  // function` en 20260905100000: un drop se lleva los revoke puestos y
+  // Postgres recrea la funcion con EXECUTE para PUBLIC, asi que lo que se
+  // comprueba aca es que `apply_function_lockdown()` las volvio a cerrar.
+  "reorder_workouts", "reorder_part_blocks", "reorder_part_movements",
+  "guardar_specs_de_parte",
   // Aprobacion de equipos: toggle "Estado" en /atletas.
   "set_team_approval",
 ]) {

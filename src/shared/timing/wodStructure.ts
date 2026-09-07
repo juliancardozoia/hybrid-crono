@@ -11,7 +11,13 @@
  * de que cliente vino cada consulta.
  */
 
-import type { MovementUnit, WodBlock, WodStructure } from "./wod";
+import type {
+  CaptureStyle,
+  LoadUnit,
+  MovementUnit,
+  WodBlock,
+  WodStructure,
+} from "./wod";
 
 export interface FilaDeParte {
   id: string;
@@ -44,13 +50,16 @@ export interface FilaDeMovimiento {
   unit: string;
   target_per_round: number[];
   load_kg: number | null;
+  load_unit?: string | null;
   max_reps: boolean;
   es_tiebreak: boolean;
+  capture_style?: string | null;
 }
 
 export interface EspecificacionDeCategoria {
   target_per_round: number[] | null;
   load_kg: number | null;
+  load_unit?: string | null;
 }
 
 export function armarEstructuraDeWod(params: {
@@ -61,8 +70,18 @@ export function armarEstructuraDeWod(params: {
   nombres: Map<string, string>;
   /** Peso y reps propios de la categoria, por id de part_movement. */
   specs: Map<string, EspecificacionDeCategoria>;
+  /**
+   * El tope de tiempo de ESTA categoria (`part_divisions.time_cap_ms`).
+   *
+   * Manda sobre el de la parte, igual que el peso y las reps. La columna
+   * existia desde el dia uno y no la leia nadie: Elite y Scaled capeaban en el
+   * mismo minuto aunque el organizador cargara 12 y 15. Y como el cap se
+   * DERIVA del reloj en el reductor, el error se materializaba en el score sin
+   * que nadie emitiera un solo evento.
+   */
+  capDeCategoriaMs?: number | null;
 }): WodStructure {
-  const { parte, bloques, movimientos, nombres, specs } = params;
+  const { parte, bloques, movimientos, nombres, specs, capDeCategoriaMs } = params;
 
   const blocks: WodBlock[] = bloques
     .filter((b) => b.part_id === parte.id)
@@ -82,22 +101,30 @@ export function armarEstructuraDeWod(params: {
           // categoria. Es el mismo criterio que division_segment_specs para los
           // circuitos.
           const spec = specs.get(m.id);
+          // La unidad acompana al peso: si la categoria define el suyo, la
+          // unidad que se muestra es la de la categoria. Mezclarlas daria "95"
+          // con la etiqueta "kg".
+          const loadKg = spec?.load_kg ?? m.load_kg;
+          const loadUnit = (spec?.load_kg != null ? spec.load_unit : m.load_unit) ?? "kg";
           return {
             id: m.id,
             orderIndex: m.order_index,
             name: m.custom_name ?? nombres.get(m.movement_id ?? "") ?? "Movimiento",
             unit: m.unit as MovementUnit,
             targetPerRound: spec?.target_per_round ?? m.target_per_round,
-            loadKg: spec?.load_kg ?? m.load_kg,
+            loadKg,
+            loadUnit: loadUnit as LoadUnit,
             maxReps: m.max_reps,
             isTiebreak: m.es_tiebreak,
+            captureStyle: (m.capture_style as CaptureStyle | null) ?? null,
           };
         }),
     }));
 
   return {
     scheme: parte.time_scheme as WodStructure["scheme"],
-    timeCapMs: parte.time_cap_ms,
+    // El cap de la categoria manda; el de la parte es el respaldo.
+    timeCapMs: capDeCategoriaMs ?? parte.time_cap_ms,
     windowMs: parte.window_ms,
     intervalMs: parte.interval_ms,
     blocks,

@@ -46,7 +46,10 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
 
   if (data.cantidadDePruebas <= 1 || data.divisiones.length === 0) return null;
 
-  const elegida = data.divisiones.find((d) => d.division.id === division) ?? data.divisiones[0];
+  // La clave combina division + etapa: una categoria con un corte confirmado
+  // tiene dos filas en `divisiones` (Stage 1 y Stage 2), con el mismo nombre.
+  const clave = (d: Datos["divisiones"][number]) => `${d.division.id}|${d.stage}`;
+  const elegida = data.divisiones.find((d) => clave(d) === division) ?? data.divisiones[0];
 
   return (
     <section className="mt-10">
@@ -66,12 +69,12 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
       {data.divisiones.length > 1 && (
         <nav className="tabs-scroll mt-4 flex gap-1 border-b border-neutral-800">
           {data.divisiones.map((d) => {
-            const activa = d.division.id === elegida.division.id;
+            const activa = clave(d) === clave(elegida);
             return (
               <button
-                key={d.division.id}
+                key={clave(d)}
                 type="button"
-                onClick={() => setDivision(d.division.id)}
+                onClick={() => setDivision(clave(d))}
                 className={`-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors ${
                   activa
                     ? "border-lime-400 font-medium text-neutral-100"
@@ -79,6 +82,11 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
                 }`}
               >
                 {d.division.name}
+                {/* Solo se aclara la etapa si esta categoria tiene mas de una:
+                    la mayoria de las competencias no tienen cortes y repetirlo
+                    ahi seria ruido. */}
+                {data.divisiones.filter((x) => x.division.id === d.division.id).length > 1 &&
+                  ` · Etapa ${d.stage}`}
               </button>
             );
           })}

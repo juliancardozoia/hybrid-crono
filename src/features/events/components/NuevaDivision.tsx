@@ -43,13 +43,10 @@ export function NuevaDivision({
   eventId,
   templates,
   formato = "carrera_hibrida",
-  tablas = [],
 }: {
   eventId: string;
   templates: CourseTemplate[];
   formato?: EventFormat;
-  /** Tablas de puntuacion. Solo se ofrecen en CrossFit. */
-  tablas?: Array<{ id: string; name: string }>;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(createDivision, inicial);
@@ -125,25 +122,15 @@ export function NuevaDivision({
               ayuda="Vacío = ilimitado."
             />
 
-            {esCrossfit ? (
-              <Select
-                label="Sistema de puntuación"
-                name="scoringTableId"
-                options={[
-                  { value: "", label: "La del evento" },
-                  ...tablas.map((t) => ({ value: t.id, label: t.name })),
-                ]}
-              />
-            ) : (
-              // Una carrera se gana llegando antes: no hay tabla que elegir, y
-              // ofrecerla sería inventar una decisión que no existe.
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">Puntuación</span>
-                <p className="rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-400">
-                  Por tiempo, menor gana
-                </p>
-              </div>
-            )}
+            {/* Un solo sistema, y se adapta solo al tamaño de la categoría:
+                no hay nada que elegir. Se muestra igual porque el organizador
+                necesita saber con qué se reparten los puntos. */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Puntuación</span>
+              <p className="rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-400">
+                {esCrossfit ? "Games 2026 Dynamic" : "Por tiempo, menor gana"}
+              </p>
+            </div>
           </FieldRow>
 
           {pideCircuito && (

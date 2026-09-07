@@ -10,6 +10,8 @@ export interface JudgeLane {
   divisionName: string;
   heatId: string;
   heatName: string;
+  /** La prueba que corre este carril. Con una sola en el evento no se muestra. */
+  workoutName: string;
   heatStartedAt: string | null;
   eventId: string;
   eventName: string;
@@ -45,6 +47,7 @@ interface Row {
   heat_id: string;
   heat_name: string;
   heat_started_at: string | null;
+  workout_name: string | null;
 }
 
 function mapear(row: Row, userId: string): JudgeLane {
@@ -57,6 +60,7 @@ function mapear(row: Row, userId: string): JudgeLane {
     divisionName: row.division_name ?? "",
     heatId: row.heat_id,
     heatName: row.heat_name,
+    workoutName: row.workout_name ?? "",
     heatStartedAt: row.heat_started_at,
     eventId: row.event_id,
     eventName: row.event_name ?? "",

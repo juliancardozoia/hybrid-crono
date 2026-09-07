@@ -110,6 +110,7 @@ export function CarrilClient() {
         bib={estado.bundle.bib !== null ? String(estado.bundle.bib) : "—"}
         athlete={estado.bundle.athletes}
         subtitle={[estado.bundle.divisionName, estado.bundle.heatName].filter(Boolean).join(" · ")}
+        workoutName={estado.bundle.workoutName}
         partes={[...partes]
           .sort((a, b) => a.orderIndex - b.orderIndex)
           .map((p) => ({ partId: p.partId, label: p.label, structure: p.structure }))}

@@ -37,6 +37,46 @@ export function compareTiebreakVectors(
 }
 
 /**
+ * Resuelve el desempate que viene de OTRA parte, ANTES de rankear.
+ *
+ * `tiebreak_source = 'otra_prueba'` le pide a una parte que use, como
+ * desempate, el resultado de un WOD distinto — "el desempate de la final es
+ * el tiempo de la clasificatoria". `normalizeScore` no puede resolver esto:
+ * es parte-por-parte y solo ve un score a la vez, y el dato que necesita esta
+ * en la fila de la OTRA parte. Por eso se resuelve aca, mirando el conjunto
+ * completo, y se le entrega a `computeOverall` un `RawScore[]` donde el
+ * `tiebreak` de cada fila ya es el que corresponde.
+ *
+ * Usa SOLO el valor principal del equipo en la otra parte (nunca su
+ * `capValue` ni su propio desempate): si el equipo no la completo, no hay
+ * nada que darle de desempate — no es un error, es que el dato no existe, y
+ * `normalizeScore` ya sabe tratar un tiebreak null como "sin desempate".
+ */
+export function resolverTiebreaksDeOtraPrueba(
+  parts: readonly PartSpec[],
+  scores: readonly RawScore[],
+): RawScore[] {
+  const origenPorParte = new Map(
+    parts
+      .filter((p) => p.tiebreakPartId !== null)
+      .map((p) => [p.id, p.tiebreakPartId as string]),
+  );
+
+  if (origenPorParte.size === 0) return [...scores];
+
+  const valorPorParteYEquipo = new Map<string, number | null>();
+  for (const s of scores) {
+    if (s.status === "valido") valorPorParteYEquipo.set(`${s.partId}|${s.teamId}`, s.value);
+  }
+
+  return scores.map((s) => {
+    const origen = origenPorParte.get(s.partId);
+    if (!origen) return s;
+    return { ...s, tiebreak: valorPorParteYEquipo.get(`${origen}|${s.teamId}`) ?? null };
+  });
+}
+
+/**
  * Calcula la tabla general de UNA categoria.
  *
  * `tableFor` resuelve la tabla de puntos de cada parte, para soportar la

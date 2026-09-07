@@ -15,8 +15,15 @@ const inicial: FormState = { error: null };
 export interface TeamOption {
   id: string;
   label: string;
-  /** Heat donde ya está asignado, si lo está. */
-  asignadoEn: string | null;
+  /**
+   * En qué heat ya está asignado, POR PRUEBA (`workout_id` → `heat_id`).
+   *
+   * Era un solo heat, y alcanzaba mientras un evento tuviera una sola prueba.
+   * Con varias es incorrecto: un equipo corre una vez por PRUEBA, no una vez
+   * por evento (`lanes_team_once_per_workout`), así que estar en el heat del
+   * WOD 1 no puede sacarlo del selector del WOD 2.
+   */
+  asignadoEn: Record<string, string>;
 }
 
 export function HeatCard({
@@ -119,13 +126,14 @@ export function HeatCard({
   // Equipos elegibles en un carril. Incluye siempre al que ya esta elegido: si
   // no, un equipo tomado en otro heat desapareceria de la lista y el selector se
   // veria vacio aunque el valor siga puesto.
+  //
+  // "Tomado" se mide DENTRO DE ESTA PRUEBA. Correr el WOD 1 y el WOD 2 es lo
+  // normal; lo que no se puede es correr el mismo WOD dos veces.
   const opcionesPara = (numero: number) =>
-    teams.filter(
-      (t) =>
-        t.asignadoEn === null ||
-        t.asignadoEn === heat.id ||
-        t.id === seleccion[numero],
-    );
+    teams.filter((t) => {
+      const yaEn = t.asignadoEn[heat.workout_id];
+      return yaEn === undefined || yaEn === heat.id || t.id === seleccion[numero];
+    });
 
   const asignarJuez = (laneId: string) => {
     const datos = new FormData();

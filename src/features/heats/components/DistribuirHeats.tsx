@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { autoDistribuirHeats, type EstadoDistribucion } from "../actions";
-import { Field } from "@/shared/components/SimpleForm";
+import { Field, Select } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -23,7 +23,13 @@ const inicial: EstadoDistribucion = { error: null, resumen: null };
  * todavía no largaron se rearman con el padrón actual (incluye atletas
  * nuevos desde la corrida anterior); los que ya largaron no se tocan.
  */
-export function DistribuirHeats({ eventId }: { eventId: string }) {
+export function DistribuirHeats({
+  eventId,
+  pruebas,
+}: {
+  eventId: string;
+  pruebas: Array<{ id: string; name: string }>;
+}) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(autoDistribuirHeats, inicial);
   const { exito } = useNotificaciones();
@@ -69,6 +75,20 @@ export function DistribuirHeats({ eventId }: { eventId: string }) {
             entre los carriles. Los heats que todavía no largaron se rearman desde cero; los que ya
             largaron no se tocan.
           </p>
+
+          {/* Solo con más de una prueba. "Todas" es el default a propósito: es
+              lo que hace el organizador la primera vez, y elegir una sola es el
+              ajuste posterior (sumé atletas al WOD 3, rearmo solo ese). */}
+          {pruebas.length > 1 && (
+            <Select
+              label="Prueba"
+              name="workoutId"
+              options={[
+                { value: "", label: "Todas las pruebas" },
+                ...pruebas.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          )}
 
           <Field
             label="Carriles por heat"

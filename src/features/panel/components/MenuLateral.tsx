@@ -84,6 +84,9 @@ function seccionesDelEvento(id: string): {
       // datos: recalcular, revisar anomalias, publicar lo oficial. Se entraba a
       // "resultados" buscando la tabla y se encontraba una cola de anomalias.
       { href: `${base}/leaderboard`, label: "Leaderboard", icono: "trofeo" },
+      // No es "elegir un sistema" —hay uno solo y es dinamico— sino decidir
+      // cuando se congela la curva de cada categoria y con cuantos atletas.
+      { href: `${base}/puntuacion`, label: "Puntuación", icono: "trofeo" },
       {
         href: `${base}/verificacion`,
         label: "Verificación",

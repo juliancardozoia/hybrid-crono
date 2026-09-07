@@ -91,6 +91,9 @@ async function borrarOrganizacion(orgId) {
       "arenas",
       "workout_scores",
       "division_movement_specs",
+      // Cae por cascade desde `divisions`, pero va explicita como el resto:
+      // una lista a medias hace dudar de si falta algo o si es a proposito.
+      "division_movements",
       "part_movements",
       "part_blocks",
       "part_divisions",
@@ -669,6 +672,53 @@ console.log("Armando el evento completo (arenas, heats y WODs)…");
   const { data: divs } = await db.from("divisions").select("id, name").eq("event_id", eventId);
   const porNombre = new Map(divs.map((d) => [d.name, d.id]));
 
+  // --- Los parámetros de cada categoría ------------------------------------
+  //
+  // El ESTÁNDAR DECLARADO: qué se levanta y cuánto. Es lo que un atleta mira
+  // en el catálogo para decidir en cuál se anota, y sale a la ficha pública
+  // SIN depender de que ninguna prueba esté liberada: existe meses antes de
+  // que haya un solo WOD cargado.
+  //
+  // El thruster de Elite va en LIBRAS a propósito. 43,09 kg son 95 lb —el
+  // número redondo del reglamento— y la ficha tiene que devolverlo como
+  // "95 lb", no como "43,09 kg".
+  const PARAMETROS = {
+    "Elite Masculino": [
+      ["Thruster", 43.09, "lb", null],
+      ["Chest-to-bar Pull-up", null, "kg", null],
+      ["Box Jump", null, "kg", "24 pulgadas"],
+    ],
+    "Elite Femenino": [
+      ["Thruster", 29.48, "lb", null],
+      ["Chest-to-bar Pull-up", null, "kg", null],
+      ["Box Jump", null, "kg", "20 pulgadas"],
+    ],
+    "Intermedio Masculino": [
+      ["Thruster", 34, "kg", null],
+      ["Pull-up", null, "kg", null],
+      ["Box Jump", null, "kg", "20 pulgadas"],
+    ],
+  };
+
+  const filasDeParametros = [];
+  for (const [categoria, movimientos] of Object.entries(PARAMETROS)) {
+    const divisionId = porNombre.get(categoria);
+    if (!divisionId) continue;
+
+    for (const [i, [nombre, kg, unidad, spec]] of movimientos.entries()) {
+      filasDeParametros.push({
+        division_id: divisionId,
+        event_id: eventId,
+        order_index: i,
+        movement_id: await movimiento(nombre),
+        load_kg: kg,
+        load_unit: unidad,
+        spec,
+      });
+    }
+  }
+  await insertar("division_movements", filasDeParametros);
+
   const arenas = await insertar("arenas", [
     { event_id: eventId, name: "Pista principal", order_index: 0, default_heat_minutes: 20 },
     { event_id: eventId, name: "Zona de fuerza", order_index: 1, default_heat_minutes: 30 },
@@ -682,6 +732,9 @@ console.log("Armando el evento completo (arenas, heats y WODs)…");
     {
       nombre: "Evento 1 — Fran",
       descripcion: "Clásico de CrossFit. 21-15-9 de thrusters y pull-ups, contra reloj.",
+      // En LIBRAS a propósito: 43 kg son 95 lb, el número del reglamento. La
+      // ficha pública y la pantalla del juez tienen que devolver "95 lb".
+      unidadDePeso: "lb",
       parte: { time_scheme: "cap", score_unit: "tiempo", score_dir: "menor_gana", time_cap_ms: 600000, cap_unit: "reps" },
       bloque: { repeticiones: 3 },
       movimientos: [
@@ -727,7 +780,16 @@ console.log("Armando el evento completo (arenas, heats y WODs)…");
     });
 
     for (const d of divs) {
-      await insertar("part_divisions", { part_id: parte.id, division_id: d.id, event_id: eventId });
+      await insertar("part_divisions", {
+        part_id: parte.id,
+        division_id: d.id,
+        event_id: eventId,
+        // Intermedio corre el mismo WOD con MAS tiempo. Es la columna que
+        // existia desde el dia uno y no leia nadie: sin un caso cargado, la
+        // ficha publica no tiene nada que mostrar y el recorrido manual no
+        // prueba nada.
+        time_cap_ms: d.name === "Intermedio Masculino" ? 900_000 : null,
+      });
     }
 
     const [b] = await insertar("part_blocks", {
@@ -748,6 +810,7 @@ console.log("Armando el evento completo (arenas, heats y WODs)…");
         unit: "reps",
         target_per_round: m.objetivo,
         load_kg: m.kg ?? null,
+        load_unit: pr.unidadDePeso ?? "kg",
       });
 
       // El peso de cada categoría: es el dato por el que un atleta abre esta
@@ -760,6 +823,9 @@ console.log("Armando el evento completo (arenas, heats y WODs)…");
           part_movement_id: pm.id,
           event_id: eventId,
           load_kg: kg,
+          // La unidad acompaña al peso: la ficha pública devuelve el número
+          // que el organizador escribió, no los kilos con decimales.
+          load_unit: pr.unidadDePeso ?? "kg",
         });
       }
     }

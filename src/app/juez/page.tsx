@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { claimLane, releaseLane } from "@/features/judge/actions";
+import { claimLane } from "@/features/judge/actions";
 import { getJudgeLanes, type JudgeLane, type LanesResult } from "@/features/judge/queries";
 import { ClaimButton } from "@/features/judge/components/ClaimButton";
 
@@ -35,17 +35,6 @@ export default async function JuezPage() {
                     {lane.heatStartedAt ? "Heat en curso — abrir cronómetro" : "Abrir cronómetro"}
                   </p>
                 </Link>
-                {/* Terminado este heat, hay que soltarlo para poder tomar
-                    otro: un juez solo puede tener un carril activo por heat a
-                    la vez. */}
-                <form action={releaseLane.bind(null, lane.laneId)} className="mt-3">
-                  <button
-                    type="submit"
-                    className="text-xs text-neutral-500 hover:text-neutral-300 hover:underline"
-                  >
-                    Terminé — liberar este carril
-                  </button>
-                </form>
               </li>
             ))}
           </ul>
@@ -159,6 +148,16 @@ function LaneInfo({ lane }: { lane: JudgeLane }) {
         </p>
       </div>
       <p className="text-right text-xs text-neutral-500">
+        {/* La PRUEBA primero: con tres WODs en la competencia, "Heat 2" no
+            alcanza para saber cual de los tres es este, y esa es la primera
+            pregunta del dia. Con una sola prueba el nombre no aporta y no se
+            pinta. */}
+        {lane.workoutName && (
+          <>
+            <span className="text-neutral-300">{lane.workoutName}</span>
+            <br />
+          </>
+        )}
         {lane.heatName}
         <br />
         carril {lane.laneNumber}

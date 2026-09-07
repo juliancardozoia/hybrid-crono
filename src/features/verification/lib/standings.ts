@@ -1,7 +1,11 @@
 import "server-only";
 
-import { computeOverall } from "@/shared/scoring/overall";
-import { resolverTabla } from "@/shared/scoring/points";
+import { computeOverall, resolverTiebreaksDeOtraPrueba } from "@/shared/scoring/overall";
+import {
+  escalarTabla,
+  puntosDinamicos,
+  tablaDeCategoria,
+} from "@/shared/scoring/points";
 import type { PartSpec, RawScore, ScoringTable } from "@/shared/scoring/types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
@@ -34,7 +38,7 @@ export async function recomputeStandings(
   // puede verlo. Si no es de su organizacion no llega ninguna fila.
   const { data: evento } = await supabase
     .from("events")
-    .select("id")
+    .select("id, format, status")
     .eq("id", eventId)
     .maybeSingle();
 
@@ -47,12 +51,15 @@ export async function recomputeStandings(
       service
         .from("workout_parts")
         .select(
-          "id, workout_id, order_index, score_unit, score_dir, cap_unit, tiebreak_unit, tiebreak_dir",
+          "id, workout_id, order_index, score_unit, score_dir, cap_unit, max_points, tiebreak_unit, tiebreak_dir, tiebreak_source, tiebreak_part_id",
         )
         .eq("event_id", eventId),
-      service.from("part_divisions").select("part_id, division_id").eq("event_id", eventId),
+      service
+        .from("part_divisions")
+        .select("part_id, division_id")
+        .eq("event_id", eventId),
       service.from("teams").select("id, division_id, status").eq("event_id", eventId),
-      service.from("divisions").select("id, name, scoring_table_id").eq("event_id", eventId),
+      service.from("divisions").select("id, name").eq("event_id", eventId),
       service
         .from("workout_scores")
         .select("part_id, team_id, status, value_num, value_reps, value_cap, tiebreak_value")
@@ -77,10 +84,14 @@ export async function recomputeStandings(
     capUnit: p.cap_unit,
     tiebreakUnit: p.tiebreak_unit,
     tiebreakDir: p.tiebreak_dir,
+    // Solo cuenta cuando el desempate DE VERDAD viene de otra parte: el
+    // resto de los `tiebreak_source` ('hito', 'manual') ya tienen su valor en
+    // el `tiebreak_value` de esta misma fila.
+    tiebreakPartId: p.tiebreak_source === "otra_prueba" ? p.tiebreak_part_id : null,
   }));
   const specPorId = new Map(specs.map((s) => [s.id, s]));
 
-  const crudos: RawScore[] = (scores ?? []).map((s) => ({
+  const crudosSinResolver: RawScore[] = (scores ?? []).map((s) => ({
     partId: s.part_id,
     teamId: s.team_id,
     status: s.status,
@@ -90,14 +101,23 @@ export async function recomputeStandings(
     tiebreak: s.tiebreak_value,
   }));
 
-  // Las tablas de puntos se resuelven una vez: la clave viene de la base, los
-  // valores del codigo.
-  const { data: tablas } = await service
-    .from("scoring_tables")
-    .select("id, name, builtin_key, points");
-  const tablaPorId = new Map(
-    (tablas ?? []).map((t) => [t.id, resolverTabla(t.builtin_key, t.points, t.name)]),
+  // Una sola pasada sobre TODO el evento: alcanza con resolverlo una vez,
+  // antes de entrar al bucle por categoria.
+  const crudos = resolverTiebreaksDeOtraPrueba(specs, crudosSinResolver);
+
+  // La curva congelada de cada categoria. Null para las que todavia no la
+  // generaron: ahi se calcula al vuelo con el field de hoy.
+  const { data: snapshots } = await service
+    .from("scoring_snapshots")
+    .select("division_id, points, locked_at")
+    .eq("event_id", eventId)
+    .eq("stage", 1);
+
+  const snapshotPorDivision = new Map(
+    (snapshots ?? []).map((sn) => [sn.division_id, sn.points.map(Number)]),
   );
+
+  const pesoPorParte = new Map((partes ?? []).map((p) => [p.id, Number(p.max_points)]));
 
   const filas: Array<{
     event_id: string;
@@ -112,6 +132,10 @@ export async function recomputeStandings(
   }> = [];
 
   const ahora = new Date().toISOString();
+
+  // Categorias que ya calcularon con un field concreto y todavia no tienen la
+  // curva congelada. Ver `congelarCurvasQueFaltan` al final.
+  const congelar: Array<{ divisionId: string; fieldSize: number }> = [];
 
   for (const division of divisiones) {
     // Los retirados no entran al padron: con posiciones fisicas, uno al fondo
@@ -129,15 +153,23 @@ export async function recomputeStandings(
 
     if (partesDeLaCategoria.length === 0) continue;
 
-    const tabla: ScoringTable =
-      tablaPorId.get(division.scoring_table_id ?? "") ?? resolverTabla(null, null, division.name);
+    const tabla: ScoringTable = tablaDeCategoria({
+      formato: evento.format,
+      snapshot: snapshotPorDivision.get(division.id) ?? null,
+      fieldSize: teamIds.length,
+    });
 
     const general = computeOverall({
       parts: partesDeLaCategoria,
-      tableFor: () => tabla,
+      // El peso de la prueba escala la curva de la categoria. Antes esto era
+      // "asignarle otra tabla a la parte"; un multiplicador dice lo mismo sin
+      // poder desincronizarse de la curva.
+      tableFor: (part) => escalarTabla(tabla, pesoPorParte.get(part.id) ?? 100),
       teamIds,
       scores: crudos,
     });
+
+    congelar.push({ divisionId: division.id, fieldSize: teamIds.length });
 
     for (const entrada of general) {
       filas.push({
@@ -178,5 +210,54 @@ export async function recomputeStandings(
     await service.from("standings").delete().eq("event_id", eventId).in("team_id", sobrantes);
   }
 
+  await congelarCurvasQueFaltan({
+    service,
+    eventId,
+    formato: evento.format,
+    estado: evento.status,
+    yaCongeladas: new Set(snapshotPorDivision.keys()),
+    candidatas: congelar,
+  });
+
   return { categorias: divisiones.length };
+}
+
+/**
+ * Red de seguridad: congela la curva de una categoria que ya esta compitiendo.
+ *
+ * Lo normal es que el organizador la genere y la bloquee a mano antes de
+ * largar (`/panel/eventos/[id]/puntuacion`). Pero si se olvida, la curva
+ * seguiria calculandose contra "los atletas que hay ahora" y el dia que
+ * alguien se retire cambiarian los puntos de las pruebas YA CORRIDAS. Por eso
+ * el recalculo la congela solo en cuanto la competencia arranco, con el field
+ * que tiene en ese momento.
+ *
+ * Solo CrossFit: una carrera hibrida no reparte puntos.
+ */
+async function congelarCurvasQueFaltan(params: {
+  service: ReturnType<typeof createServiceClient>;
+  eventId: string;
+  formato: string;
+  estado: string;
+  yaCongeladas: Set<string>;
+  candidatas: Array<{ divisionId: string; fieldSize: number }>;
+}): Promise<void> {
+  const { service, eventId, formato, estado, yaCongeladas, candidatas } = params;
+
+  if (formato === "carrera_hibrida") return;
+  if (estado !== "live" && estado !== "verifying" && estado !== "published") return;
+
+  const nuevas = candidatas.filter((c) => !yaCongeladas.has(c.divisionId));
+  if (nuevas.length === 0) return;
+
+  await service.from("scoring_snapshots").insert(
+    nuevas.map((c) => ({
+      event_id: eventId,
+      division_id: c.divisionId,
+      stage: 1,
+      field_size: c.fieldSize,
+      points: puntosDinamicos(c.fieldSize),
+      locked_at: new Date().toISOString(),
+    })),
+  );
 }

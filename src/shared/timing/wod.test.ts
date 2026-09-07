@@ -55,6 +55,8 @@ function fran(): WodStructure {
             name: "Thruster",
             unit: "reps",
             targetPerRound: [21, 15, 9],
+            loadUnit: "kg",
+            captureStyle: null,
             loadKg: 43,
             maxReps: false,
             isTiebreak: false,
@@ -65,6 +67,8 @@ function fran(): WodStructure {
             name: "Pull-up",
             unit: "reps",
             targetPerRound: [21, 15, 9],
+            loadUnit: "kg",
+            captureStyle: null,
             loadKg: null,
             maxReps: false,
             isTiebreak: false,
@@ -91,9 +95,9 @@ function cindy(): WodStructure {
         durationMs: null,
         restMs: null,
         movements: [
-          { id: "m1", orderIndex: 0, name: "Pull-up", unit: "reps", targetPerRound: [5], loadKg: null, maxReps: false, isTiebreak: false },
-          { id: "m2", orderIndex: 1, name: "Push-up", unit: "reps", targetPerRound: [10], loadKg: null, maxReps: false, isTiebreak: false },
-          { id: "m3", orderIndex: 2, name: "Air Squat", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false },
+          { id: "m1", orderIndex: 0, name: "Pull-up", unit: "reps", targetPerRound: [5], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
+          { id: "m2", orderIndex: 1, name: "Push-up", unit: "reps", targetPerRound: [10], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
+          { id: "m3", orderIndex: 2, name: "Air Squat", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
         ],
       },
     ],
@@ -106,6 +110,99 @@ function reps(cantidad: number, desdeMs: number, pasoMs = 2000): TimingEvent[] {
     marcaje("rep", desdeMs + i * pasoMs, { partMovementId: "m1" }),
   );
 }
+
+/**
+ * Cómo se captura cada paso.
+ *
+ * Antes lo decidía una función de la pantalla del juez que miraba solo la
+ * UNIDAD: metros y calorías se escriben, todo lo demás se tapea. Es correcto
+ * para 500 m de remo y falso para 100 double-unders — tapear cien veces le saca
+ * la vista del atleta cien veces.
+ */
+describe("el estilo de captura de cada paso", () => {
+  function unMovimiento(
+    over: Partial<WodStructure["blocks"][0]["movements"][0]>,
+    rondas = 1,
+  ) {
+    const estructura: WodStructure = {
+      scheme: "cap",
+      timeCapMs: 600_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1",
+          orderIndex: 0,
+          kind: "trabajo",
+          rounds: rondas,
+          durationMs: null,
+          restMs: null,
+          movements: [
+            {
+              id: "m1",
+              orderIndex: 0,
+              name: "X",
+              unit: "reps",
+              targetPerRound: [10],
+              loadKg: null,
+              loadUnit: "kg",
+              maxReps: false,
+              isTiebreak: false,
+              captureStyle: null,
+              ...over,
+            },
+          ],
+        },
+      ],
+    };
+    return planDelWod(estructura);
+  }
+
+  it("un objetivo chico pide un toque al terminar: ya no hay umbral", () => {
+    // Tapear de a uno le saca la vista del atleta al juez una vez por rep, sea
+    // el objetivo 9 o 100 — y el cierre siempre pide confirmar la cantidad
+    // igual, natural o por el cap. "Un toque al terminar" es el default.
+    expect(unMovimiento({ targetPerRound: [21] })[0].captureStyle).toBe("hecho");
+  });
+
+  it("un objetivo grande tambien pide un toque al terminar", () => {
+    // 100 double-unders no se cuentan de a uno en una pantalla.
+    expect(unMovimiento({ targetPerRound: [100] })[0].captureStyle).toBe("hecho");
+  });
+
+  it("lo que no son reps se escribe: nadie tapea 500 metros", () => {
+    expect(
+      unMovimiento({ unit: "metros", targetPerRound: [500] })[0].captureStyle,
+    ).toBe("numero");
+    expect(
+      unMovimiento({ unit: "calorias", targetPerRound: [30] })[0].captureStyle,
+    ).toBe("numero");
+  });
+
+  it("max_reps se tapea aunque el objetivo sea enorme: contar ES el score", () => {
+    expect(
+      unMovimiento({ maxReps: true, targetPerRound: [999] })[0].captureStyle,
+    ).toBe("tap");
+  });
+
+  it("lo que fijó el organizador gana sobre todo lo anterior", () => {
+    // Su competencia, su decisión: un objetivo de 100 se puede querer contar.
+    expect(
+      unMovimiento({ targetPerRound: [100], captureStyle: "tap" })[0].captureStyle,
+    ).toBe("tap");
+    expect(
+      unMovimiento({ unit: "metros", captureStyle: "tap" })[0].captureStyle,
+    ).toBe("tap");
+  });
+
+  it("una escalera con objetivos muy distintos pide un toque al terminar en TODAS las rondas", () => {
+    // Sin umbral, el estilo derivado ya no depende del objetivo de la ronda:
+    // se mantiene uniforme sea 50 o 10.
+    const plan = unMovimiento({ targetPerRound: [50, 10] }, 2);
+    expect(plan.map((p) => p.target)).toEqual([50, 10]);
+    expect(plan.map((p) => p.captureStyle)).toEqual(["hecho", "hecho"]);
+  });
+});
 
 describe("planDelWod", () => {
   it("despliega Fran en seis pasos con su escalera", () => {
@@ -148,6 +245,8 @@ describe("planDelWod", () => {
             name,
             unit: "reps" as const,
             targetPerRound: [50],
+            loadUnit: "kg",
+            captureStyle: null,
             loadKg: null,
             maxReps: false,
             isTiebreak: false,
@@ -174,7 +273,7 @@ describe("planDelWod", () => {
           rounds: 1,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m3", orderIndex: 0, name: "Double-under", unit: "reps", targetPerRound: [50], loadKg: null, maxReps: false, isTiebreak: false }],
+          movements: [{ id: "m3", orderIndex: 0, name: "Double-under", unit: "reps", targetPerRound: [50], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
         },
         {
           id: "buy",
@@ -183,7 +282,7 @@ describe("planDelWod", () => {
           rounds: 1,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m1", orderIndex: 0, name: "Row", unit: "calorias", targetPerRound: [20], loadKg: null, maxReps: false, isTiebreak: false }],
+          movements: [{ id: "m1", orderIndex: 0, name: "Row", unit: "calorias", targetPerRound: [20], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
         },
         {
           id: "work",
@@ -192,7 +291,7 @@ describe("planDelWod", () => {
           rounds: 2,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m2", orderIndex: 0, name: "Burpee", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false }],
+          movements: [{ id: "m2", orderIndex: 0, name: "Burpee", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
         },
       ],
     };
@@ -240,6 +339,8 @@ describe("planDelWod", () => {
               name: "Burpee",
               unit: "reps",
               targetPerRound: Array.from({ length: 20 }, (_, i) => i + 1),
+              loadUnit: "kg",
+              captureStyle: null,
               loadKg: null,
               maxReps: false,
               isTiebreak: false,
@@ -434,6 +535,166 @@ describe("el cap", () => {
     const eventos = [marcaje("lane_start", 0), ...reps(5, 1000)];
     expect(reduceWodEvents("c1", eventos, sinTope, 9_000_000).capped).toBe(false);
   });
+
+  it("el juez tiene UN cierre final para reportar cuanto llevaba, y no marca el WOD como terminado", () => {
+    // Reproduce el caso real: se acabo el tiempo con el atleta a mitad del
+    // ultimo movimiento (eran 9, llevaba 5). El juez tiene que poder
+    // reportarlo -si no, esas 5 reps no quedan en ningun lado- pero el WOD
+    // sigue sin contar como "finished": queda capeado con 5, no con 9.
+    reset();
+    const cierresATiempo = [0, 1, 2, 3].map((i) =>
+      marcaje("movement_done", 100_000 * (i + 1), { partMovementId: `m${i}` }),
+    );
+    const cierreFinal = marcaje("movement_done", 640_000, {
+      partMovementId: "m4",
+      cantidad: 5,
+    });
+    // Un segundo cierre tardio, DESPUES del unico permitido: no cuenta.
+    const otroTardio = marcaje("movement_done", 650_000, { partMovementId: "m5" });
+    const eventos = [marcaje("lane_start", 0), ...cierresATiempo, cierreFinal, otroTardio];
+
+    const r = reduceWodEvents("c1", eventos, fran(), 700_000);
+
+    expect(r.status).toBe("running");
+    expect(r.capped).toBe(true);
+    expect(r.finishedMs).toBeNull();
+    // 21+21+15+15 (los cuatro de antes) + 5 (lo que reporto el juez al cortar).
+    expect(r.completedReps).toBe(77);
+    expect(r.anomalies.some((a) => a.code === "marca_despues_del_limite")).toBe(true);
+  });
+
+  it("awaitingFinalTally: prende al cortar el tiempo con un paso a medias, y se apaga apenas se usa el cierre", () => {
+    reset();
+    // Solo 4 pasos cerrados a tiempo: el quinto (round3 m1, objetivo 9) queda
+    // a medias cuando se acaba el cap.
+    const cierresATiempo = [0, 1, 2, 3].map((i) =>
+      marcaje("movement_done", 100_000 * (i + 1), { partMovementId: `m${i}` }),
+    );
+    const eventosSinCerrar = [marcaje("lane_start", 0), ...cierresATiempo];
+
+    const antes = reduceWodEvents("c1", eventosSinCerrar, fran(), 700_000);
+    expect(antes.capped).toBe(true);
+    expect(antes.awaitingFinalTally).toBe(true);
+    // El paso a medias sigue siendo el actual, aunque ya se acabo el tiempo:
+    // es lo que le permite a la pantalla mostrar el prompt de cierre.
+    expect(antes.currentStepIndex).toBe(4);
+
+    const cierreFinal = marcaje("movement_done", 640_000, {
+      partMovementId: "m4",
+      cantidad: 5,
+    });
+    const despues = reduceWodEvents(
+      "c1",
+      [...eventosSinCerrar, cierreFinal],
+      fran(),
+      700_000,
+    );
+    expect(despues.awaitingFinalTally).toBe(false);
+    expect(despues.capped).toBe(true);
+  });
+
+  it("awaitingFinalTally tambien prende en un AMRAP, aunque el status ya diga finished", () => {
+    // "Agotar la ventana ES terminar" sigue siendo cierto -el status no
+    // espera al cierre final- pero el juez igual necesita poder reportar el
+    // ultimo numero antes de que la pantalla se bloquee.
+    reset();
+    const eventos = [marcaje("lane_start", 0), ...reps(3, 1_000)];
+    const r = reduceWodEvents("c1", eventos, cindy(), 1_300_000);
+
+    expect(r.status).toBe("finished");
+    expect(r.awaitingFinalTally).toBe(true);
+    expect(r.currentStepIndex).not.toBeNull();
+  });
+
+  it("aunque el cierre final reporte el objetivo completo, el WOD NUNCA queda 'finished' si se cerro tarde", () => {
+    // Es la regresion que el cierre final podria reabrir: si el ultimo
+    // movimiento se cierra CON EL TIEMPO YA VENCIDO, cerrarlo con el objetivo
+    // entero no lo convierte en "termino a tiempo" — sigue siendo capeado.
+    reset();
+    const cierresATiempo = [0, 1, 2, 3, 4].map((i) =>
+      marcaje("movement_done", 100_000 * (i + 1), { partMovementId: `m${i}` }),
+    );
+    const cierreFinalCompleto = marcaje("movement_done", 640_000, { partMovementId: "m5" });
+    const eventos = [marcaje("lane_start", 0), ...cierresATiempo, cierreFinalCompleto];
+
+    const r = reduceWodEvents("c1", eventos, fran(), 700_000);
+
+    expect(r.status).not.toBe("finished");
+    expect(r.capped).toBe(true);
+    expect(r.finishedMs).toBeNull();
+    // Los seis pasos completos (21+21+15+15+9+9), pero capeado igual.
+    expect(r.completedReps).toBe(90);
+  });
+
+  it("en un AMRAP, las reps despues de agotada la ventana no suman", () => {
+    // Mismo principio que el cap, aplicado a la ventana: el score se congela
+    // en la bocina, no en lo que el juez alcance a tapear despues.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      ...reps(3, 1_000),
+      marcaje("rep", 1_205_000, { partMovementId: "m1" }),
+      marcaje("rep", 1_210_000, { partMovementId: "m1" }),
+    ];
+
+    const r = reduceWodEvents("c1", eventos, cindy(), 1_300_000);
+
+    expect(r.status).toBe("finished");
+    expect(r.capped).toBe(false); // en un AMRAP nadie "capea", todos terminan.
+    expect(r.completedReps).toBe(3); // las dos reps tardias no cuentan.
+    expect(r.anomalies.some((a) => a.code === "marca_despues_del_limite")).toBe(true);
+  });
+
+  it("la correccion generaliza a cualquier esquema de rondas, no solo 21-15-9", () => {
+    // Helen-like: 15-12-9 de un solo movimiento. Prueba que el corte por cap
+    // no depende de la estructura particular de Fran.
+    reset();
+    const helen: WodStructure = {
+      scheme: "cap",
+      timeCapMs: 300_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1",
+          orderIndex: 0,
+          kind: "trabajo",
+          rounds: 3,
+          durationMs: null,
+          restMs: null,
+          movements: [
+            {
+              id: "m1",
+              orderIndex: 0,
+              name: "Kettlebell swing",
+              unit: "reps",
+              targetPerRound: [15, 12, 9],
+              loadKg: 24,
+              loadUnit: "kg",
+              maxReps: false,
+              isTiebreak: false,
+              captureStyle: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 100_000, { partMovementId: "m1" }), // cierra la de 15
+      marcaje("movement_done", 200_000, { partMovementId: "m1" }), // cierra la de 12
+      // Tarde (cap a los 300_000): el juez reporta que llevaba 4 de las 9.
+      marcaje("movement_done", 320_000, { partMovementId: "m1", cantidad: 4 }),
+    ];
+
+    const r = reduceWodEvents("c1", eventos, helen, 400_000);
+
+    expect(r.status).toBe("running");
+    expect(r.capped).toBe(true);
+    expect(r.finishedMs).toBeNull();
+    expect(r.completedReps).toBe(31); // 15 + 12 + 4 (lo reportado, no el objetivo)
+  });
 });
 
 describe("carga máxima", () => {
@@ -451,7 +712,7 @@ describe("carga máxima", () => {
         durationMs: null,
         restMs: null,
         movements: [
-          { id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "kg", targetPerRound: [1], loadKg: null, maxReps: false, isTiebreak: false },
+          { id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "kg", targetPerRound: [1], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
         ],
       },
     ],

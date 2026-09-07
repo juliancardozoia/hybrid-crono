@@ -3,8 +3,15 @@ import "server-only";
 import { reduceLaneEvents } from "@/shared/timing/reducer";
 import type { Segment, TimingEvent } from "@/shared/timing/types";
 import { reduceWodEvents } from "@/shared/timing/wod";
-import { armarEstructuraDeWod } from "@/shared/timing/wodStructure";
+import {
+  armarEstructuraDeWod,
+  type EspecificacionDeCategoria,
+  type FilaDeBloque,
+  type FilaDeMovimiento,
+  type FilaDeParte,
+} from "@/shared/timing/wodStructure";
 import { scoreFromLaneResult, scoreFromWodResult } from "@/shared/scoring/fromTiming";
+import type { ScoreStatus, ScoreUnit } from "@/shared/scoring/types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 /**
@@ -209,19 +216,64 @@ export async function recomputeLanes(filtro: {
   return { recalculados };
 }
 
+const TERMINAL_CIRCUITO = new Set(["finished", "dnf", "dq"]);
+const TERMINAL_WOD = new Set(["valido", "capeado", "dnf", "dq"]);
+
+/**
+ * Que carriles (de los que tienen equipo) llegaron a un estado terminal.
+ *
+ * Un carril nunca tiene las dos cosas a la vez: o corre un circuito (fila en
+ * `results`) o corre un WOD (una o mas filas en `workout_scores`, una por
+ * parte en vivo). Por eso alcanza con mirar cual de los dos mapas tiene algo
+ * para ese carril.
+ *
+ * Pura y exportada para probarla sin tocar la base — es exactamente el punto
+ * donde `actualizarCierreDeHeat` tenia el hueco: solo miraba `results`, asi
+ * que un heat 100% CrossFit (ningun carril con circuito) nunca llegaba a
+ * `ended_at`, sin importar cuanto tiempo llevaran todos sus carriles
+ * terminados.
+ */
+export function carrilesTerminados(
+  conAtleta: Array<{ laneId: string }>,
+  estadoCircuitoPorCarril: Map<string, string>,
+  estadosWodPorCarril: Map<string, string[]>,
+): Set<string> {
+  const terminados = new Set<string>();
+  for (const lane of conAtleta) {
+    const circuito = estadoCircuitoPorCarril.get(lane.laneId);
+    if (circuito !== undefined) {
+      if (TERMINAL_CIRCUITO.has(circuito)) terminados.add(lane.laneId);
+      continue;
+    }
+    const wod = estadosWodPorCarril.get(lane.laneId);
+    if (wod && wod.length > 0 && wod.every((estado) => TERMINAL_WOD.has(estado))) {
+      terminados.add(lane.laneId);
+    }
+  }
+  return terminados;
+}
+
 /**
  * Un heat "termino" cuando TODOS sus carriles con atleta llegaron a un
- * estado terminal (finished/dnf/dq). Se reevalua cada vez, en los dos
- * sentidos: si ya estaba marcado y un recalculo (p. ej. anular un marcaje)
- * lo saca de terminal, se destranca solo -- 'results' es cache y puede
- * cambiar, `ended_at` tiene que seguirla.
+ * estado terminal. Se reevalua cada vez, en los dos sentidos: si ya estaba
+ * marcado y un recalculo (p. ej. anular un marcaje) lo saca de terminal, se
+ * destranca solo -- 'results'/'workout_scores' son cache y pueden cambiar,
+ * `ended_at` tiene que seguirlos.
+ *
+ * De paso, todo carril INDIVIDUAL que llega a terminal libera a su juez del
+ * lease de `claim_lane` -aunque el heat entero siga corriendo, porque otro
+ * atleta del mismo heat puede seguir en carrera-. Sin esto, "un juez, un heat
+ * a la vez" lo dejaba atado a ese heat hasta que el lease de 6 horas venciera
+ * solo, y el UNICO camino para soltarlo antes era un boton manual en la
+ * pantalla del juez ("Terminé - liberar este carril") que ademas seguia
+ * ofreciendo carriles ya terminados para que otro los "tomara".
  */
 async function actualizarCierreDeHeat(
   service: ReturnType<typeof createServiceClient>,
   heatId: string,
 ): Promise<void> {
   const [{ data: carriles }, { data: heat }] = await Promise.all([
-    service.from("lanes").select("id, team_id").eq("heat_id", heatId),
+    service.from("lanes").select("id, team_id, judge_id").eq("heat_id", heatId),
     service.from("heats").select("ended_at, started_at").eq("id", heatId).maybeSingle(),
   ]);
 
@@ -230,23 +282,45 @@ async function actualizarCierreDeHeat(
   const conAtleta = (carriles ?? []).filter((l) => l.team_id !== null);
   if (conAtleta.length === 0) return;
 
-  const { data: resultados } = await service
-    .from("results")
-    .select("lane_id, status")
-    .in(
-      "lane_id",
-      conAtleta.map((l) => l.id),
-    );
+  const laneIds = conAtleta.map((l) => l.id);
 
-  const porCarril = new Map((resultados ?? []).map((r) => [r.lane_id, r.status]));
-  const terminado = (estado: string | undefined) =>
-    estado === "finished" || estado === "dnf" || estado === "dq";
-  const completo = conAtleta.every((l) => terminado(porCarril.get(l.id)));
+  const [{ data: resultados }, { data: scores }] = await Promise.all([
+    service.from("results").select("lane_id, status").in("lane_id", laneIds),
+    service.from("workout_scores").select("lane_id, status").in("lane_id", laneIds),
+  ]);
+
+  const porCircuito = new Map((resultados ?? []).map((r) => [r.lane_id, r.status]));
+  const porWod = new Map<string, string[]>();
+  for (const s of scores ?? []) {
+    // Un score manual (`source: 'manual'`) no tiene carril: no participa de
+    // si ESTE carril esta terminado.
+    if (!s.lane_id) continue;
+    porWod.set(s.lane_id, [...(porWod.get(s.lane_id) ?? []), s.status]);
+  }
+
+  const terminados = carrilesTerminados(
+    conAtleta.map((l) => ({ laneId: l.id })),
+    porCircuito,
+    porWod,
+  );
+
+  const completo = conAtleta.every((l) => terminados.has(l.id));
 
   if (completo && !heat.ended_at) {
     await service.from("heats").update({ ended_at: new Date().toISOString() }).eq("id", heatId);
   } else if (!completo && heat.ended_at) {
     await service.from("heats").update({ ended_at: null }).eq("id", heatId);
+  }
+
+  const paraLiberar = conAtleta.filter((l) => l.judge_id && terminados.has(l.id));
+  if (paraLiberar.length > 0) {
+    await service
+      .from("lanes")
+      .update({ lease_expires_at: new Date().toISOString() })
+      .in(
+        "id",
+        paraLiberar.map((l) => l.id),
+      );
   }
 }
 
@@ -286,14 +360,134 @@ function aTimingEvent(e: FilaDeMarcaje): TimingEvent {
 }
 
 /**
- * Reduce los marcajes de un carril de CrossFit y escribe sus scores.
+ * Que partes de esta prueba corre la categoria del carril, y con que cap.
+ *
+ * EXACTAMENTE la misma regla que aplica `armarPartesDeWod` en el bundle del
+ * juez, y tiene que quedarse igual: si una filtra por `part_divisions` y la
+ * otra no, el juez ve un WOD y el score oficial sale de otro. Es literalmente
+ * el escenario que `wodStructure.ts` existe para evitar.
+ *
+ * Antes de esta funcion, la categoria no importaba: CUALQUIER carril de la
+ * prueba se puntuaba con TODAS sus partes en vivo, corriera esa categoria o
+ * no.
+ *
+ * Pura y exportada para poder probarla sin tocar la base: es exactamente el
+ * punto donde ese hueco se filtraba.
+ */
+export function partesQueCorreLaCategoria(
+  partes: FilaDeParte[],
+  asignadas: Array<{ part_id: string; time_cap_ms: number | null }>,
+): { suyas: FilaDeParte[]; capPorParte: Map<string, number | null> } {
+  const capPorParte = new Map(asignadas.map((a) => [a.part_id, a.time_cap_ms]));
+  return { suyas: partes.filter((p) => capPorParte.has(p.id)), capPorParte };
+}
+
+/** Una fila lista para `workout_scores.upsert()`. */
+export interface ScoreDeWod {
+  part_id: string;
+  team_id: string;
+  event_id: string;
+  division_id: string;
+  score_unit: ScoreUnit;
+  status: ScoreStatus;
+  value_num: number | null;
+  value_reps: number | null;
+  value_cap: number | null;
+  tiebreak_value: number | null;
+  source: "en_vivo";
+  lane_id: string;
+}
+
+/**
+ * Reduce los marcajes de un carril de CrossFit a los scores de sus partes.
  *
  * Corre `reduceWodEvents`, la misma funcion pura que la pantalla del juez usa
  * para pintar el contador. No hay una segunda implementacion del conteo: si el
  * numero que ve el juez y el oficial pudieran diferir, el producto pierde
  * sentido igual que si difirieran los tiempos.
  *
- * Devuelve cuantas partes recalculo.
+ * PURA: recibe filas ya traidas de la base y devuelve los scores a escribir,
+ * sin tocar Supabase. Es el puente real entre el log y el podio, y hasta esta
+ * separacion no tenia un solo test — no por ser simple, sino porque vivia
+ * mezclado con las diez consultas que lo alimentan.
+ */
+export function calcularScoresDeWod(params: {
+  suyas: FilaDeParte[];
+  capPorParte: Map<string, number | null>;
+  bloques: FilaDeBloque[];
+  movimientos: FilaDeMovimiento[];
+  nombres: Map<string, string>;
+  specs: Map<string, EspecificacionDeCategoria>;
+  /** `Date.now() - heat.started_at`, o undefined si el heat no largo. */
+  nowElapsedMs: number | undefined;
+  eventos: TimingEvent[];
+  laneId: string;
+  teamId: string;
+  eventId: string;
+  divisionId: string;
+}): ScoreDeWod[] {
+  const {
+    suyas,
+    capPorParte,
+    bloques,
+    movimientos,
+    nombres,
+    specs,
+    nowElapsedMs,
+    eventos: log,
+    laneId,
+    teamId,
+    eventId,
+    divisionId,
+  } = params;
+
+  return suyas.map((parte): ScoreDeWod => {
+    // Cada parte cuenta solo sus marcajes. La largada es una sola y vale para
+    // todas.
+    const suyos = log.filter(
+      (e) => e.type === "lane_start" || e.payload?.partId === parte.id,
+    );
+
+    const structure = armarEstructuraDeWod({
+      parte,
+      bloques,
+      movimientos,
+      nombres,
+      specs,
+      capDeCategoriaMs: capPorParte.get(parte.id) ?? null,
+    });
+
+    // `FilaDeParte.score_unit` es `string` a proposito -- es un tipo puro y
+    // desacoplado de la base, ver wodStructure.ts -- pero acA es siempre uno
+    // de los valores del enum: lo puso `armarPartesDeWod()` leyendo la misma
+    // columna que el CHECK de Postgres restringe.
+    const scoreUnit = parte.score_unit as ScoreUnit;
+
+    const resultado = reduceWodEvents(laneId, suyos, structure, nowElapsedMs);
+    const score = scoreFromWodResult({ partId: parte.id, teamId, wod: resultado, scoreUnit });
+
+    return {
+      part_id: parte.id,
+      team_id: teamId,
+      event_id: eventId,
+      division_id: divisionId,
+      score_unit: scoreUnit,
+      status: score.status,
+      value_num: score.value,
+      value_reps: score.reps,
+      value_cap: score.capValue,
+      tiebreak_value: score.tiebreak,
+      source: "en_vivo",
+      lane_id: laneId,
+    };
+  });
+}
+
+/**
+ * El wrapper de I/O: trae de la base todo lo que `calcularScoresDeWod`
+ * necesita, y escribe lo que devuelve. La logica en si NO vive aca — vive en
+ * las dos funciones puras de arriba, que es lo que las hace testeables sin
+ * mockear Supabase.
  */
 async function recalcularWod(params: {
   service: ReturnType<typeof createServiceClient>;
@@ -325,7 +519,19 @@ async function recalcularWod(params: {
 
   if (!partes || partes.length === 0) return 0;
 
-  const partIds = partes.map((p) => p.id);
+  const { data: asignadas } = await service
+    .from("part_divisions")
+    .select("part_id, time_cap_ms")
+    .eq("division_id", divisionId)
+    .in(
+      "part_id",
+      partes.map((p) => p.id),
+    );
+
+  const { suyas, capPorParte } = partesQueCorreLaCategoria(partes, asignadas ?? []);
+  if (suyas.length === 0) return 0;
+
+  const partIds = suyas.map((p) => p.id);
 
   const [{ data: bloques }, { data: movimientos }, { data: heat }] = await Promise.all([
     service
@@ -335,7 +541,7 @@ async function recalcularWod(params: {
     service
       .from("part_movements")
       .select(
-        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, max_reps, es_tiebreak",
+        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style",
       )
       .in("part_id", partIds),
     service.from("heats").select("started_at").eq("id", lane.heatId).maybeSingle(),
@@ -353,7 +559,7 @@ async function recalcularWod(params: {
       : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
     service
       .from("division_movement_specs")
-      .select("part_movement_id, target_per_round, load_kg")
+      .select("part_movement_id, target_per_round, load_kg, load_unit")
       .eq("division_id", divisionId),
   ]);
 
@@ -367,52 +573,24 @@ async function recalcularWod(params: {
     ? Math.max(0, Date.now() - new Date(heat.started_at).getTime())
     : undefined;
 
-  const log = eventos.map(aTimingEvent);
-  let recalculadas = 0;
+  const scores = calcularScoresDeWod({
+    suyas,
+    capPorParte,
+    bloques: bloques ?? [],
+    movimientos: movimientos ?? [],
+    nombres,
+    specs: specPorMovimiento,
+    nowElapsedMs,
+    eventos: eventos.map(aTimingEvent),
+    laneId: lane.id,
+    teamId: lane.teamId,
+    eventId: lane.eventId,
+    divisionId,
+  });
 
-  for (const parte of partes) {
-    // Cada parte cuenta solo sus marcajes. La largada es una sola y vale para
-    // todas.
-    const suyos = log.filter(
-      (e) => e.type === "lane_start" || e.payload?.partId === parte.id,
-    );
-
-    const structure = armarEstructuraDeWod({
-      parte,
-      bloques: bloques ?? [],
-      movimientos: movimientos ?? [],
-      nombres,
-      specs: specPorMovimiento,
-    });
-
-    const resultado = reduceWodEvents(lane.id, suyos, structure, nowElapsedMs);
-    const score = scoreFromWodResult({
-      partId: parte.id,
-      teamId: lane.teamId,
-      wod: resultado,
-      scoreUnit: parte.score_unit,
-    });
-
-    await service.from("workout_scores").upsert(
-      {
-        part_id: parte.id,
-        team_id: lane.teamId,
-        event_id: lane.eventId,
-        division_id: divisionId,
-        score_unit: parte.score_unit,
-        status: score.status,
-        value_num: score.value,
-        value_reps: score.reps,
-        value_cap: score.capValue,
-        tiebreak_value: score.tiebreak,
-        source: "en_vivo",
-        lane_id: lane.id,
-      },
-      { onConflict: "part_id,team_id" },
-    );
-
-    recalculadas += 1;
+  for (const score of scores) {
+    await service.from("workout_scores").upsert(score, { onConflict: "part_id,team_id" });
   }
 
-  return recalculadas;
+  return scores.length;
 }

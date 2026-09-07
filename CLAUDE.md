@@ -221,6 +221,8 @@ src/shared/timing/     motor puro de tiempos: tipos, ancla del reloj, reductor d
 src/shared/scoring/    motor puro de puntuación: unidades, tablas, posiciones físicas,
                        desempate por vector. Los dos sin DOM y sin React: es donde vive la
                        corrección del producto y donde la cobertura tiene que ser alta.
+src/shared/unidades/   kilos y libras. El peso se guarda en kilos y se recuerda la unidad
+                       en que se escribió: "95 lb" tiene que volver como "95 lb".
 src/features/judge/    PWA del juez: db (Dexie), sync (outbox), store, componentes
 src/features/auth/     entrar, crear cuenta, Google, recuperar contraseña
 src/features/org/       organizaciones (se crean solas) y membresías
@@ -950,17 +952,29 @@ exactamente lo que ya detectaba, sin bloquear, el codigo `juez_solapado` de
 como "en curso": el mismo mecanismo que ya usaba `claim_lane` para carriles
 huerfanos.
 
-**"Terminar este heat para estar en otro" necesitaba que un juez pudiera
-soltar SU PROPIO carril**, y no podia: `transfer_lane` exigia
-`can_verify_event` incluso para liberar el carril de uno mismo, y un juez
-comun nunca tiene ese rol. `src/features/judge/actions.ts` ya tenia una
-funcion `releaseLane` que llamaba a `transfer_lane(lane, null, motivo)`
-esperando que esto funcionara —con un comentario que decia literalmente "si no
-tiene permiso no pasa nada"— y nunca funciono para nadie. Ahora
-`transfer_lane` deja pasar la AUTOliberacion (`p_to_judge is null` y quien
-llama es el juez actual) sin pedir rol de verificacion; seguir REASIGNANDO a
-un tercero sigue siendo trabajo exclusivo de quien verifica. El boton
-"Terminé — liberar este carril" en `/juez` es lo que por fin usa esa funcion.
+**"Terminar este heat para estar en otro" ya NO depende de que el juez suelte nada a mano.**
+Hubo una version intermedia donde `transfer_lane` dejaba pasar la AUTOliberacion (`p_to_judge is
+null` y quien llama es el juez actual) sin pedir rol de verificacion, con un boton "Terminé -
+liberar este carril" en `/juez`. Se dio vuelta a proposito, reportado en produccion: el boton
+seguia apareciendo para un carril cuyo atleta YA HABIA TERMINADO —`lanes.status` no lo actualiza
+nada en todo el codigo, queda pegado en su valor inicial, asi que la pantalla no tenia forma de
+saberlo sola— y ademas dejaba a un juez soltar un carril A MEDIO JUZGAR, una decision que le
+corresponde a la organizacion, no a quien esta cronometrando.
+
+Ahora quedar libre es AUTOMATICO: `actualizarCierreDeHeat()` (`recompute.ts`), el mismo
+recalculo que ya pone `heats.ended_at`, revisa cada carril CON ATLETA por separado —via
+`carrilesTerminados()`, pura y testeada— y si su resultado es terminal (`results.status` para un
+circuito, o TODAS sus `workout_scores` para un WOD) le vence el lease (`lease_expires_at =
+now()`) sin que el juez toque nada. Sigue funcionando aunque el HEAT entero no haya terminado
+—otro atleta del mismo heat puede seguir corriendo— porque la garantia es por carril, no por
+heat. `transfer_lane` volvio a exigir `can_verify_event` siempre, sin excepcion para el propio
+juez: `releaseLane` y el boton se borraron.
+
+**Sin esto, `actualizarCierreDeHeat()` tenia el mismo hueco que `judge_visible_lanes()`
+(ver mas abajo): solo miraba `results`, asi que un heat 100% CrossFit —ningun carril con
+circuito— nunca llegaba a `ended_at`, sin importar cuanto tiempo llevaran todos sus carriles
+terminados.** Ahora tambien mira `workout_scores` para los carriles que no tienen fila en
+`results`.
 
 **El destino de `transfer_lane` se validaba solo contra `org_members`.** Un
 colaborador invitado SOLO a este evento —que es justo a quien mas se le
@@ -969,6 +983,44 @@ asignan carriles, ver
 no pasaba esa validacion, y el organizador no podia transferirle un carril
 desde Heats aunque lo tuviera invitado y aprobado. Ahora tambien acepta un
 `event_staff` aprobado de ese evento.
+
+### Un carril terminado se protege: no se lista ni en "tuyos" ni en "libres"
+
+Complemento de la liberacion automatica de arriba. `judge_visible_lanes()` ahora excluye
+cualquier carril cuyo resultado sea terminal —mismo `carrilesTerminados()` en espiritu, resuelto
+en SQL con una subconsulta a `results`/`workout_scores`—, asi que un atleta que ya termino
+desaparece SOLO de "Asignados a ti" (nadie tiene que liberarlo a mano) y **nunca aparece en
+"Libres" para que otro juez lo tome**: el resultado de un atleta que ya corrio no tiene por que
+quedar expuesto como si fuera un carril disponible.
+
+### El juez no se entera de lo que pasa en la torre de control, y viceversa
+
+Reportado en produccion: marcar DNF desde la torre de control no se veia reflejado en la
+pantalla del juez, que seguia mostrando el reloj corriendo.
+
+**La causa: el sync del juez es de SOLO SUBIDA.** `startSyncLoop` (`sync.ts`) empuja la cola
+local de IndexedDB hacia el servidor y nunca pregunta que hay nuevo del lado de afuera. Un DNF
+insertado por la organizacion (`marcarDnf`, con `deviceId: "panel-organizador"`) queda en
+`timing_events` pero el store del juez arma `resultado` ENTERO desde su copia local: nunca se
+entera de un evento que insertó otra persona.
+
+**`judge_lane_events(p_lane_id)`** es la funcion nueva que lo resuelve —mismo alcance que
+`judge_lane_bundle` (cualquier staff del evento, no solo el juez asignado; un `timing_event` no
+lleva nombres de atletas, asi que no hace falta acotarlo mas)—. `useSincronizarEventosRemotos`
+(hook nuevo, mismo patron que `useDetectarLargadaDeshecha`: poll cada 5s mientras el carril siga
+sin terminar) la consulta y `mergeRemoteEvents()` en el store mezcla lo nuevo al log local
+—deduplicado por id, escrito en IndexedDB via `appendRemoteEvent` (`syncState: "synced"`, nunca
+vuelve a subirse)—. Lo usan las dos pantallas de juez por igual.
+
+**En el sentido contrario, `TorreDeHeats` tampoco se refrescaba sola.** Es una foto del server
+en el momento del render; un DNF marcado desde el celular del juez no aparecia ahi hasta que
+alguien recargaba la pagina a mano. Ahora se refresca con `router.refresh()` cada 15s mientras
+haya algun heat corriendo (`startedAt` seteado y `endedAt` null) — nada mientras no hay nada que
+mirar.
+
+**El boton DNF de Control pasa a pedir confirmacion**, mismo patron `Modal` que ya usaban
+"Deshacer Inicio" y "Largar Heat": antes disparaba la accion directo al click, y un DNF —a
+diferencia de esos dos— no se puede deshacer desde la pantalla.
 
 ### Un juez de EVENTO no ve la competencia: ve su carril
 
@@ -1104,10 +1156,23 @@ equipos confirmados, numerados desde 1, con la cantidad de carriles que pida
 el organizador, y reparte los jueces ya cargados en el evento **al azar**
 entre los carriles — es el "evitamos fraude" del pedido original.
 
-- **El nombre del heat pasó a ser único por CATEGORÍA, no por evento**
-  (`unique (event_id, division_id, name)`, no `unique (event_id, name)`).
-  Sin este cambio, "Individual Masculino" y "Individual Femenino" no podían
-  tener las dos su propio "Heat 1" — chocaban entre sí. `division_id` sigue
+- **Reparte por (PRUEBA × CATEGORÍA), no solo por categoría**
+  (`20260905100000_heat_elige_su_prueba`). La firma es
+  `auto_distribuir_heats(p_event_id, p_lanes_por_heat, p_workout_id default null)`
+  —`null` = todas las pruebas— y devuelve `workout_id`/`workout_name` además de
+  la categoría. Cerró dos bugs que solo aparecían con más de una prueba: el
+  filtro de equipos elegibles descartaba a quien ya tuviera carril en
+  **cualquier** heat largado (apenas largaba el WOD 1, el WOD 2 no asignaba a
+  nadie), y el borrado de heats sin largar tampoco estaba acotado por prueba
+  (distribuir el WOD 2 **borraba** los heats ya armados del WOD 1). Ahora las
+  dos condiciones llevan `workout_id`. Además **solo entran las categorías que
+  están en `part_divisions` de esa prueba**: una categoría que no la corre no
+  puede tener heats de ella.
+- **El nombre del heat es único por PRUEBA y CATEGORÍA**
+  (`unique (event_id, workout_id, division_id, name)`). Empezó siendo único por
+  evento, pasó a serlo por categoría —"Individual Masculino" y "Individual
+  Femenino" no podían tener las dos su "Heat 1"— y ahora también por prueba, por
+  el mismo motivo una vez más: cada WOD numera sus heats desde 1. `division_id` sigue
   siendo nullable a nivel de base (heats viejos sin categoría no se tocan),
   pero desde ahora es **obligatorio en la app**: el modal de alta ya no
   ofrece la opción "Mixto — varias divisiones" que había antes, que no era
@@ -1118,14 +1183,15 @@ entre los carriles — es el "evitamos fraude" del pedido original.
   crear uno con "cantidad + 1" chocaría con el que ya existe. La hora de
   largada real se sigue cargando en `/cronograma`; pedirla al crear no
   aportaba nada.
-- **Correr la distribución dos veces RECALCULA, no duplica.** Por categoría:
+- **Correr la distribución dos veces RECALCULA, no duplica.** Por prueba y categoría:
   se borran los heats que **todavía no largaron** (con su cascada de
   carriles) y se arma la lista fresca de equipos confirmados que no están ya
-  corriendo en un heat en marcha. Los heats que **ya largaron** —tengan o no
+  corriendo esa MISMA prueba en un heat en marcha. Los heats que **ya largaron** —tengan o no
   marcajes— no se tocan, y sus equipos quedan excluidos del reparto nuevo.
   Es lo que permite sumar categorías o atletas después de la primera corrida
-  y volver a apretar el botón sin perder nada. La numeración de la tanda
-  nueva esquiva los "Heat N" que ya usa un heat en marcha de esa categoría.
+  y volver a apretar el botón sin perder nada. Todo acotado a la prueba: correr
+  la distribución del WOD 2 no toca nada del WOD 1. La numeración de la tanda
+  nueva esquiva los "Heat N" que ya usa un heat en marcha de esa prueba y categoría.
 - **El pool de jueces es el mismo `event_staff` aprobado que ya lista la
   pantalla de Jueces** — no `org_members`. Se mezcla una sola vez por corrida
   (`order by random()`). `getJudges()` (el selector manual de "asignar juez"
@@ -1484,6 +1550,33 @@ cosa: "Elite Masculino: Thruster 43 kg" existe meses ANTES de que haya una sola
 prueba cargada, y sigue existiendo aunque las pruebas cambien. Meterlo en la
 otra tabla obligaria a inventar un WOD falso para poder guardarlo.
 
+**Salen a la ficha publica, y NO detras de `released_at`**
+(`20260905200000_parametros_publicos`). `public_event_detail` devuelve
+`divisions[].movimientos[]` con nombre, `cargaKg`, `cargaUnidad` y `spec`.
+Aquella columna protege el CONTENIDO de una prueba —que WOD sale y cuando se
+revela lo decide el organizador—; el estandar de la categoria es lo contrario:
+existe para que alguien decida en cual anotarse ANTES de que haya un solo WOD
+cargado. Esconderlo hasta liberar una prueba invertiria el motivo por el que la
+tabla existe. La `cargaUnidad` viaja al JSON junto con los kilos: quien programo
+"95 lb" no reconoce "43,09 kg".
+
+**Se editan y se reordenan en el lugar.** Antes solo se podia agregar y quitar,
+asi que corregir 43 por 45 era borrar la fila y volver a buscar el movimiento
+entre los 148 del catalogo. El boton de cada fila se llama **"Actualizar", no
+"Guardar"**: el modal ya tiene su unico Guardar —el de la categoria— y una
+categoria con cinco movimientos tendria seis botones con el mismo nombre. Es la
+misma distincion que ya valia para "Agregar".
+
+**El campo de peso solo aparece si el movimiento lo admite** (`allows_load`, del
+catalogo). Se recibia y se descartaba: pedirle kilos a un burpee es ofrecer un
+dato que no existe. Un movimiento escrito a mano si lo ofrece — de ese no
+sabemos nada.
+
+**Los helpers de kilos/libras viven en `src/shared/unidades/carga.ts`**, no en
+`features/events/lib/`. Los usan `events`, `catalogo`, `workouts` y `judge`: una
+funcion pura importada por cuatro features desde adentro de una quinta es
+exactamente lo que `shared/` existe para evitar.
+
 ### Kilos o libras
 
 Se guarda SIEMPRE en kilos —es la unidad canonica, la del resto del esquema y la
@@ -1501,13 +1594,16 @@ que vuelven iguales.
 | | CrossFit | Carrera hibrida |
 |---|---|---|
 | Limite de registros | si | si |
-| Sistema de puntuacion | se elige | **no se ofrece**: es por tiempo |
+| Sistema de puntuacion | **no se elige**: hay uno solo y dinamico | **no se ofrece**: es por tiempo |
 | Movimientos con peso | si | no |
 | Parametros del circuito | no | si |
 
-**Preguntar por un circuito en un CrossFit —o por una tabla de puntos en una
-carrera— hace dudar de si la herramienta entendio que competencia se esta
-armando.** Hay un test de componente que falla si las dos ramas se cruzan.
+**Preguntar por un circuito en un CrossFit —o por puntos en una carrera— hace
+dudar de si la herramienta entendio que competencia se esta armando.** Hay un
+test de componente que falla si las dos ramas se cruzan. En CrossFit la
+pantalla ya no PREGUNTA el sistema de puntuacion (hay uno solo): lo informa,
+que es distinto — ver
+[Games 2026 Dynamic](#games-2026-dynamic-un-solo-sistema-y-se-adapta-al-tamano-de-la-categoria).
 
 `division_segment_specs` es lo que hace que **Elite corra 1 km y Amateur 500 m en
 la misma carrera**: el circuito es uno solo y cada categoria lo recorre con sus
@@ -1527,10 +1623,10 @@ como cero diria "cero metros", que es otra cosa.
 - **Se quito el campo "Nivel".** Lo que decia —RX, Scaled, Elite— ya esta en el
   nombre de la categoria, y tenerlo en dos lados garantiza que un dia digan
   cosas distintas. La columna sigue en la base para no perder lo ya cargado.
-- **El cupo y la tabla de puntos se preguntan AL CREAR, no solo al editar.** Son
-  lo primero que un organizador decide sobre una categoria, y dejarlos para
-  despues obliga a volver a abrirlas una por una — y a descubrir primero que se
-  abren.
+- **El cupo se pregunta AL CREAR, no solo al editar.** Es lo primero que un
+  organizador decide sobre una categoria, y dejarlo para despues obliga a
+  volver a abrirlas una por una — y a descubrir primero que se abren. La
+  puntuacion ya no se pregunta en ningun momento: hay un solo sistema.
 - **El acordeon dice "Configurar", no solo una flecha.** Una flecha sola se lee
   como adorno: el organizador no descubre que ahi adentro estan el cupo, la
   puntuacion y los movimientos, y se queda creyendo que la categoria ya esta
@@ -1613,8 +1709,21 @@ pega en la pared, y el leaderboard ya mostraba los nombres apenas arranca.
 - **Los pesos POR CATEGORIA son el dato.** Estaban en
   `division_movement_specs` y no salian por ningun lado; el peso es lo que
   decide en que categoria se anota alguien.
+- **El peso se muestra en la unidad en que lo escribio el organizador**, no en
+  kilos (`20260905400000`). La base guarda kilos —es lo que compara el motor—
+  pero "43,09 kg" no esta en ningun reglamento: quien programo el WOD escribio
+  "95 lb" y eso es lo que el atleta reconoce. `cargaUnidad` viaja al JSON junto
+  a `cargaKg`, tanto en el peso base del movimiento como en el de cada
+  categoria, y la pantalla los pasa por `formatearCarga`.
+- **El cap POR CATEGORIA solo se pinta cuando alguna lo cambia.**
+  `part_divisions.time_cap_ms` existia desde el dia uno y no la leia nadie. Si
+  todas comparten el de la parte —el caso normal— la lista viene vacia: repetir
+  la misma cifra para cada categoria seria ruido. Va arriba, junto al titulo,
+  porque modifica el "cap 10 min" que se lee dos lineas mas arriba, y no junto a
+  los movimientos: es del TIEMPO, no del trabajo.
 - **Una prueba sin `released_at` se LISTA pero no se abre.** El organizador
-  carga los WODs con semanas de anticipacion para configurar al juez.
+  carga los WODs con semanas de anticipacion para configurar al juez. El
+  interruptor esta en `/panel/eventos/[id]/pruebas` — ver `liberarPrueba`.
 - **El precio se formatea con `idioma-PAIS_DEL_EVENTO`.** `es-CO` da
   "$ 180.000" y `en-CO` da "COP 180,000": el local lee su moneda como la
   escribe, y al extranjero el "$" solo lo confundiria con dolares.
@@ -1867,6 +1976,13 @@ y `public_leaderboard()` filtran por `status`. Cada una mira el eje que le corre
 - **`workouts.released_at` decide cuando se hace publico un WOD.** El organizador carga las pruebas
   semanas antes para configurar la pantalla del juez, y casi nunca quiere que se vean con esa
   anticipacion. Sin esta columna habria que elegir entre configurar tarde o revelar temprano.
+  La escribe **`liberarPrueba`**, con el boton "Publicar" / "Ocultar" de cada prueba en
+  `/panel/eventos/[id]/pruebas`. Durante toda la fase 9 la columna **no la escribia nadie** —un
+  `grep` en `src/` devolvia solo `database.types.ts`— asi que `public_event_detail` calculaba
+  `liberado: false` siempre y la pestaña publica de pruebas decia "Se anuncia mas adelante" en
+  TODA competencia: `PanelDeWorkouts` estaba escrito, probado y era inalcanzable. Se guarda el
+  instante y no un booleano porque la funcion publica compara contra `now()`, asi que una
+  revelacion programada se puede cargar a mano sin tocar el esquema.
 - **Los "vistos recientemente" viven en localStorage**, no en la base: la mayoria navega sin
   cuenta, y "que miraste" es un dato que no hace falta guardar en ningun servidor para prestar
   este servicio.
@@ -2129,11 +2245,91 @@ Verificadas contra el rulebook de los CrossFit Games, no inferidas:
 - **Los equipos retirados no entran al padron.** Con posiciones fisicas, un retirado al fondo le
   corre la posicion a todos los que estan detras.
 
+### El constructor de pruebas
+
+**La ruta es por PRUEBA, no por parte** (`/panel/eventos/[id]/pruebas/[workoutId]`). Era
+`[partId]`, y ese era el motivo por el que "agregar la parte B" no tenia donde vivir: la pantalla
+se llamaba "la prueba" pero mostraba una parte suelta. Con UNA sola parte —casi todos los WODs y
+todo circuito— la palabra "parte" no aparece en ningun lado.
+
+**"Agregar parte B" solo se ofrece con una sola parte**, y le pone la etiqueta "A" a la que ya
+estaba si no tenia ninguna. Borrar la B devuelve la otra a `''`: una prueba que tuvo dos partes
+cinco minutos no puede quedar etiquetada para siempre. Los labels son cosmeticos
+(`label text not null default ''`).
+
+**Los pesos por categoria son UNA GRILLA con un solo Guardar.** `division_movement_specs` —la
+tabla que hace Rx contra Scaled, que leen el juez y el recalculo y que muestra la ficha publica—
+**no tenia ningun camino de escritura**: todas las categorias juzgaban con el mismo peso. Una fila
+por movimiento, una columna por categoria que corre la parte, y `guardar_specs_de_parte()` que
+REEMPLAZA la grilla entera en una escritura. Existe como funcion de Postgres por lo mismo que
+`assign_heat_lanes`: un fallo a mitad dejaria media tabla con el peso nuevo y media con el viejo,
+con el juez y el recalculo leyendo numeros distintos para el mismo movimiento.
+
+- **El valor base va de `placeholder`, NUNCA de `value`.** Vacio = heredar, y borrar el campo borra
+  el ajuste. Si el base viniera cargado como valor, abrir la pantalla y guardar convertiria todas
+  las herencias en copias fijas y cambiar el peso base ya no se propagaria a nadie. Guardarlo como
+  cero diria "cero kilos", que es otra cosa — mismo criterio que `division_segment_specs`.
+- **La unidad es de la GRILLA, no de cada celda.** Todos los pesos de un WOD se programan en la
+  misma; un selector por celda serian treinta desplegables con la misma respuesta.
+- **"Copiar de…" es puro cliente.** Scaled arranca de Rx y solo se edita lo que cambia: no escribe
+  nada hasta que se aprieta Guardar.
+- **El estandar declarado de la categoria (`division_movements`) es la SUGERENCIA de cada celda.**
+  Si Elite ya dice "Thruster 43 kg", ese es el placeholder. Es sugerencia y no valor: el estandar
+  publicado y lo que pide un WOD concreto pueden diferir legitimamente, y escribirlo solo seria
+  adivinar. Es lo unico que une las dos tablas, y no las propaga. **Viaja en kilos crudos y se
+  convierte del lado del cliente con la unidad VIGENTE de la grilla** (`desdeKilos(kgSugerido,
+  unidad)`), nunca con la unidad que declaro la categoria: si Elite declaro "95 lb" pero la grilla
+  esta en kg, mostrar "95" sin convertir se leeria como 95 kg.
+- **`guardarSpecs` tiene que convertir con `aKilos()` antes de llamar al RPC — bug real, ya
+  arreglado.** La grilla manda el numero CRUDO que el organizador escribio (`cargaKg`) en la
+  unidad que eligio (`cargaUnidad`), con el mismo criterio que `pesoDelFormulario()` usa para un
+  movimiento suelto. `guardarSpecs()` era el UNICO punto de escritura de `division_movement_specs`
+  que se salteaba esa conversion: pasaba el numero tal cual a `load_kg`, sin importar la unidad.
+  Con "lb" seleccionado, escribir "95" guardaba `load_kg = 95` (deberian ser ~43,09) y el
+  round-trip devolvia "209 lb" — un numero sin relacion con lo tipeado, que fue exactamente lo que
+  se reporto. La conversion se extrajo a `celdasEnKilos()` (`workouts/actions.ts`), pura y
+  exportada, para poder probarla sin mockear Supabase — misma cirugia que `calcularScoresDeWod`.
+
+**Reordenar pasa por Postgres, no por N updates.** `reorder_workouts`, `reorder_part_blocks` y
+`reorder_part_movements` son calcadas de `reorder_segments`: corren todos los indices fuera de
+rango primero —SUMANDO, hay un `check (order_index >= 0)`— y despues asignan. Una lista incompleta
+se rechaza entera en vez de aplicar un reordenamiento a medias.
+
+**La vista previa del WOD sale gratis y no puede mentir.** Usa `planDelWod()`, la misma funcion
+pura que despliega los pasos en el celular del juez, con los valores base y sin ajustes de
+categoria. No hay una segunda version que pueda divergir: si la vista previa miente, el juez ve lo
+mismo que miente. **Se agrupa por ronda** (separador "Ronda N de M" donde cambia `paso.round`,
+usando `WodStep.totalRounds`): antes era una lista plana de pasos, y confirmar que "21-15-9" armo
+tres rondas —y no algo distinto— obligaba a contar filas a mano.
+
+**"Editar parte" tambien pregunta el desempate**, los cuatro `tiebreak_*` que hasta ahora no
+tenian formulario. Un selector de tres opciones —Ninguno / El de esta prueba / El de otra
+prueba— y **solo con "otra prueba" aparece el selector de la prueba de origen**, poblado con las
+demas partes del EVENTO (no solo de este workout: el desempate de la final suele salir de la
+clasificatoria, que es otra prueba). Elegir "esta prueba" no distingue `hito` de `manual`: esa
+diferencia es COMO llega el valor (el reductor lo captura solo al cerrar el movimiento marcado, o
+el staff lo tipea a mano) y la deriva sola la accion, a partir del `capture_mode` de la parte.
+
 ### Lo que hay que saber antes de tocar el modelo de pruebas
 
-- **`heats.workout_id` y `lanes.workout_id` los llenan triggers, no la app.** `createHeat` y los
-  fixtures no saben que existen las pruebas y no tienen por que aprenderlo: un evento con una sola
-  prueba no deberia obligar a elegirla.
+- **`heats.workout_id` lo llena un trigger SOLO cuando el evento tiene UNA sola prueba.** Con dos o
+  mas, `heat_toma_prueba_por_defecto()` falla y exige que se elija
+  (`20260905100000_heat_elige_su_prueba`). Antes tomaba siempre la de `order_index` mas bajo, y como
+  nadie se la pasaba —ni `createHeat`, ni `assign_heat_lanes`, ni `auto_distribuir_heats`— TODOS los
+  heats de un CrossFit quedaban atados al WOD 1: los jueces abrian el WOD 1 en el celular y los
+  `workout_scores` de las tres pruebas se escribian contra el `part_id` de la primera, sin un solo
+  error a la vista. Y era IRREVERSIBLE, porque `heat_prueba_inmutable` bloquea el cambio en cuanto
+  el heat tiene carriles. El fallback se conserva para que una carrera hibrida —que tiene una sola
+  prueba, creada por `ensure_circuit_part()`— siga sin tener que elegir nada: ahi el formulario ni
+  la menciona. **`lanes.workout_id` sigue viniendo del heat por trigger, sin cambios.**
+- **Un equipo corre una vez por PRUEBA, no una vez por evento.** El indice es
+  `lanes_team_once_per_workout (workout_id, team_id)`. Vale para el selector de equipos de
+  `HeatCard` (`TeamOption.asignadoEn` es un mapa `workout_id → heat_id`, no un solo heat) y para el
+  mensaje de error 23505 de `assignLanes`. Correr el WOD 1 y el WOD 2 es lo normal; correr el WOD 1
+  dos veces no.
+- **El nombre del heat es unico por `(event_id, workout_id, division_id, name)`.** Cada prueba
+  numera sus heats desde 1, asi que "Individual Masculino / Heat 1" existe una vez por WOD. Es el
+  mismo movimiento que ya se habia hecho cuando dos CATEGORIAS no podian tener cada una su Heat 1.
 - **`lanes.workout_id` NO puede tener una FK compuesta hacia `heats`.** Seria una segunda relacion
   `lanes → heats` y PostgREST devolveria `PGRST201` en el embed `heats (...)` de `getJudgeLanes` y
   `fetchLaneBundle`. Como el codigo hace `data ?? []`, la pantalla del juez diria "no hay carriles"
@@ -2146,9 +2342,10 @@ Verificadas contra el rulebook de los CrossFit Games, no inferidas:
 - **La grilla de carga de scores no va dentro de un `<form action={...}>`.** Es el caso exacto del
   bug de `HeatCard.tsx`: tiene que conservar lo recien guardado. Va con
   `startTransition(() => accion(formData))`.
-- **Las tablas de puntos estandar no se copian a la base.** `scoring_tables` guarda una
-  `builtin_key` y los valores viven en `src/shared/scoring/points.ts`. Si estuvieran en los dos
-  lados, tarde o temprano difieren y el podio dependeria de cual leyo cada pantalla.
+- **La curva de puntos no se calcula en SQL.** Vive en `src/shared/scoring/points.ts` y la
+  usan el navegador y el servidor; la base solo guarda el RESULTADO ya materializado
+  (`scoring_snapshots.points`). Si la formula estuviera en los dos lados, tarde o temprano
+  difieren y el podio dependeria de cual leyo cada pantalla.
 - **El gate del plan vive en `public_scoreboard()`, no en un componente.** Plan gratuito: nada
   hasta que el evento se publica, y sin parciales. Plan pro: en vivo y con detalle. En la UI se
   saltearia leyendo la respuesta de la red. Es uno de los cuatro gates — ver
@@ -2189,10 +2386,149 @@ con diez movimientos; un Death By es el mismo arreglo con objetivo ascendente.
   ancla: se deriva, no se acumula. El evento `time_cap` es informativo.
 - **Agotar la ventana de un AMRAP ES terminar**, no capear: el score son las rondas que hizo. En
   un For Time con cap, no terminar es `capeado` y rankea siempre detras de quien completo.
+- **Marcar DESPUES del cap (o de la ventana) no cuenta, aunque alcance a cerrar el WOD.** Bug
+  real: el reductor recorria TODOS los eventos activos sin mirar si habian ocurrido antes o
+  despues del limite, asi que un juez que seguia tocando despues de la bocina (40 segundos, en el
+  caso reportado) podia terminar de cerrar el ultimo paso tarde — y eso daba `"finished"` con el
+  tiempo real de cierre en vez de `capeado` a la hora del limite. `rep`, `movement_done`,
+  `round_done` y `tiebreak` con `elapsedMs >= tope` se ignoran para el conteo (no cierran pasos, no
+  suman reps) y quedan como anomalia `marca_despues_del_limite` — el evento NO se borra, sigue en
+  el log para auditar un reclamo. Vale para los dos esquemas con limite (`cap` Y `ventana`): un
+  AMRAP tampoco puede sumar reps tapeadas despues de agotada la ventana.
+- **`WodJudgeScreen` tiene que tratar `capped` como terminal, no solo `status`.** `capped` nunca
+  pone `status` en `"finished"` — se queda en `"running"` para siempre, y es `scoreFromWodResult`
+  quien lo traduce a `"capeado"` recien en la capa de scoring. Sin sumar `|| resultado.capped` al
+  `terminado` de la pantalla, el `Marcador` interactivo seguia aceptando toques indefinidamente
+  despues del cap (que el reductor ya empezaba a ignorar en silencio, pero la pantalla no lo
+  reflejaba). Con el agregado, la pantalla pasa sola a `Cerrado` ("CAPEADO"), que ya sabia pintar
+  ese caso — lo unico que faltaba era llegar ahi.
 - **Un movimiento `max_reps` no se cierra solo**: lo cierra el juez o el reloj del intervalo.
 - **Un `no_rep` queda registrado y no suma.** Es lo que hace auditable un reclamo.
 - **Las unidades que no son reps se escriben, no se tapean.** Nadie marca quinientos metros de a
-  uno: metros, calorias y segundos abren un teclado numerico.
+  uno. **Dejo de ser LA regla y paso a ser el primer caso de la derivacion de
+  `capture_style`** — ver abajo: tampoco nadie tapea 100 double-unders, y eso la regla vieja no lo
+  sabia.
+
+### El juez toca una vez, N veces, o escribe un numero
+
+`part_movements.capture_style` decide como registra el juez ESE movimiento:
+
+| Estilo | Que hace el juez | Para que |
+|---|---|---|
+| `tap` | un toque por repeticion; el paso se cierra solo al llegar al objetivo | 21-15-9 thrusters, 10 wall balls por ronda |
+| `hecho` | un solo toque cuando el atleta termina | 50 wall balls, 100 double-unders |
+| `numero` | escribe la cantidad | 500 m de remo, 30 calorias |
+
+**El reductor no cambio ni una linea.** Ya soportaba los tres comportamientos sin saber que
+existian: `rep` cuenta de a uno, `movement_done` con `cantidad` cierra con un numero, y
+`movement_done` sin cantidad cierra con el objetivo. La columna solo le dice a la PANTALLA cual
+ofrecer.
+
+**Es NULLABLE y sin default: `null` significa "el derivado", no "tap".** Con un default congelado
+en el insert, mejorar la regla despues no alcanzaria a ninguna fila ya creada. Mismo criterio que
+`division_movement_specs`: ausencia = heredar.
+
+**La derivacion vive en `planDelWod()` (`estiloDelPaso`), no en `wodStructure.ts` ni en la
+pantalla.** El orden de las reglas: lo que fijo el organizador gana siempre → una unidad que no
+son reps se escribe → `max_reps` se TAPEA aunque no tenga objetivo (ahi contar ES el score, no
+hay numero que anticipar) → cualquier otra cantidad de reps, **"un toque al terminar", siempre**.
+
+**Ya no hay umbral (`TAP_MAXIMO` se elimino).** Hasta esta version el derivado tapeaba de a uno
+por debajo de 30 reps y pasaba a "un toque al terminar" recien por encima. Se saco a proposito:
+tapear de a uno le saca la vista del atleta al juez una vez por repeticion, sea el objetivo 9 o
+100, y el cierre —natural o al cortar por el cap (ver mas abajo)— siempre termina pidiendo
+confirmar un numero de todos modos. "Un toque al terminar" es el default para CUALQUIER cantidad
+de reps; el organizador puede seguir forzando `tap` a mano para un movimiento puntual si de
+verdad lo quiere contado de a uno.
+
+**El organizador decide CERO veces salvo que no este de acuerdo.** El selector del modal dice
+"Automatico" y muestra el derivado entre parentesis —"Automatico (toca cada rep)"— porque sin eso
+no habria forma de saber que se eligio por el.
+
+**LOS TRES ESTILOS OCUPAN LA MISMA CAJA**, del mismo alto y en el mismo lugar
+(`h-[clamp(13rem,40dvh,20rem)]`). No es estetico: el juez no esta mirando la pantalla, y un boton
+que cambia de tamano entre movimientos hace que el pulgar caiga en otro lado. El estilo `numero`
+rompia esa invariante —era un input y un boton, con otra altura— y ahora vive adentro de la misma
+caja.
+
+**"CONTAR A MANO" es lo que hace seguro tener un default.** Baja ESE paso a `tap` para ESE atleta:
+estado local del componente, **cero eventos y cero red**. Cubre el caso real —el atleta empieza a
+fallar repeticiones y el juez decide que si necesita contar esta— y significa que un derivado
+equivocado esta a un toque de estar bien. Se reinicia solo al pasar de paso, porque `Marcador` se
+remonta con `key={paso.index}`.
+
+**"MOVIMIENTO ✓" ya no cierra en silencio.** Cerraba con `max(objetivo, progreso)`: si el juez se
+atraso contando, eso INVENTABA repeticiones que nadie hizo. Ahora abre el teclado con lo que lleva
+contado — confirmar es un toque, corregir es escribir.
+
+**Un no-rep se SIENTE distinto.** `navigator.vibrate` usa un patron doble para `no_rep` y un pulso
+corto para el resto. La confirmacion durante la accion no puede depender de que el juez mire la
+pantalla, y las dos vibraban igual.
+
+**El motivo del no-rep es OPCIONAL y DIFERIDO, y va como `note`.** El tap va primero y el no-rep
+queda registrado en el acto; la causa se ofrece despues y se puede omitir. Va como un evento
+`note` y **no** como un segundo `no_rep`: el reductor ignora las notas, asi que clasificar no
+cambia ningun numero — solo deja el motivo en el log, que es lo que hace defendible un reclamo.
+Obligar a elegir una razon mientras el atleta sigue trabajando es exactamente lo que esta pantalla
+no puede hacer.
+
+**El juez NO ve nada del leaderboard**: ni posicion, ni puntos, ni el carril de al lado, ni la
+linea de corte. No es solo superficie de mas — es un control preventivo contra sesgo. Si alguna vez
+hace falta mostrarle algo de resultados, no va en esta pantalla.
+
+**Cuanto falta para el cap se ve SIEMPRE, no se calcula de memoria.** Reportado en produccion: un
+juez siguio marcando 40 segundos despues del cap porque el reloj solo cuenta para arriba y no dice
+contra que tope corre — nada en la pantalla decia que ya se habia acabado el tiempo. Para
+`scheme === "cap"` con `timeCapMs`, `CuentaRegresiva` (la misma que ya usaba el reloj de un AMRAP)
+se reusa como segunda linea chica debajo del reloj principal, con `umbralAmbarMs`/`umbralRojoMs`
+nuevos que togglean clase directo en el nodo dentro del mismo rAF — sin pasar por React, misma
+doctrina que el resto del reloj. **La vibracion de "se acabo el tiempo" sale de
+`resultado.capped`, no del propio countdown**: son dos relojes independientes (uno por rAF, otro
+por el `tick` de un segundo que ya tenia la pantalla) y podrian marcar cero con una fraccion de
+segundo de diferencia. Disparar la vibracion desde `resultado.capped` (el MISMO valor que decide
+si la pantalla pasa a "CAPEADO") garantiza que el aviso hapico y el cambio de pantalla lleguen
+siempre juntos.
+
+### El juez tiene UN cierre final para el paso que quedo a medias
+
+Bug real, y consecuencia directa del fix anterior: bloquear la pantalla apenas se cumple el cap
+le sacaba al juez la unica oportunidad de reportar cuanto llevaba en el movimiento en curso. Si
+eran 21 reps y el atleta iba en 12 cuando sono el tiempo, esas 12 tienen que quedar en el
+resultado — y en `hecho`/`numero` no hay ningun tap previo que las haya guardado solas.
+
+**`WodResult.awaitingFinalTally`** es lo que distingue "se acabo el tiempo, todavia falta que el
+juez reporte el numero" de "ya esta, pantalla bloqueada". Prende cuando se cumplio el limite
+(cap o ventana), el paso actual no se cerro, y el cierre final TODAVIA no se uso — independiente
+de `status`: en un AMRAP el status ya dice `"finished"` apenas se agota la ventana (la regla no
+cambia, un AMRAP siempre termina en la bocina), pero el juez igual necesita esa ultima
+oportunidad antes de que la pantalla se bloquee.
+
+**El reductor deja pasar EXACTAMENTE UN `movement_done` con `elapsedMs` posterior al limite** —
+nunca un `rep` suelto, nunca un `round_done`, nunca un segundo cierre. Es lo unico que evita
+reabrir el agujero que el fix anterior cerro: sin este freno, un cierre tardio que alcanzara a
+completar el ultimo paso volveria a marcar el WOD como `"finished"` con tiempo tardio. Por eso
+`completo` se calcula con `&& !cierreFinalUsado` — **aunque el cierre final reporte el objetivo
+completo, el WOD nunca queda `"finished"` si se cerro despues del limite**: sigue capeado, con
+esa cantidad acreditada.
+
+**La pantalla (`WodJudgeScreen`) muestra `CierreDelTiempo`** —caja ambar, "SE ACABÓ EL TIEMPO",
+un input numerico precargado con `currentStepProgress`— en vez de saltar directo a `Cerrado`
+mientras `awaitingFinalTally` sea true. Confirmar emite el `movement_done` con la cantidad
+tipeada; recien ahi la pantalla pasa a "CAPEADO".
+
+### `bundle.ts` y `recompute.ts` cambian SIEMPRE en el mismo commit
+
+Son dos listas de columnas escritas a mano que tienen que decir exactamente lo mismo: la del
+celular del juez y la del recalculo del servidor. Las dos filtran las partes por `part_divisions`,
+las dos aplican `part_divisions.time_cap_ms` como cap de la categoria, y las dos piden `load_unit`
+y `capture_style`.
+
+Si una filtra y la otra no, **el juez ve un WOD y el score oficial sale de otro**, sin ningun error
+a la vista. Es literalmente el escenario que `wodStructure.ts` existe para evitar, y por eso el
+ensamblado esta compartido: lo unico que queda duplicado son los `select`.
+
+Antes de este cambio, el bundle filtraba las partes solo por `time_scheme` y `capture_mode`: un
+juez de Scaled se bajaba —y veia en pantalla— un WOD que su atleta no corre.
 
 ### Cada prueba tiene UN solo camino de escritura, y lo garantiza la base
 
@@ -2203,6 +2539,85 @@ con diez movimientos; un Death By es el mismo arreglo con objetivo ascendente.
 Las dos juntas cierran el circulo. Sin la segunda, un recalculo que tomara una prueba de carga
 manual la reduciria a "pendiente" y **borraria el score que el staff ya habia cargado a mano** —
 sin error visible, porque para el reductor una prueba sin marcajes simplemente no arranco.
+
+### Games 2026 Dynamic: un solo sistema, y se adapta al tamaño de la categoría
+
+**Antes había cuatro tablas fijas y el organizador elegía una por categoría** (CF-Games 40,
+CF-Games 80, CF-Open, Tiempo total). Se borraron las tres primeras, y con ellas la tabla
+`scoring_tables` entera y las dos columnas que la referenciaban
+(`divisions.scoring_table_id`, `part_divisions.scoring_table_id`). Elegir "la tabla correcta"
+era una decisión sin respuesta buena: una de 40 puestos aplicada a 44 atletas dejaba a los
+puestos 41-44 empatados en CERO **sin avisar** (`pointsForPosition` repite el último valor), y
+una de 80 aplicada a 12 atletas hacía que el último saliera con 156 puntos, casi lo mismo que
+el ganador. Y nadie las usaba: de 34 categorías en la base, UNA tenía tabla asignada — las
+otras 33 puntuaban con el fallback `tiempo_total`, o sea sumando posiciones.
+
+**La curva de referencia son los CrossFit Games 2026**: 30 puestos, de 100 a 0 (`GAMES_2026`).
+Se escribe literal y hay un test que la compara contra su fórmula, por lo mismo que antes: un
+organizador la audita fila por fila y una fórmula no se audita.
+
+**La adaptación es una proyección con interpolación lineal.** Con `N` atletas, el puesto `P`
+cae en `1 + (P-1)*29/(N-1)` de la curva de referencia, y como normalmente da un decimal se
+interpola entre los dos puestos vecinos. Consecuencia: **el primero saca siempre el máximo y el
+último siempre cero**, tenga la categoría 8 atletas o 200. Es una funcionalidad de la
+plataforma, no una regla oficial de CrossFit para fields distintos de 30.
+
+- **Tres decimales, ni dos ni cero.** Con dos, dos puestos consecutivos de un field grande caen
+  en el mismo valor y empatan a dos atletas que no empataron en nada. Es también la precisión
+  de las columnas (`numeric(9,3)`): si el código redondeara distinto que Postgres, el podio
+  dependería de quién leyó.
+- **`tablaDeCategoria()` es el ÚNICO lugar que decide qué tabla le toca a una categoría**, y lo
+  usan los dos consumidores (`standings.ts` y `buildScoreboard`). Una carrera híbrida entra por
+  ahí y sale con `TABLA_TIEMPO_TOTAL`: se gana llegando antes, no hay puntos que repartir.
+  `tiempo_total` sobrevive por eso, pero **ya no es elegible**.
+
+### El snapshot: por qué la tabla se congela
+
+Si la curva se calculara siempre contra "los atletas que hay ahora", el día que uno se retira
+cambiaría el tamaño del field y con él **los puntos que todos sacaron en las pruebas ya
+corridas**. `scoring_snapshots` congela la curva por (categoría, etapa) y la deja quieta.
+
+- **Se guarda normalizado a 100**, y el peso de cada prueba (`workout_parts.max_points`) lo
+  escala al leerlo. Un snapshot por prueba multiplicaría las filas sin agregar información: la
+  forma de la curva es la misma, solo cambia la escala. Eso reemplaza a la vieja "tabla propia
+  por parte" — un multiplicador dice "esta vale el doble" sin poder desincronizarse de la curva
+  de la categoría.
+- **Una vez bloqueado no se regenera.** La función lo rechaza con un mensaje que el organizador
+  puede leer; no es una convención de la app.
+- **Sin snapshot, la curva se calcula al vuelo con el field de hoy.** Es lo correcto ANTES de
+  competir, cuando el padrón todavía se mueve, y es lo que permite previsualizarla.
+- **Se congela solo si el organizador se olvida.** Lo normal es el botón de
+  `/panel/eventos/[id]/puntuacion`, pero `recomputeStandings` lo congela por su cuenta en
+  cuanto la competencia está `live` — misma jugada que `heats.ended_at`: derivarlo donde el
+  recálculo ya corre, en vez de agregar un tercer camino de escritura.
+- **`stage` existe pero la app usa siempre la 1.** Es para los cuts (Stage 1 con 40 → cut →
+  Stage 2 con 20): el modelo lo soporta sin migrar nada el día que se construya la UI.
+
+### El desempate puede venir de OTRA prueba
+
+- **El desempate que viene de otra prueba.** `tiebreak_source = 'otra_prueba'` +
+  `tiebreak_part_id` significa "el desempate de la final es el score de la clasificatoria".
+  `resolverTiebreaksDeOtraPrueba()` (`src/shared/scoring/overall.ts`) es la función pura que lo
+  resuelve: recorre las partes, encuentra las que declaran un origen, y les copia el valor
+  **de ese equipo en esa otra parte** antes de rankear. Si el equipo no corrió la prueba de
+  origen, o quedó `dnf`/`dq` ahí, el desempate queda `null` — no rankea peor, solo se queda sin
+  con qué separarse de un empate. La llaman `standings.ts` (el cache) y `buildScoreboard`
+  (el leaderboard en vivo y público) de la misma forma, antes de rankear cada categoría: si
+  cada uno la resolviera a su manera, el podio del panel y el que ve el atleta podrían diferir.
+
+**`standings` (la tabla) es cache que hoy no lee nadie.** Se escribe desde el recálculo pero
+ni el panel ni `/en-vivo` la consultan: el leaderboard, en vivo y publicado, sale siempre de
+`public_scoreboard()` → `buildScoreboard()`, recalculado fresco en cada poll. No es un bug de
+esta etapa — es cómo estaba antes también — pero vale saberlo antes de "arreglar" `standings.ts`
+pensando que ahí vive el resultado que ve alguien.
+
+**`recompute.ts` se partió en una función pura y un wrapper de I/O**, la misma cirugía que ya
+tiene `standings.ts`. `partesQueCorreLaCategoria()` decide qué partes corre una categoría y con
+qué cap (la regla exacta del hueco 5: antes cualquier carril puntuaba TODAS las partes en vivo
+del workout, corriera esa categoría o no) y `calcularScoresDeWod()` reduce el log a los scores
+de esas partes. Las dos son puras y exportadas — sin mockear el cliente de Supabase, que no
+tiene precedente en el proyecto y sería frágil — y `recalcularWod()` queda como el único lugar
+que toca la base: trae las filas, llama a las dos funciones, escribe lo que devuelven.
 
 ## El backfill es lo unico que PGlite no puede probar
 
@@ -2311,6 +2726,20 @@ Cada una de estas costó un bug real. Están documentadas en el código donde ap
 - **Reordenar filas con `unique(padre, orden)` choca a mitad de camino.** `reorder_segments`
   corre todos los índices fuera de rango primero (sumando, no restando: hay un
   `check (order_index >= 0)`) y después asigna los definitivos.
+- **`TRUNCATE ... CASCADE` trunca la tabla ENTERA que tenga la FK, no las filas que de verdad
+  dependen de lo que estás truncando.** Costó una limpieza total de datos (`organizations` y
+  `events` truncados en cascada para borrar todo antes de salir a producción):
+  `scoring_tables.org_id references organizations(id)` mezcla filas globales (`org_id null`, las
+  tablas de puntos de fábrica) con filas propias de una organización en la MISMA tabla, y el
+  `delete ... where org_id is not null` escrito para proteger a las globales nunca llegó a
+  importar — para cuando corrió, el `TRUNCATE organizations ... CASCADE` de la misma migración ya
+  se había llevado la tabla completa. A diferencia de `DELETE ... CASCADE` (que sí sigue las
+  condiciones de la fila), `TRUNCATE` no filtra: si una tabla tiene una FK hacia algo que se
+  trunca, se trunca ENTERA. Cualquier tabla que mezcle datos globales y datos de una organización
+  en una sola columna nullable (`org_id`, `event_id`) tiene que EXCLUIRSE de un `TRUNCATE ...
+  CASCADE` y limpiarse aparte con un `DELETE` filtrado — nunca dentro del mismo `TRUNCATE`.
+  (`scoring_tables` ya no existe — la borró Games 2026 Dynamic — pero la lección vale igual
+  para cualquier tabla que mezcle filas globales con filas de una organización.)
 
 ## Los `<select>` son UN componente, no treinta estilos sueltos
 

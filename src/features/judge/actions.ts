@@ -48,22 +48,3 @@ export async function claimLane(_prev: ClaimState, formData: FormData): Promise<
   revalidatePath("/juez");
   redirect(`/juez/carril?id=${laneId}`);
 }
-
-/**
- * Devuelve el carril para que lo tome otro juez.
- *
- * transfer_lane deja hacer esto sin rol de verificacion CUANDO el que llama
- * es el juez que ya tiene el carril y lo suelta (p_to_judge null): es la
- * autoliberacion, no una reasignacion. Es lo que le permite a un juez
- * terminar su heat y quedar libre para tomar otro sin esperar el lease de
- * seis horas ni pedirselo a la organizacion.
- */
-export async function releaseLane(laneId: string): Promise<void> {
-  const supabase = await createClient();
-  await supabase.rpc("transfer_lane", {
-    p_lane_id: laneId,
-    p_to_judge: null as unknown as string,
-    p_reason: "Liberado por el juez",
-  });
-  revalidatePath("/juez");
-}

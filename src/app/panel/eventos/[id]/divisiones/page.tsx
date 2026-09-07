@@ -7,7 +7,6 @@ import {
   getCategoriasConfiguradas,
   getCourseTemplates,
   getSegmentos,
-  getTablasDePuntuacion,
 } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { NuevaDivision } from "@/features/events/components/NuevaDivision";
@@ -40,11 +39,10 @@ export default async function DivisionesPage({
   const { canManage, event } = await requireEventAccess(id);
   const esHibrida = event.format !== "crossfit";
 
-  const [categorias, templates, catalogo, tablas] = await Promise.all([
+  const [categorias, templates, catalogo] = await Promise.all([
     getCategoriasConfiguradas(id),
     getCourseTemplates(id),
     getCatalogoDeMovimientos(),
-    getTablasDePuntuacion(),
   ]);
 
   // Los segmentos de cada circuito, de una sola vez: una consulta por categoria
@@ -79,7 +77,6 @@ export default async function DivisionesPage({
             eventId={id}
             templates={templates}
             formato={event.format}
-            tablas={tablas}
           />
         )}
       </div>
@@ -116,7 +113,6 @@ export default async function DivisionesPage({
                       : []
                   }
                   catalogo={catalogo}
-                  tablas={tablas}
                   templates={templates}
                   alQuitar={canManage ? quitar.bind(null, c.id) : undefined}
                 />

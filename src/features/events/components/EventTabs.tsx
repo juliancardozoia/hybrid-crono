@@ -56,6 +56,7 @@ const SIN_PESTANAS = [
   "/inscripciones",
   "/cronograma",
   "/leaderboard",
+  "/puntuacion",
   "/verificacion",
 ];
 

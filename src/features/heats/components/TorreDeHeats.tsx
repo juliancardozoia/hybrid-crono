@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
@@ -84,6 +85,19 @@ export function TorreDeHeats({
   marcarDnfAccion: AccionCarril;
 }) {
   const [divisionId, setDivisionId] = useState("");
+  const router = useRouter();
+
+  // Sin esto, un DNF marcado desde el celular del juez -o cualquier otro
+  // cambio de estado- no aparece acá hasta que alguien recarga la página a
+  // mano: esta pantalla es una foto del servidor, no se refresca sola. Solo
+  // mientras haya algo corriendo, para no pedirle al servidor cada 15s una
+  // torre de control vacía.
+  const hayHeatCorriendo = heats.some((h) => h.startedAt && !h.endedAt);
+  useEffect(() => {
+    if (!hayHeatCorriendo) return;
+    const timer = setInterval(() => router.refresh(), 15_000);
+    return () => clearInterval(timer);
+  }, [hayHeatCorriendo, router]);
 
   const divisionesConHeat = useMemo(() => {
     const ids = new Set(heats.map((h) => h.divisionId).filter((x): x is string => Boolean(x)));
@@ -249,15 +263,7 @@ function TarjetaDeHeat({
               </div>
 
               {lane.puedeMarcarDnf && (
-                <FormularioDeEstado
-                  accion={marcarDnfAccion.bind(null, eventId, lane.laneId)}
-                  estadoInicial={{ error: null }}
-                  etiqueta="DNF"
-                  pendienteTexto="…"
-                  mensajeDeCarga="Marcando DNF…"
-                  title="Marcar como no presentado / no terminó"
-                  className="shrink-0 rounded-lg border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-400 hover:border-red-500/40 hover:text-red-300"
-                />
+                <ConfirmarDnf eventId={eventId} lane={lane} marcarDnfAccion={marcarDnfAccion} />
               )}
 
               <div className="shrink-0 text-right">
@@ -286,6 +292,74 @@ function TarjetaDeHeat({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * El boton DNF de cada carril, con confirmacion.
+ *
+ * ANTES DISPARABA LA ACCION DIRECTO AL CLICK — a diferencia de "Deshacer
+ * Inicio" y "Largar Heat", que ya pedian confirmar. Un DNF es tan
+ * irreversible como esos dos (congela el reloj del atleta para siempre, via
+ * el mismo camino que el DNF del propio juez) y un click accidental en una
+ * fila apretada de carriles no puede tener el mismo costo que abrir un menu.
+ */
+function ConfirmarDnf({
+  eventId,
+  lane,
+  marcarDnfAccion,
+}: {
+  eventId: string;
+  lane: CarrilVista;
+  marcarDnfAccion: AccionCarril;
+}) {
+  const [confirmar, setConfirmar] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmar(true)}
+        title="Marcar como no presentado / no terminó"
+        className="shrink-0 rounded-lg border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-400 hover:border-red-500/40 hover:text-red-300"
+      >
+        DNF
+      </button>
+
+      <Modal
+        abierto={confirmar}
+        alCerrar={() => setConfirmar(false)}
+        titulo="Marcar DNF"
+        ancho="max-w-sm"
+      >
+        <div className="text-left">
+          <p className="text-sm text-neutral-300">
+            ¿Marcar a{" "}
+            <span className="font-medium">
+              {lane.athletes ?? lane.teamLabel ?? `carril ${lane.laneNumber}`}
+            </span>{" "}
+            como no presentado / no terminó? El reloj de ese carril se congela y esta acción no
+            se puede deshacer.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmar(false)}
+              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
+            >
+              Cancelar
+            </button>
+            <FormularioDeEstado
+              accion={marcarDnfAccion.bind(null, eventId, lane.laneId)}
+              estadoInicial={{ error: null }}
+              etiqueta="Confirmar DNF"
+              mensajeDeCarga="Marcando DNF…"
+              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+            />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

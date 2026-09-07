@@ -200,10 +200,15 @@ describe("claim_lane: un juez, un heat a la vez", () => {
     });
   });
 
-  it("liberando el primero, puede tomar el del otro heat", async () => {
+  it("liberado por quien verifica, puede tomar el del otro heat", async () => {
+    // El juez ya no se libera a si mismo (ver "transfer_lane: sin
+    // autoliberacion" mas abajo): quedar libre pasa por el recalculo del
+    // servidor cuando el resultado es terminal, o por quien verifica.
+    await asUser(s.db, s.users.judgeA, () => s.db.query("select claim_lane($1)", [s.laneIds[0]]));
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select transfer_lane($1, null, 'termine')", [s.laneIds[0]]),
+    );
     await asUser(s.db, s.users.judgeA, async () => {
-      await s.db.query("select claim_lane($1)", [s.laneIds[0]]);
-      await s.db.query("select transfer_lane($1, null, 'termine')", [s.laneIds[0]]);
       const res = await s.db.query<{ judge_id: string }>("select judge_id from claim_lane($1)", [
         lane2Id,
       ]);
@@ -278,16 +283,22 @@ describe("claim_lane: autoasignacion configurable", () => {
   });
 });
 
-describe("transfer_lane: autoliberación", () => {
-  it("el juez actual puede soltar su propio carril sin ser verificador", async () => {
+describe("transfer_lane: sin autoliberación", () => {
+  // El juez ya NO puede soltar su propio carril: liberarlo es trabajo de
+  // quien verifica, o pasa solo cuando el resultado queda terminal (ver
+  // `actualizarCierreDeHeat` en recompute.ts). Antes existia una
+  // autoliberacion explicita -el juez actual podia soltar su propio carril
+  // sin rol de verificacion- que se saco a proposito: dejaba soltar un
+  // carril A MEDIO JUZGAR, una decision que le corresponde a la
+  // organizacion, no al juez.
+  it("el juez actual YA NO puede soltar su propio carril", async () => {
     await asUser(s.db, s.users.judgeA, () => s.db.query("select claim_lane($1)", [s.laneIds[0]]));
 
     await asUser(s.db, s.users.judgeA, async () => {
-      const res = await s.db.query<{ judge_id: string | null }>(
-        "select judge_id from transfer_lane($1, null, 'termine mi heat')",
-        [s.laneIds[0]],
+      const msg = await expectDenied(() =>
+        s.db.query("select transfer_lane($1, null, 'termine mi heat')", [s.laneIds[0]]),
       );
-      expect(res.rows[0].judge_id).toBeNull();
+      expect(msg).toContain("juez principal");
     });
   });
 
@@ -302,9 +313,9 @@ describe("transfer_lane: autoliberación", () => {
     });
   });
 
-  it("la autoliberación queda auditada como release", async () => {
+  it("quien verifica SI puede liberar un carril, y queda auditado como release", async () => {
     await asUser(s.db, s.users.judgeA, () => s.db.query("select claim_lane($1)", [s.laneIds[0]]));
-    await asUser(s.db, s.users.judgeA, () =>
+    await asUser(s.db, s.users.owner, () =>
       s.db.query("select transfer_lane($1, null, 'termine')", [s.laneIds[0]]),
     );
 

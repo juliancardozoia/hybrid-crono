@@ -179,6 +179,7 @@ describe("scoreFromWodResult", () => {
       attempts: [],
       noRepCount: 0,
       capped: false,
+      awaitingFinalTally: false,
       stoppedAtMs: 240_000,
       anomalies: [],
       ...parcial,

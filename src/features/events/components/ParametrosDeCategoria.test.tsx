@@ -28,7 +28,9 @@ import type { CategoriaConfigurada } from "@/features/events/config/queries";
 vi.mock("@/features/events/config/categorias", () => ({
   guardarCategoria: vi.fn(async () => ({ error: null })),
   agregarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
-  quitarMovimientoDeCategoria: vi.fn(async () => {}),
+  editarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
+  moverMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
+  quitarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
 }));
 
 // Cada caso pinta el mismo componente: sin limpiar, el segundo encuentra dos.
@@ -42,12 +44,30 @@ const CATEGORIA: CategoriaConfigurada = {
   ageMin: null,
   ageMax: null,
   courseTemplateId: "tpl-1",
-  scoringTableId: null,
   capacity: null,
   permiteCambios: false,
   equiposInscritos: 0,
   movimientos: [],
   segmentos: {},
+};
+
+/**
+ * La misma categoría con un movimiento ya cargado, en LIBRAS.
+ *
+ * 43,09 kg es el valor canónico que guarda la base; 95 lb es el número del
+ * reglamento y lo que el organizador escribió.
+ */
+const CON_THRUSTER: CategoriaConfigurada = {
+  ...CATEGORIA,
+  movimientos: [
+    {
+      id: "dm-1",
+      nombre: "Thruster",
+      loadKg: 43.09,
+      loadUnit: "lb",
+      spec: null,
+    },
+  ],
 };
 
 const SEGMENTOS = [
@@ -60,8 +80,14 @@ const CATALOGO = [
     category: "levantamiento",
     allows_load: true,
   },
+  // Un gimnástico no lleva peso, y por eso no se le pregunta uno.
+  {
+    id: "mov-2",
+    name: "Burpee",
+    category: "gimnastico",
+    allows_load: false,
+  },
 ];
-const TABLAS = [{ id: "tab-1", name: "CrossFit Games 40" }];
 const TEMPLATES = [
   { id: "tpl-1", event_id: "ev-1", name: "Circuito estándar", created_at: "" },
 ];
@@ -79,7 +105,6 @@ function pintar(
           formato={formato}
           segmentos={SEGMENTOS}
           catalogo={CATALOGO}
-          tablas={TABLAS}
           templates={TEMPLATES}
           alQuitar={async () => ({ error: null })}
         />
@@ -90,6 +115,20 @@ function pintar(
 
 function abrir() {
   fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+}
+
+/**
+ * Elige un movimiento en el alta. Hace falta porque el campo de peso solo
+ * aparece cuando el movimiento elegido lo admite: sin elegir nada, no hay peso
+ * que pedir.
+ */
+function elegirDelCatalogo(id: string) {
+  // El modal tiene varios `<select>` (integrantes, sexo, circuito…): el del
+  // catálogo es el único que ofrece los movimientos.
+  const select = screen
+    .getAllByRole("combobox")
+    .find((s) => s.querySelector('option[value="mov-1"]')) as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: id } });
 }
 
 describe("parámetros de categoría", () => {
@@ -106,16 +145,18 @@ describe("parámetros de categoría", () => {
     expect(cupo.placeholder).toBe("Sin límite");
   });
 
-  it("un CrossFit pide movimientos y tabla de puntos, no circuito", () => {
+  it("un CrossFit pide movimientos y dice con qué se puntúa, sin circuito", () => {
     pintar("crossfit");
     abrir();
 
     expect(screen.getByText("Movimientos y pesos")).toBeTruthy();
-    expect(screen.getByLabelText(/Sistema de puntuación/)).toBeTruthy();
+    // Hay UN sistema y se adapta solo: se informa, no se elige.
+    expect(screen.getByText("Games 2026 Dynamic")).toBeTruthy();
+    expect(screen.queryByLabelText(/Sistema de puntuación/)).toBeNull();
     expect(screen.queryByLabelText(/^Circuito/)).toBeNull();
   });
 
-  it("una carrera híbrida no ofrece movimientos ni tabla de puntos ni parámetros del circuito", () => {
+  it("una carrera híbrida no ofrece movimientos ni puntos ni parámetros del circuito", () => {
     // El circuito se crea con una configuracion y esa es: no se ajusta por
     // categoria desde este modal.
     pintar("carrera_hibrida");
@@ -124,7 +165,7 @@ describe("parámetros de categoría", () => {
     expect(screen.getByLabelText(/^Circuito/)).toBeTruthy();
     // Una carrera se gana llegando antes: no hay nada que elegir.
     expect(screen.getByText(/Por tiempo, menor gana/)).toBeTruthy();
-    expect(screen.queryByLabelText(/Sistema de puntuación/)).toBeNull();
+    expect(screen.queryByText("Games 2026 Dynamic")).toBeNull();
     expect(screen.queryByText("Movimientos y pesos")).toBeNull();
     expect(screen.queryByText("Parámetros del circuito")).toBeNull();
     expect(screen.queryByText("1km Run")).toBeNull();
@@ -153,11 +194,50 @@ describe("parámetros de categoría", () => {
   it("el peso se puede cargar en kilos o en libras", () => {
     pintar("crossfit");
     abrir();
+    elegirDelCatalogo("mov-1");
 
     const unidades = screen
       .getAllByRole("option")
       .filter((o) => ["kg", "lb"].includes(o.textContent ?? ""));
     expect(unidades.map((o) => o.textContent)).toEqual(["kg", "lb"]);
+  });
+
+  it("no le pide peso a un movimiento que no lleva", () => {
+    // `allows_load` viene del catálogo y hasta ahora se recibía y se
+    // descartaba: pedirle kilos a un burpee es ofrecer un dato que no existe.
+    pintar("crossfit");
+    abrir();
+    elegirDelCatalogo("mov-2");
+
+    expect(screen.queryByPlaceholderText("Peso")).toBeNull();
+    expect(screen.getByText("Sin peso")).toBeTruthy();
+  });
+
+  it("un movimiento ya cargado se corrige en el lugar, sin borrarlo", () => {
+    // Antes era un chip con una ✕: cambiar 43 por 45 obligaba a borrar la fila
+    // y volver a buscar el movimiento entre los 148 del catálogo.
+    pintar("crossfit", CON_THRUSTER);
+    abrir();
+
+    const peso = screen.getByDisplayValue("95") as HTMLInputElement;
+    expect(peso).toBeTruthy();
+
+    // Nada que guardar hasta que algo cambie: tres campos por movimiento con
+    // un botón siempre encendido al lado son una pared de botones iguales.
+    expect(screen.queryByRole("button", { name: "Actualizar" })).toBeNull();
+    fireEvent.change(peso, { target: { value: "100" } });
+    expect(screen.getByRole("button", { name: "Actualizar" })).toBeTruthy();
+  });
+
+  it("un peso cargado en libras se edita en libras, no en kilos", () => {
+    // 43,09 kg es lo que se guarda; 95 lb es lo que el organizador escribió y
+    // lo que dice el reglamento. Devolverle "43,09" lo haría dudar de la
+    // pantalla.
+    pintar("crossfit", CON_THRUSTER);
+    abrir();
+
+    expect(screen.getByDisplayValue("95")).toBeTruthy();
+    expect(screen.queryByDisplayValue("43.09")).toBeNull();
   });
 });
 
@@ -169,6 +249,21 @@ describe("un solo Guardar y un solo Cancelar por modal", () => {
     // "Agregar" (movimientos) es una accion aparte, no un segundo "Guardar".
     expect(screen.getAllByRole("button", { name: "Guardar" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Cancelar" })).toHaveLength(1);
+  });
+
+  it("sigue siendo uno solo con movimientos ya cargados", () => {
+    // Cada movimiento tiene su propia acción para corregirlo en el lugar, y
+    // por eso se llama "Actualizar": si se llamara "Guardar", una categoría
+    // con cinco movimientos tendría seis botones con el mismo nombre y
+    // ninguno diría qué confirma.
+    pintar("crossfit", CON_THRUSTER);
+    abrir();
+    fireEvent.change(screen.getByDisplayValue("95"), {
+      target: { value: "100" },
+    });
+
+    expect(screen.getAllByRole("button", { name: "Guardar" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Actualizar" })).toHaveLength(1);
   });
 });
 

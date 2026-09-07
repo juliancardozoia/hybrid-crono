@@ -15,12 +15,22 @@ export function CuentaRegresiva({
   duracionMs,
   className,
   onLlegarACero,
+  umbralAmbarMs,
+  umbralRojoMs,
 }: {
   anchor: ClockAnchor | null;
   duracionMs: number;
   className?: string;
   /** Se llama una sola vez cuando el reloj llega a cero. */
   onLlegarACero?: () => void;
+  /**
+   * Debajo de este restante, el nodo suma `text-amber-300`. Togglear la clase
+   * directo en el DOM, en el mismo rAF que ya escribe el texto, no rompe la
+   * doctrina de que el reloj no pasa por React.
+   */
+  umbralAmbarMs?: number;
+  /** Debajo de este restante, el nodo suma `text-red-400` (pisa al ambar). */
+  umbralRojoMs?: number;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const avisado = useRef(false);
@@ -46,6 +56,13 @@ export function CuentaRegresiva({
       const restante = duracionMs - elapsedFromAnchor(anchor, performance.now());
       node.textContent = formatElapsed(Math.max(0, restante));
 
+      if (umbralAmbarMs !== undefined || umbralRojoMs !== undefined) {
+        const rojo = umbralRojoMs !== undefined && restante <= umbralRojoMs;
+        const ambar = !rojo && umbralAmbarMs !== undefined && restante <= umbralAmbarMs;
+        node.classList.toggle("text-red-400", rojo);
+        node.classList.toggle("text-amber-300", ambar);
+      }
+
       if (restante <= 0 && !avisado.current) {
         avisado.current = true;
         callback.current?.();
@@ -55,7 +72,7 @@ export function CuentaRegresiva({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [anchor, duracionMs]);
+  }, [anchor, duracionMs, umbralAmbarMs, umbralRojoMs]);
 
   return (
     <span ref={ref} className={className} suppressHydrationWarning>

@@ -980,20 +980,28 @@ describe("el catalogo de movimientos", () => {
     );
   });
 
-  it("las tablas de puntos estandar no copian sus valores a la base", async () => {
-    // Si estuvieran en los dos lados, tarde o temprano difieren y el podio
-    // dependeria de cual leyo cada pantalla.
+  it("la base guarda el RESULTADO de la curva, no la formula", async () => {
+    // Antes habia un catalogo de tablas (`scoring_tables`) con una clave por
+    // sistema, y los valores vivian en el codigo. Ahora hay un solo sistema y
+    // es dinamico: lo que se guarda es la curva YA CALCULADA para el tamano de
+    // esa categoria. La formula sigue existiendo en un solo lugar
+    // (`src/shared/scoring/points.ts`); si estuviera tambien en SQL, tarde o
+    // temprano difieren y el podio dependeria de cual leyo cada pantalla.
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_snapshot_de_puntuacion($1, 3, $2::numeric[], 1, true)", [
+        s.divisionId,
+        "{100,50,0}",
+      ]),
+    );
+
     await asUser(s.db, s.users.owner, async () => {
-      const res = await s.db.query<{ builtin_key: string; points: number[] }>(
-        "select builtin_key, points from scoring_tables where org_id is null order by builtin_key",
+      const res = await s.db.query<{ points: string[]; field_size: number }>(
+        "select points, field_size from scoring_snapshots where division_id = $1",
+        [s.divisionId],
       );
-      expect(res.rows.map((r) => r.builtin_key)).toEqual([
-        "cf_games_40",
-        "cf_games_80",
-        "cf_open",
-        "tiempo_total",
-      ]);
-      expect(res.rows.every((r) => r.points.length === 0)).toBe(true);
+      expect(res.rows).toHaveLength(1);
+      expect(res.rows[0].field_size).toBe(3);
+      expect(res.rows[0].points.map(Number)).toEqual([100, 50, 0]);
     });
   });
 });

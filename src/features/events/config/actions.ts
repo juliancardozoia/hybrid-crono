@@ -266,8 +266,6 @@ export async function createDivision(
   const ageMin = formData.get("ageMin") ? Number(formData.get("ageMin")) : null;
   const ageMax = formData.get("ageMax") ? Number(formData.get("ageMax")) : null;
   const level = String(formData.get("level") ?? "").trim() || null;
-  const scoringTableId =
-    String(formData.get("scoringTableId") ?? "").trim() || null;
   const cupoBruto = String(formData.get("capacity") ?? "").trim();
 
   await requireManage(eventId);
@@ -310,7 +308,6 @@ export async function createDivision(
       age_min: ageMin,
       age_max: ageMax,
       level,
-      scoring_table_id: scoringTableId,
     })
     .select("id")
     .single();

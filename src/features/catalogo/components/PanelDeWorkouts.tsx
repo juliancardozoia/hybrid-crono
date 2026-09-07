@@ -1,5 +1,6 @@
 import type { BloquePublico, EventoPublico, MovimientoPublico } from "../queries";
 import { Icono } from "@/shared/components/Icono";
+import { formatearCarga } from "@/shared/unidades/carga";
 
 /**
  * Las pruebas, explicadas como las lee un atleta.
@@ -120,6 +121,25 @@ function Parte({
         </p>
       )}
 
+      {/* El cap propio de cada categoría, cuando alguna lo cambia. Va acá
+          arriba y no junto a los movimientos porque es del TIEMPO, no del
+          trabajo: modifica el título ("cap 10 min") que se lee dos líneas más
+          arriba. Si ninguna categoría lo cambia, la lista viene vacía y no se
+          pinta nada. */}
+      {parte.capPorCategoria.length > 0 && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400">
+          <span className="text-neutral-500">Cap por categoría:</span>
+          {parte.capPorCategoria.map((c) => (
+            <span key={c.division}>
+              {c.division}{" "}
+              <span className="font-medium text-neutral-200">
+                {Math.round(c.timeCapMs / 60000)} min
+              </span>
+            </span>
+          ))}
+        </p>
+      )}
+
       {parte.blocks.length === 0 ? (
         // Un circuito no tiene bloques: su estructura son los segmentos, que
         // viven en otra tabla y no se publican como movimientos.
@@ -196,7 +216,10 @@ function Movimiento({ mov, rondas }: { mov: MovimientoPublico; rondas: number })
         {mov.cargaKg !== null && (
           <span className="flex items-center gap-1 text-sm text-neutral-400">
             <Icono nombre="pesa" className="h-3.5 w-3.5" />
-            {Number(mov.cargaKg)} kg
+            {/* En la unidad en que lo escribio el organizador. Un WOD
+                programado en libras decia "43.09 kg" — un numero que no esta en
+                ningun reglamento y que el atleta no reconoce. */}
+            {formatearCarga(Number(mov.cargaKg), mov.cargaUnidad)}
           </span>
         )}
       </div>
@@ -217,7 +240,9 @@ function Movimiento({ mov, rondas }: { mov: MovimientoPublico; rondas: number })
               <span className="ml-1.5 font-medium text-neutral-100">
                 {[
                   c.objetivo?.length ? c.objetivo.join("-") : null,
-                  c.cargaKg !== null ? `${Number(c.cargaKg)} kg` : null,
+                  c.cargaKg !== null
+                    ? formatearCarga(Number(c.cargaKg), c.cargaUnidad)
+                    : null,
                 ]
                   .filter(Boolean)
                   .join(" · ") || "—"}

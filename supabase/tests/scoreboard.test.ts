@@ -20,8 +20,17 @@ interface Documento {
   version: number;
   detalle: boolean;
   event: { name: string; status: string; official: boolean };
-  divisions: Array<{ id: string; name: string; scoringTable: string }>;
-  parts: Array<{ id: string; workoutName: string; scoreUnit: string; scoreDir: string }>;
+  divisions: Array<{ id: string; name: string }>;
+  snapshots: Array<{ divisionId: string; stage: number; points: number[]; locked: boolean }>;
+  stageAdvancements: Array<{ divisionId: string; stage: number; teamId: string }>;
+  parts: Array<{
+    id: string;
+    workoutName: string;
+    stage: number;
+    scoreUnit: string;
+    scoreDir: string;
+    maxPoints: string;
+  }>;
   assignments: Array<{ partId: string; divisionId: string }>;
   teams: Array<{ id: string; bib: number; athletes: string }>;
   scores: Array<{ partId: string; teamId: string; status: string; value: string | null }>;
@@ -68,7 +77,7 @@ describe("scoreboard_document", () => {
   it("proyecta el evento, sus categorias, pruebas y padron", async () => {
     const doc = await documento();
 
-    expect(doc.version).toBe(2);
+    expect(doc.version).toBe(5);
     expect(doc.event.name).toBe("Copa Test");
     expect(doc.divisions).toHaveLength(1);
     expect(doc.parts).toHaveLength(1);
@@ -89,22 +98,33 @@ describe("scoreboard_document", () => {
     expect(doc.teams[0].athletes).toMatch(/Atleta\d Perez/);
   });
 
-  it("una categoria sin tabla propia cae en tiempo total", async () => {
+  it("una categoria sin snapshot no tiene fila en snapshots", async () => {
+    // Sin fila no es un hueco: significa "todavia no se genero", y ahi el
+    // cliente calcula la curva al vuelo con los atletas que hay. Es lo
+    // correcto ANTES de competir, cuando el padron todavia se mueve.
     const doc = await documento();
-    expect(doc.divisions[0].scoringTable).toBe("tiempo_total");
+    expect(doc.snapshots).toEqual([]);
   });
 
-  it("respeta la tabla de puntos que eligio la categoria", async () => {
-    await asUser(s.db, s.users.owner, async () => {
-      await s.db.query(
-        `update divisions set scoring_table_id = (
-           select id from scoring_tables where builtin_key = 'cf_games_40'
-         ) where id = $1`,
-        [s.divisionId],
-      );
-    });
+  it("con snapshot generado, viaja la curva congelada", async () => {
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_snapshot_de_puntuacion($1, 3, $2::numeric[], 1, true)", [
+        s.divisionId,
+        "{100,50,0}",
+      ]),
+    );
+
     const doc = await documento();
-    expect(doc.divisions[0].scoringTable).toBe("cf_games_40");
+    // Viaja como numeros dentro del jsonb, no como strings: es lo que el
+    // cliente necesita para sumar sin convertir nada.
+    const snap = doc.snapshots.find((sn) => sn.divisionId === s.divisionId && sn.stage === 1);
+    expect(snap?.points).toEqual([100, 50, 0]);
+    expect(snap?.locked).toBe(true);
+  });
+
+  it("cada prueba lleva su peso", async () => {
+    const doc = await documento();
+    expect(Number(doc.parts[0].maxPoints)).toBe(100);
   });
 
   it("los equipos retirados no entran al padron", async () => {
@@ -156,6 +176,115 @@ describe("scoreboard_document", () => {
       expect(carril.rows).toHaveLength(1);
       expect(carril.rows[0].team_id).toBeNull();
       expect(carril.rows[0].event_id).toBe(s.eventId);
+    });
+  });
+});
+
+describe("etapas y cortes", () => {
+  /** Un segundo workout, en la etapa 2, asignado a la categoria del fixture. */
+  async function crearPruebaDeEtapa2(): Promise<{ workoutId: string; partId: string }> {
+    let workoutId = "";
+    let partId = "";
+    await asAdmin(s.db, async () => {
+      workoutId = (
+        await s.db.query<{ id: string }>(
+          "insert into workouts (event_id, name, order_index, stage) values ($1, 'Final', 1, 2) returning id",
+          [s.eventId],
+        )
+      ).rows[0].id;
+
+      partId = (
+        await s.db.query<{ id: string }>(
+          `insert into workout_parts (workout_id, event_id, order_index, time_scheme, score_unit, score_dir)
+           values ($1, $2, 0, 'libre', 'reps', 'mayor_gana') returning id`,
+          [workoutId, s.eventId],
+        )
+      ).rows[0].id;
+
+      await s.db.query(
+        "insert into part_divisions (part_id, division_id, event_id) values ($1, $2, $3)",
+        [partId, s.divisionId, s.eventId],
+      );
+    });
+    return { workoutId, partId };
+  }
+
+  it("el workout lleva su etapa, y viaja en el documento", async () => {
+    await crearPruebaDeEtapa2();
+    const doc = await documento();
+    const final = doc.parts.find((p) => p.workoutName === "Final");
+    expect(final?.stage).toBe(2);
+    // La prueba original del circuito sigue en la etapa 1, por default.
+    expect(doc.parts.find((p) => p.workoutName === "Circuito")?.stage).toBe(1);
+  });
+
+  it("sin corte confirmado, nadie viaja en stageAdvancements para esa etapa", async () => {
+    await crearPruebaDeEtapa2();
+    const doc = await documento();
+    expect(doc.stageAdvancements).toEqual([]);
+  });
+
+  it("confirmar_corte_de_etapa avanza a los equipos elegidos y congela su tabla", async () => {
+    await crearPruebaDeEtapa2();
+    const avanzan = [s.teamIds[0], s.teamIds[1]];
+
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+        s.divisionId,
+        avanzan,
+        "{100,0}",
+      ]),
+    );
+
+    const doc = await documento();
+    expect(doc.stageAdvancements.filter((a) => a.stage === 2).map((a) => a.teamId).sort()).toEqual(
+      [...avanzan].sort(),
+    );
+
+    const snap = doc.snapshots.find((sn) => sn.divisionId === s.divisionId && sn.stage === 2);
+    expect(snap?.points).toEqual([100, 0]);
+    expect(snap?.locked).toBe(true);
+  });
+
+  it("un corte confirmado no se puede rehacer", async () => {
+    await crearPruebaDeEtapa2();
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+        s.divisionId,
+        [s.teamIds[0]],
+        "{100}",
+      ]),
+    );
+
+    await asUser(s.db, s.users.owner, async () => {
+      let fallo = false;
+      try {
+        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+          s.divisionId,
+          [s.teamIds[1]],
+          "{100}",
+        ]);
+      } catch {
+        fallo = true;
+      }
+      expect(fallo).toBe(true);
+    });
+  });
+
+  it("quien no gestiona el evento no puede confirmar un corte", async () => {
+    await crearPruebaDeEtapa2();
+    await asUser(s.db, s.users.forastero, async () => {
+      let fallo = false;
+      try {
+        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+          s.divisionId,
+          [s.teamIds[0]],
+          "{100}",
+        ]);
+      } catch {
+        fallo = true;
+      }
+      expect(fallo).toBe(true);
     });
   });
 });

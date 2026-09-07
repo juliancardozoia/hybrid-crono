@@ -20,6 +20,22 @@ import type { Anomaly, LaneStatus, TimingEvent } from "./types";
 export type MovementUnit = "reps" | "metros" | "calorias" | "segundos" | "kg";
 export type BlockKind = "buy_in" | "trabajo" | "descanso" | "cash_out";
 export type WodScheme = "libre" | "cap" | "ventana" | "intervalos" | "sin_reloj";
+export type LoadUnit = "kg" | "lb";
+
+/**
+ * Como registra el juez ESE movimiento.
+ *
+ *   tap      un toque por repeticion, y el paso se cierra solo al llegar al
+ *            objetivo. El tap ES el contador del juez.
+ *   hecho    un solo toque cuando el atleta termina el movimiento.
+ *   numero   se escribe la cantidad y se registra.
+ *
+ * El reductor ya soportaba los tres comportamientos sin saber que existian:
+ * `rep` cuenta de a uno, `movement_done` con `cantidad` cierra con un numero, y
+ * `movement_done` sin cantidad cierra con el objetivo. Esto solo le dice a la
+ * PANTALLA cual ofrecer.
+ */
+export type CaptureStyle = "tap" | "hecho" | "numero";
 
 export type WodMovement = {
   /** id de part_movements. */
@@ -33,10 +49,14 @@ export type WodMovement = {
    */
   targetPerRound: number[];
   loadKg: number | null;
+  /** En la que lo escribio el organizador, para mostrarselo igual al juez. */
+  loadUnit: LoadUnit;
   /** Las que pueda en el tiempo restante. Nunca se completa sola. */
   maxReps: boolean;
   /** Al cerrarlo se registra el desempate, sin que el juez de un tap extra. */
   isTiebreak: boolean;
+  /** Null = el derivado. Ver `estiloDelPaso`. */
+  captureStyle: CaptureStyle | null;
 };
 
 export type WodBlock = {
@@ -71,13 +91,18 @@ export type WodStep = {
   movementId: string;
   /** Ronda dentro del bloque, empezando en 1. */
   round: number;
+  /** Cuantas rondas tiene el bloque en total. Para mostrar "ronda X de N". */
+  totalRounds: number;
   /** Cuantas unidades hay que hacer. 0 si es "las que pueda". */
   target: number;
   name: string;
   unit: MovementUnit;
   loadKg: number | null;
+  loadUnit: LoadUnit;
   maxReps: boolean;
   isTiebreak: boolean;
+  /** Ya resuelto: la pantalla no deriva nada. */
+  captureStyle: CaptureStyle;
 };
 
 export type LiftAttempt = {
@@ -108,6 +133,15 @@ export type WodResult = {
   noRepCount: number;
   /** Se acabo el tiempo sin terminar la tarea. */
   capped: boolean;
+  /**
+   * `capped` y el juez TODAVIA no reporto cuanto llevaba en el paso que quedo
+   * a medias. Mientras esto sea true, la pantalla tiene que ofrecer ESE
+   * cierre en vez de bloquear directo: si el atleta iba 12 de 21 cuando se
+   * acabo el tiempo, esas 12 no quedan en ningun lado si nadie las escribe.
+   * Se apaga solo -sin otro evento que un `movement_done`- en cuanto ese
+   * cierre final se usa.
+   */
+  awaitingFinalTally: boolean;
   /** Elapsed en el que el carril dejo de correr. Congela el reloj en pantalla. */
   stoppedAtMs: number | null;
   anomalies: Anomaly[];
@@ -120,6 +154,39 @@ function objetivoDeRonda(movimiento: WodMovement, round: number): number {
   if (valores.length === 0) return 0;
   // Fuera del arreglo se repite el ultimo: {10} con tres rondas son tres de 10.
   return valores[Math.min(round, valores.length) - 1] ?? 0;
+}
+
+/**
+ * Como se captura un paso: lo que dijo el organizador, o el derivado.
+ *
+ * VIVE ACA Y NO EN `wodStructure.ts` porque depende del OBJETIVO DE LA RONDA, y
+ * eso solo esta resuelto cuando el plan se despliega.
+ *
+ * El orden de las reglas importa:
+ *
+ *   - Lo que el organizador fijo gana siempre. Es su competencia.
+ *   - Una unidad que no son reps se escribe: nadie tapea 500 metros de a uno.
+ *   - `max_reps` se TAPEA aunque no tenga objetivo (Fight Gone Bad, Nicole):
+ *     ahi contar ES el score, y no hay un numero que el juez pueda anticipar
+ *     para pedirselo al cerrar.
+ *   - Cualquier otra cantidad de reps: UN TOQUE AL TERMINAR, siempre. Antes
+ *     tapeaba de a uno hasta 30 y pedia un toque final recien por encima —
+ *     pero tapear de a uno le saca la vista del atleta al juez una vez por
+ *     rep, sea el objetivo 9 o 100, y el cierre (natural o por el cap, ver
+ *     `reduceWodEvents`) siempre pide confirmar la cantidad igual. El
+ *     organizador puede seguir forzando `tap` a mano para un movimiento
+ *     puntual si de verdad lo quiere contado de a uno.
+ */
+export function estiloDelPaso(
+  movimiento: WodMovement,
+  /** Ya no decide nada: se conserva por si una excepcion futura vuelve a
+   *  necesitar el objetivo de la ronda, sin cambiar la firma otra vez. */
+  _target: number,
+): CaptureStyle {
+  if (movimiento.captureStyle !== null) return movimiento.captureStyle;
+  if (movimiento.unit !== "reps") return "numero";
+  if (movimiento.maxReps) return "tap";
+  return "hecho";
 }
 
 /**
@@ -138,20 +205,25 @@ export function planDelWod(structure: WodStructure): WodStep[] {
     if (bloque.kind === "descanso") continue;
 
     const movimientos = [...bloque.movements].sort((a, b) => a.orderIndex - b.orderIndex);
+    const totalRounds = Math.max(1, bloque.rounds);
 
-    for (let round = 1; round <= Math.max(1, bloque.rounds); round++) {
+    for (let round = 1; round <= totalRounds; round++) {
       for (const movimiento of movimientos) {
+        const target = objetivoDeRonda(movimiento, round);
         pasos.push({
           index: pasos.length,
           blockId: bloque.id,
           movementId: movimiento.id,
           round,
-          target: objetivoDeRonda(movimiento, round),
+          totalRounds,
+          target,
           name: movimiento.name,
           unit: movimiento.unit,
           loadKg: movimiento.loadKg,
+          loadUnit: movimiento.loadUnit,
           maxReps: movimiento.maxReps,
           isTiebreak: movimiento.isTiebreak,
+          captureStyle: estiloDelPaso(movimiento, target),
         });
       }
     }
@@ -232,8 +304,54 @@ export function reduceWodEvents(
   const dqEvent = active.find((e) => e.type === "dq");
   const dnfEvent = active.find((e) => e.type === "dnf");
 
+  // El limite de tiempo del esquema: el cap de un For Time, la ventana de un
+  // AMRAP. Se calcula ACA (no despues del loop, donde vivia antes) porque el
+  // loop lo necesita para descartar marcas tardias.
+  const tope =
+    structure.scheme === "ventana"
+      ? structure.windowMs
+      : structure.scheme === "cap"
+        ? structure.timeCapMs
+        : null;
+
+  // El juez tiene derecho a UN cierre final despues de que se acabo el
+  // tiempo: es el reporte de "llevaba 12 de 21" del movimiento que quedo a
+  // medias, y sin el esas 12 reps no quedan en ningun lado. Pero solo una vez
+  // y solo un CIERRE EXPLICITO (`movement_done`, con la cantidad que el juez
+  // confirmo) — nunca un `rep` suelto, un `round_done` o mas de un cierre:
+  // eso es exactamente lo que dejaba que un juez completara el WOD entero 40
+  // segundos tarde ("TERMINO 12:40" con cap de 12 minutos).
+  let cierreFinalUsado = false;
+
   for (const evento of active) {
     const paso = plan[stepIndex];
+
+    if (tope !== null && evento.elapsedMs >= tope) {
+      const esElCierreFinal = evento.type === "movement_done" && !cierreFinalUsado;
+
+      if (!esElCierreFinal) {
+        if (
+          evento.type === "rep" ||
+          evento.type === "movement_done" ||
+          evento.type === "round_done" ||
+          evento.type === "tiebreak"
+        ) {
+          anomalies.push({
+            code: "marca_despues_del_limite",
+            message:
+              structure.scheme === "ventana"
+                ? "La marca llegó después de agotada la ventana: no suma al resultado."
+                : "La marca llegó después del cap: no cuenta para el resultado.",
+            eventId: evento.id,
+          });
+        }
+        continue;
+      }
+
+      cierreFinalUsado = true;
+      // Sigue al switch de abajo, que cierra el paso normalmente con la
+      // cantidad que traiga el payload.
+    }
 
     switch (evento.type) {
       case "rep": {
@@ -325,19 +443,18 @@ export function reduceWodEvents(
     }
   }
 
-  const completo = plan.length > 0 && stepIndex >= plan.length;
+  // Si el cierre final se uso, el WOD NUNCA queda "completo" aunque ese mismo
+  // cierre haya alcanzado a llenar el ultimo paso: closurar el ultimo
+  // movimiento CON EL TIEMPO YA VENCIDO es justamente lo que significa quedar
+  // capeado, no terminar. Sin este freno, el cierre final reabriria el mismo
+  // agujero que se cerro mas arriba (completar tarde contaba como "finished").
+  const completo = plan.length > 0 && stepIndex >= plan.length && !cierreFinalUsado;
 
   // El elapsed contra el que se mide el tope: lo que diga quien evalua, o el
-  // ultimo marcaje si no dijo nada.
+  // ultimo marcaje si no dijo nada. `tope` ya se calculo arriba, antes del
+  // loop, porque el loop lo necesita para descartar marcas tardias.
   const ultimoMarcaje = active.length > 0 ? active[active.length - 1].elapsedMs : 0;
   const elapsedDeReferencia = nowElapsedMs ?? ultimoMarcaje;
-
-  const tope =
-    structure.scheme === "ventana"
-      ? structure.windowMs
-      : structure.scheme === "cap"
-        ? structure.timeCapMs
-        : null;
 
   const seAcaboElTiempo = tope !== null && hasStart && elapsedDeReferencia >= tope;
 
@@ -346,6 +463,14 @@ export function reduceWodEvents(
   // rankea siempre detras de quien completo la tarea.
   const ventanaAgotada = structure.scheme === "ventana" && seAcaboElTiempo;
   const capped = structure.scheme === "cap" && seAcaboElTiempo && !completo;
+
+  // Se acabo el tiempo (cap O ventana) con un paso a medias y nadie reporto
+  // todavia cuanto llevaba. Independiente de `status`: en un AMRAP el status
+  // ya dice "finished" apenas se agota la ventana -es la regla, un AMRAP
+  // siempre termina en la bocina- pero el juez igual necesita poder escribir
+  // el ultimo numero antes de que la pantalla se bloquee.
+  const awaitingFinalTally =
+    seAcaboElTiempo && !cierreFinalUsado && plan.length > 0 && stepIndex < plan.length;
 
   let status: LaneStatus;
   if (dqEvent) status = "dq";
@@ -377,7 +502,10 @@ export function reduceWodEvents(
     completedReps: completedReps + progress,
     completedRounds,
     repsInRound,
-    currentStepIndex: status === "running" || status === "not_started" ? Math.min(stepIndex, plan.length) : null,
+    currentStepIndex:
+      status === "running" || status === "not_started" || awaitingFinalTally
+        ? Math.min(stepIndex, plan.length)
+        : null,
     currentStepProgress: progress,
     finishedMs,
     tiebreakMs,
@@ -385,6 +513,7 @@ export function reduceWodEvents(
     attempts,
     noRepCount,
     capped,
+    awaitingFinalTally,
     stoppedAtMs,
     anomalies,
   };

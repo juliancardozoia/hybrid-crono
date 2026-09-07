@@ -22,20 +22,53 @@ export default async function CronogramaPage({
   const { event, canManage } = await requireEventAccess(id);
 
   const supabase = await createClient();
-  const [{ data: arenas }, { data: heats }, { data: issues }] =
-    await Promise.all([
-      supabase
-        .from("arenas")
-        .select("*")
-        .eq("event_id", id)
-        .order("order_index"),
-      supabase
-        .from("heats")
-        .select("id, name, arena_id, scheduled_at, scheduled_end_at")
-        .eq("event_id", id)
-        .order("scheduled_at", { nullsFirst: false }),
-      supabase.rpc("event_schedule_issues", { p_event_id: id }),
-    ]);
+  // Consultas planas y unidas en memoria, sin embeds: el nombre de la prueba y
+  // el de la categoria son dos columnas y no justifican una relacion mas que
+  // PostgREST tenga que resolver en la pantalla del dia del evento.
+  const [
+    { data: arenas },
+    { data: heats },
+    { data: issues },
+    { data: divisiones },
+    { data: pruebas },
+  ] = await Promise.all([
+    supabase.from("arenas").select("*").eq("event_id", id).order("order_index"),
+    supabase
+      .from("heats")
+      .select(
+        "id, name, arena_id, scheduled_at, scheduled_end_at, division_id, workout_id",
+      )
+      .eq("event_id", id)
+      .order("scheduled_at", { nullsFirst: false }),
+    supabase.rpc("event_schedule_issues", { p_event_id: id }),
+    supabase.from("divisions").select("id, name").eq("event_id", id),
+    supabase.from("workouts").select("id, name").eq("event_id", id).order("order_index"),
+  ]);
+
+  const nombreDivision = new Map((divisiones ?? []).map((d) => [d.id, d.name]));
+  const nombrePrueba = new Map((pruebas ?? []).map((w) => [w.id, w.name]));
+  const variasPruebas = (pruebas ?? []).length > 1;
+
+  /**
+   * Como se llama un heat aca: "Heat 1 · Elite Masculino", y con varias pruebas
+   * "WOD 2 · Heat 1 · Elite Masculino".
+   *
+   * Solo "Heat 1" no ubica a nadie cuando hay tres arenas en paralelo y cada
+   * categoria numera sus heats desde 1 — y con varias pruebas hay tres heats
+   * distintos que se llaman igual.
+   */
+  const etiquetaDeHeat = (h: {
+    name: string;
+    division_id: string | null;
+    workout_id: string;
+  }) =>
+    [
+      variasPruebas ? nombrePrueba.get(h.workout_id) : null,
+      h.name,
+      h.division_id ? nombreDivision.get(h.division_id) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
   const problemas = (issues ?? []) as unknown as ConfigIssue[];
   const errores = problemas.filter((p) => p.severity === "error");
@@ -153,7 +186,7 @@ export default async function CronogramaPage({
                               {h.scheduled_end_at &&
                                 ` – ${horaEnEvento(h.scheduled_end_at, event.timezone).slice(0, 5)}`}
                             </span>
-                            <span className="block">{h.name}</span>
+                            <span className="block">{etiquetaDeHeat(h)}</span>
                           </li>
                         ))}
                       </ul>
@@ -214,7 +247,7 @@ export default async function CronogramaPage({
                     <ProgramarHeat
                       eventId={id}
                       heatId={h.id}
-                      nombre={h.name}
+                      nombre={etiquetaDeHeat(h)}
                       arenas={columnas.map((a) => ({ id: a.id, name: a.name }))}
                       arenaId={h.arena_id}
                       inicio={paraInputLocal(h.scheduled_at, event.timezone)}

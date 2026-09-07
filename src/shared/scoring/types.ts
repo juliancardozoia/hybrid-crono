@@ -62,6 +62,16 @@ export type PartSpec = {
   /** Desempate dentro de la prueba. Null si la prueba no lo declara. */
   tiebreakUnit: ScoreUnit | null;
   tiebreakDir: ScoreDir | null;
+  /**
+   * Si el desempate viene de OTRA parte ("el desempate de la final es el
+   * tiempo de la clasificatoria"), el id de esa parte. Null en el resto de
+   * los casos: ahi el valor ya esta en el `tiebreak` de la propia fila.
+   *
+   * Lo resuelve `resolverTiebreaksDeOtraPrueba`, ANTES de normalizar: una vez
+   * adentro de `normalizeScore` solo se ve un score a la vez, y el dato que
+   * hace falta esta en la fila de otra parte.
+   */
+  tiebreakPartId: string | null;
 };
 
 /**

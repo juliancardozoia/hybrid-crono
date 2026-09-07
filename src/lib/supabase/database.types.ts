@@ -268,6 +268,7 @@ export type Database = {
           division_id: string
           event_id: string
           load_kg: number | null
+          load_unit: Database["public"]["Enums"]["load_unit"]
           notes: string | null
           part_movement_id: string
           target_per_round: number[] | null
@@ -276,6 +277,7 @@ export type Database = {
           division_id: string
           event_id: string
           load_kg?: number | null
+          load_unit?: Database["public"]["Enums"]["load_unit"]
           notes?: string | null
           part_movement_id: string
           target_per_round?: number[] | null
@@ -284,6 +286,7 @@ export type Database = {
           division_id?: string
           event_id?: string
           load_kg?: number | null
+          load_unit?: Database["public"]["Enums"]["load_unit"]
           notes?: string | null
           part_movement_id?: string
           target_per_round?: number[] | null
@@ -459,7 +462,6 @@ export type Database = {
           id: string
           level: string | null
           name: string
-          scoring_table_id: string | null
           team_size: number
         }
         Insert: {
@@ -472,7 +474,6 @@ export type Database = {
           id?: string
           level?: string | null
           name: string
-          scoring_table_id?: string | null
           team_size?: number
         }
         Update: {
@@ -485,7 +486,6 @@ export type Database = {
           id?: string
           level?: string | null
           name?: string
-          scoring_table_id?: string | null
           team_size?: number
         }
         Relationships: [
@@ -501,13 +501,6 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "divisions_scoring_table_id_fkey"
-            columns: ["scoring_table_id"]
-            isOneToOne: false
-            referencedRelation: "scoring_tables"
             referencedColumns: ["id"]
           },
         ]
@@ -1228,7 +1221,6 @@ export type Database = {
           division_id: string
           event_id: string
           part_id: string
-          scoring_table_id: string | null
           time_cap_ms: number | null
         }
         Insert: {
@@ -1236,7 +1228,6 @@ export type Database = {
           division_id: string
           event_id: string
           part_id: string
-          scoring_table_id?: string | null
           time_cap_ms?: number | null
         }
         Update: {
@@ -1244,7 +1235,6 @@ export type Database = {
           division_id?: string
           event_id?: string
           part_id?: string
-          scoring_table_id?: string | null
           time_cap_ms?: number | null
         }
         Relationships: [
@@ -1269,24 +1259,19 @@ export type Database = {
             referencedRelation: "workout_parts"
             referencedColumns: ["id", "event_id"]
           },
-          {
-            foreignKeyName: "part_divisions_scoring_table_id_fkey"
-            columns: ["scoring_table_id"]
-            isOneToOne: false
-            referencedRelation: "scoring_tables"
-            referencedColumns: ["id"]
-          },
         ]
       }
       part_movements: {
         Row: {
           block_id: string
+          capture_style: Database["public"]["Enums"]["capture_style"] | null
           created_at: string
           custom_name: string | null
           es_tiebreak: boolean
           event_id: string
           id: string
           load_kg: number | null
+          load_unit: Database["public"]["Enums"]["load_unit"]
           max_reps: boolean
           movement_id: string | null
           notes: string | null
@@ -1297,12 +1282,14 @@ export type Database = {
         }
         Insert: {
           block_id: string
+          capture_style?: Database["public"]["Enums"]["capture_style"] | null
           created_at?: string
           custom_name?: string | null
           es_tiebreak?: boolean
           event_id: string
           id?: string
           load_kg?: number | null
+          load_unit?: Database["public"]["Enums"]["load_unit"]
           max_reps?: boolean
           movement_id?: string | null
           notes?: string | null
@@ -1313,12 +1300,14 @@ export type Database = {
         }
         Update: {
           block_id?: string
+          capture_style?: Database["public"]["Enums"]["capture_style"] | null
           created_at?: string
           custom_name?: string | null
           es_tiebreak?: boolean
           event_id?: string
           id?: string
           load_kg?: number | null
+          load_unit?: Database["public"]["Enums"]["load_unit"]
           max_reps?: boolean
           movement_id?: string | null
           notes?: string | null
@@ -1876,38 +1865,47 @@ export type Database = {
           },
         ]
       }
-      scoring_tables: {
+      scoring_snapshots: {
         Row: {
-          builtin_key: string | null
           created_at: string
+          created_by: string | null
+          division_id: string
+          event_id: string
+          field_size: number
           id: string
-          name: string
-          org_id: string | null
+          locked_at: string | null
           points: number[]
+          stage: number
         }
         Insert: {
-          builtin_key?: string | null
           created_at?: string
+          created_by?: string | null
+          division_id: string
+          event_id: string
+          field_size: number
           id?: string
-          name: string
-          org_id?: string | null
-          points?: number[]
+          locked_at?: string | null
+          points: number[]
+          stage?: number
         }
         Update: {
-          builtin_key?: string | null
           created_at?: string
+          created_by?: string | null
+          division_id?: string
+          event_id?: string
+          field_size?: number
           id?: string
-          name?: string
-          org_id?: string | null
+          locked_at?: string | null
           points?: number[]
+          stage?: number
         }
         Relationships: [
           {
-            foreignKeyName: "scoring_tables_org_id_fkey"
-            columns: ["org_id"]
+            foreignKeyName: "scoring_snapshots_division_id_event_id_fkey"
+            columns: ["division_id", "event_id"]
             isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
+            referencedRelation: "divisions"
+            referencedColumns: ["id", "event_id"]
           },
         ]
       }
@@ -1945,6 +1943,48 @@ export type Database = {
             columns: ["course_template_id", "event_id"]
             isOneToOne: false
             referencedRelation: "course_templates"
+            referencedColumns: ["id", "event_id"]
+          },
+        ]
+      }
+      stage_advancements: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          division_id: string
+          event_id: string
+          stage: number
+          team_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          division_id: string
+          event_id: string
+          stage: number
+          team_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          division_id?: string
+          event_id?: string
+          stage?: number
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stage_advancements_division_id_event_id_fkey"
+            columns: ["division_id", "event_id"]
+            isOneToOne: false
+            referencedRelation: "divisions"
+            referencedColumns: ["id", "event_id"]
+          },
+          {
+            foreignKeyName: "stage_advancements_team_id_event_id_fkey"
+            columns: ["team_id", "event_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
             referencedColumns: ["id", "event_id"]
           },
         ]
@@ -2199,6 +2239,7 @@ export type Database = {
           id: string
           interval_ms: number | null
           label: string
+          max_points: number
           order_index: number
           score_dir: Database["public"]["Enums"]["score_dir"]
           score_unit: Database["public"]["Enums"]["score_unit"]
@@ -2220,6 +2261,7 @@ export type Database = {
           id?: string
           interval_ms?: number | null
           label?: string
+          max_points?: number
           order_index: number
           score_dir: Database["public"]["Enums"]["score_dir"]
           score_unit: Database["public"]["Enums"]["score_unit"]
@@ -2243,6 +2285,7 @@ export type Database = {
           id?: string
           interval_ms?: number | null
           label?: string
+          max_points?: number
           order_index?: number
           score_dir?: Database["public"]["Enums"]["score_dir"]
           score_unit?: Database["public"]["Enums"]["score_unit"]
@@ -2417,6 +2460,7 @@ export type Database = {
           name: string
           order_index: number
           released_at: string | null
+          stage: number
         }
         Insert: {
           created_at?: string
@@ -2426,6 +2470,7 @@ export type Database = {
           name: string
           order_index: number
           released_at?: string | null
+          stage?: number
         }
         Update: {
           created_at?: string
@@ -2435,6 +2480,7 @@ export type Database = {
           name?: string
           order_index?: number
           released_at?: string | null
+          stage?: number
         }
         Relationships: [
           {
@@ -2535,13 +2581,39 @@ export type Database = {
         Returns: undefined
       }
       auto_distribuir_heats: {
-        Args: { p_event_id: string; p_lanes_por_heat: number }
+        Args: {
+          p_event_id: string
+          p_lanes_por_heat: number
+          p_workout_id?: string
+        }
         Returns: {
           division_id: string
           division_name: string
           equipos_asignados: number
           heats_creados: number
+          workout_id: string
+          workout_name: string
         }[]
+      }
+      bloquear_snapshot_de_puntuacion: {
+        Args: { p_division_id: string; p_stage?: number }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          division_id: string
+          event_id: string
+          field_size: number
+          id: string
+          locked_at: string | null
+          points: number[]
+          stage: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "scoring_snapshots"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       can_admin_org: { Args: { p_org_id: string }; Returns: boolean }
       can_delete_registrations: {
@@ -2688,6 +2760,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      confirmar_corte_de_etapa: {
+        Args: {
+          p_division_id: string
+          p_points: number[]
+          p_stage: number
+          p_team_ids: string[]
+        }
+        Returns: undefined
+      }
       confirmar_pago_manual: {
         Args: { p_order_id: string; p_referencia?: string }
         Returns: {
@@ -2790,6 +2871,36 @@ export type Database = {
           p_provider: string
           p_tax_id?: string
         }
+        Returns: undefined
+      }
+      guardar_snapshot_de_puntuacion: {
+        Args: {
+          p_division_id: string
+          p_field_size: number
+          p_lock?: boolean
+          p_points: number[]
+          p_stage?: number
+        }
+        Returns: {
+          created_at: string
+          created_by: string | null
+          division_id: string
+          event_id: string
+          field_size: number
+          id: string
+          locked_at: string | null
+          points: number[]
+          stage: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "scoring_snapshots"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      guardar_specs_de_parte: {
+        Args: { p_part_id: string; p_specs: Json }
         Returns: undefined
       }
       import_teams: {
@@ -2904,7 +3015,37 @@ export type Database = {
           start_offset_ms: number
           team_name: string
           workout_id: string
+          workout_name: string
         }[]
+      }
+      judge_lane_events: {
+        Args: { p_lane_id: string }
+        Returns: {
+          client_captured_at: string | null
+          device_id: string | null
+          elapsed_ms: number
+          event_id: string
+          heat_id: string
+          id: string
+          lane_id: string
+          payload: Json
+          recorded_by: string
+          segment_id: string | null
+          seq: number
+          server_received_at: string
+          supersedes_id: string | null
+          type: Database["public"]["Enums"]["timing_event_type"]
+          void_reason: string | null
+          voided: boolean
+          voided_at: string | null
+          voided_by: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "timing_events"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       judge_visible_lanes: {
         Args: never
@@ -2924,6 +3065,7 @@ export type Database = {
           status: Database["public"]["Enums"]["lane_status"]
           team_id: string
           team_name: string
+          workout_name: string
         }[]
       }
       medios_de_pago: { Args: { p_registration_id: string }; Returns: Json }
@@ -3122,8 +3264,20 @@ export type Database = {
         Args: { p_org_id: string; p_user_id: string }
         Returns: undefined
       }
+      reorder_part_blocks: {
+        Args: { p_ordered_ids: string[]; p_part_id: string }
+        Returns: undefined
+      }
+      reorder_part_movements: {
+        Args: { p_block_id: string; p_ordered_ids: string[] }
+        Returns: undefined
+      }
       reorder_segments: {
         Args: { p_ordered_ids: string[]; p_template_id: string }
+        Returns: undefined
+      }
+      reorder_workouts: {
+        Args: { p_event_id: string; p_ordered_ids: string[] }
         Returns: undefined
       }
       save_member_data: {
@@ -3440,6 +3594,7 @@ export type Database = {
       athlete_gender: "male" | "female" | "other"
       block_kind: "buy_in" | "trabajo" | "descanso" | "cash_out"
       capture_mode: "manual" | "en_vivo"
+      capture_style: "tap" | "hecho" | "numero"
       discount_kind: "porcentaje" | "monto"
       event_document_kind: "terminos" | "reglamento" | "waiver" | "otro"
       event_format: "crossfit" | "carrera_hibrida" | "mixto"
@@ -3670,6 +3825,7 @@ export const Constants = {
       athlete_gender: ["male", "female", "other"],
       block_kind: ["buy_in", "trabajo", "descanso", "cash_out"],
       capture_mode: ["manual", "en_vivo"],
+      capture_style: ["tap", "hecho", "numero"],
       discount_kind: ["porcentaje", "monto"],
       event_document_kind: ["terminos", "reglamento", "waiver", "otro"],
       event_format: ["crossfit", "carrera_hibrida", "mixto"],

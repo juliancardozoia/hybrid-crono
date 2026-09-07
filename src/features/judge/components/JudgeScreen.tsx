@@ -7,6 +7,7 @@ import type { PenaltyPayload, Segment } from "@/shared/timing/types";
 import { startHeartbeat, UNDO_WINDOW_MS, useRaceStore } from "../lib/store";
 import { startSyncLoop, supabaseTransport, type SyncOutcome, type Transport } from "../lib/sync";
 import { useDetectarLargadaDeshecha } from "../lib/useDetectarLargadaDeshecha";
+import { useSincronizarEventosRemotos } from "../lib/useSincronizarEventosRemotos";
 import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
@@ -84,6 +85,9 @@ export function JudgeScreen({
   // todavía), el reloj sigue corriendo sobre un heat que ya no existe. Esto
   // lo detecta y reinicia el carril solo.
   useDetectarLargadaDeshecha(onCheckStart, online, () => setLargadaDeshecha(true));
+  // Un DNF marcado desde la torre de control -u otro evento insertado por
+  // la organización- no le llega solo: el sync normal es de solo subida.
+  useSincronizarEventosRemotos(laneId, online);
 
   useEffect(() => {
     void init({ laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy });

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireManage } from "@/features/events/lib/access";
-import { aKilos } from "@/features/events/lib/carga";
+import { aKilos } from "@/shared/unidades/carga";
 import type { GenderRule, LoadUnit } from "@/lib/supabase/types";
 
 export interface FormState {
@@ -65,8 +65,6 @@ export async function guardarCategoria(
 
   // --- Cupo y puntuacion -----------------------------------------------
   const cupoBruto = String(formData.get("capacity") ?? "").trim();
-  const scoringTableId =
-    String(formData.get("scoringTableId") ?? "").trim() || null;
 
   let capacity: number | null = null;
   if (cupoBruto) {
@@ -90,7 +88,6 @@ export async function guardarCategoria(
       gender_rule: genderRule,
       age_min: ageMin,
       age_max: ageMax,
-      scoring_table_id: scoringTableId,
     })
     .eq("id", divisionId);
 
@@ -184,6 +181,103 @@ export async function agregarMovimientoDeCategoria(
       return { error: "Ese movimiento ya está en la categoría." };
     return { error: error.message || "No se pudo agregar el movimiento." };
   }
+
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Corrige el peso, la unidad o el detalle de un movimiento ya cargado.
+ *
+ * Antes solo se podia agregar y quitar, asi que arreglar "43" por "45" era
+ * borrar la fila y volver a elegir el movimiento del catalogo de 148. El
+ * MOVIMIENTO en si no se cambia: cambiar Thruster por Snatch no es corregir un
+ * dato, es otro estandar — para eso esta quitar y agregar.
+ */
+export async function editarMovimientoDeCategoria(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  const id = String(formData.get("movimientoId") ?? "");
+  const cargaBruta = String(formData.get("load") ?? "").trim();
+  const unidad =
+    (String(formData.get("loadUnit") ?? "kg") as LoadUnit) === "lb" ? "lb" : "kg";
+  const spec = String(formData.get("spec") ?? "").trim() || null;
+
+  await requireManage(eventId);
+
+  // Vacio BORRA el peso y vuelve a "este movimiento no lleva carga". Guardarlo
+  // como cero diria "cero kilos", que es otra cosa — el mismo criterio que ya
+  // usan los ajustes de segmento por categoria.
+  let loadKg: number | null = null;
+  if (cargaBruta) {
+    const n = Number(cargaBruta.replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) return { error: "El peso no es válido." };
+    loadKg = aKilos(n, unidad);
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("division_movements")
+    .update({ load_kg: loadKg, load_unit: unidad, spec })
+    .eq("id", id);
+
+  if (error) return { error: error.message || "No se pudo guardar el movimiento." };
+
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Sube o baja un movimiento en la lista de la categoria.
+ *
+ * Es el orden en que se publica: "Thruster, Pull-up, Box Jump" se lee como el
+ * organizador lo escribio y no como salio de la base. Intercambia el
+ * `order_index` con el vecino, y NO hay unique sobre (division_id,
+ * order_index), asi que dos updates sueltos no chocan a mitad de camino como
+ * pasaria con los segmentos de un circuito.
+ */
+export async function moverMovimientoDeCategoria(
+  eventId: string,
+  id: string,
+  hacia: "arriba" | "abajo",
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("division_movements")
+    .select("id, division_id, order_index")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (!actual) return { error: "Ese movimiento ya no existe." };
+
+  const { data: vecino } = await supabase
+    .from("division_movements")
+    .select("id, order_index")
+    .eq("division_id", actual.division_id)
+    [hacia === "arriba" ? "lt" : "gt"]("order_index", actual.order_index)
+    .order("order_index", { ascending: hacia !== "arriba" })
+    .limit(1)
+    .maybeSingle();
+
+  // Ya esta en la punta: no es un error, no hay nada que hacer.
+  if (!vecino) return OK;
+
+  const [a, b] = await Promise.all([
+    supabase
+      .from("division_movements")
+      .update({ order_index: vecino.order_index })
+      .eq("id", actual.id),
+    supabase
+      .from("division_movements")
+      .update({ order_index: actual.order_index })
+      .eq("id", vecino.id),
+  ]);
+
+  if (a.error || b.error) return { error: "No se pudo reordenar." };
 
   refrescar(eventId);
   return OK;
