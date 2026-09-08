@@ -75,6 +75,37 @@ function objetivoAArreglo(bruto: string): number[] {
 }
 
 /**
+ * Un AMRAP no tiene "cuántas rondas": se repiten los mismos movimientos hasta
+ * que se acaba la ventana. El reductor (`shared/timing/wod.ts`) no tiene
+ * concepto de "ronda infinita" — necesita un número para desplegar el plan —
+ * así que acá se usa un techo generoso que ningún atleta va a alcanzar en una
+ * ventana real, en vez de obligar al organizador a adivinarlo.
+ */
+const RONDAS_AMRAP_SIN_LIMITE = 50;
+
+/**
+ * Cuántas rondas le pone a un bloque nuevo o editado.
+ *
+ * Si el organizador escribió un número, ese manda siempre. Vacío solo se
+ * completa solo cuando la prueba es un AMRAP (`time_scheme = 'ventana'`): ahí
+ * "Rondas" no es una decisión real del organizador, así que no tiene sentido
+ * pedírsela.
+ */
+async function repeticionesDelBloque(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  partId: string,
+  explicitas: number | null,
+): Promise<number> {
+  if (explicitas !== null) return explicitas;
+  const { data: parte } = await supabase
+    .from("workout_parts")
+    .select("time_scheme")
+    .eq("id", partId)
+    .maybeSingle();
+  return parte?.time_scheme === "ventana" ? RONDAS_AMRAP_SIN_LIMITE : 1;
+}
+
+/**
  * El peso tal como lo escribió el organizador, convertido a la unidad canónica.
  *
  * Se guardan los DOS: los kilos —que es con lo que compara el motor— y la
@@ -289,20 +320,23 @@ export async function agregarBloque(
   const eventId = String(formData.get("eventId") ?? "");
   const partId = String(formData.get("partId") ?? "");
   const kind = String(formData.get("kind") ?? "trabajo") as BlockKind;
-  const repeticiones = numeroOpcional(formData, "repeticiones") ?? 1;
+  const repeticionesExplicitas = numeroOpcional(formData, "repeticiones");
   const duracionSegundos = numeroOpcional(formData, "duracionSegundos");
   const descansoSegundos = numeroOpcional(formData, "descansoSegundos");
 
   await requireManage(eventId);
 
   const supabase = await createClient();
-  const { data: ultimo } = await supabase
-    .from("part_blocks")
-    .select("order_index")
-    .eq("part_id", partId)
-    .order("order_index", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: ultimo }, repeticiones] = await Promise.all([
+    supabase
+      .from("part_blocks")
+      .select("order_index")
+      .eq("part_id", partId)
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    repeticionesDelBloque(supabase, partId, repeticionesExplicitas),
+  ]);
 
   const { error } = await supabase.from("part_blocks").insert({
     part_id: partId,
@@ -669,18 +703,34 @@ export async function editarBloque(
 ): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const blockId = String(formData.get("blockId") ?? "");
+  const repeticionesExplicitas = numeroOpcional(formData, "repeticiones");
   const duracionSegundos = numeroOpcional(formData, "duracionSegundos");
   const descansoSegundos = numeroOpcional(formData, "descansoSegundos");
 
   await requireManage(eventId);
 
   const supabase = await createClient();
+
+  // Solo se consulta la prueba si hace falta: en la practica el formulario
+  // siempre manda un numero (viene precargado), asi que esto rara vez corre.
+  let repeticiones = repeticionesExplicitas;
+  if (repeticiones === null) {
+    const { data: bloqueActual } = await supabase
+      .from("part_blocks")
+      .select("part_id")
+      .eq("id", blockId)
+      .maybeSingle();
+    repeticiones = bloqueActual
+      ? await repeticionesDelBloque(supabase, bloqueActual.part_id, null)
+      : 1;
+  }
+
   const { error } = await supabase
     .from("part_blocks")
     .update({
       kind: String(formData.get("kind") ?? "trabajo") as BlockKind,
       label: String(formData.get("label") ?? "").trim() || null,
-      repeticiones: numeroOpcional(formData, "repeticiones") ?? 1,
+      repeticiones,
       duracion_ms: duracionSegundos ? duracionSegundos * 1000 : null,
       descanso_ms: descansoSegundos ? descansoSegundos * 1000 : null,
     })

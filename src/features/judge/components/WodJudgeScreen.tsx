@@ -390,6 +390,7 @@ export function WodJudgeScreen({
                  teclado de confirmar se arrastrarian al movimiento siguiente. */
               key={paso.index}
               paso={paso}
+              esAmrap={esquema === "ventana"}
               progreso={resultado.currentStepProgress}
               cantidad={cantidad}
               setCantidad={setCantidad}
@@ -560,6 +561,7 @@ function Marcador({
   onNoRep,
   onMotivo,
   onCerrarMovimiento,
+  esAmrap,
 }: {
   paso: WodStep;
   progreso: number;
@@ -569,6 +571,13 @@ function Marcador({
   onNoRep: () => void;
   onMotivo: (motivo: string) => void;
   onCerrarMovimiento: (valor?: number) => void;
+  /**
+   * En un AMRAP, `paso.totalRounds` es un techo interno (ver `wod.ts`,
+   * `repeticionesDelBloque` en el constructor), no la cantidad real de
+   * rondas que va a hacer el atleta: mostrarlo ("Ronda 4 de 50") confundiria
+   * al juez con un numero que no significa nada para el.
+   */
+  esAmrap: boolean;
 }) {
   /**
    * "CONTAR A MANO" baja ESTE paso a tap, para ESTE atleta.
@@ -753,7 +762,11 @@ function Marcador({
       )}
 
       <p className="text-center text-sm text-neutral-500">
-        {paso.totalRounds > 1 ? `Ronda ${paso.round} de ${paso.totalRounds}` : "Única ronda"}
+        {esAmrap
+          ? `Ronda ${paso.round}`
+          : paso.totalRounds > 1
+            ? `Ronda ${paso.round} de ${paso.totalRounds}`
+            : "Única ronda"}
         {paso.isTiebreak && " · marca el desempate"}
       </p>
     </section>

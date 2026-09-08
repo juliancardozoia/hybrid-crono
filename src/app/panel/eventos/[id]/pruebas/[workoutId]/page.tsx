@@ -485,14 +485,19 @@ function SeccionDeParte({
                         { value: "descanso", label: "Descanso" },
                       ]}
                     />
-                    <Field label="Rondas" name="repeticiones" type="number" placeholder="1" />
+                    <Field
+                      label="Rondas"
+                      name="repeticiones"
+                      type="number"
+                      placeholder="1 (vacío = sin límite, si la prueba es AMRAP)"
+                    />
                   </FieldRow>
                   <FieldRow>
                     <Field
-                      label="Duración por ronda (seg)"
+                      label="Duración (seg)"
                       name="duracionSegundos"
                       type="number"
-                      placeholder="solo intervalos"
+                      placeholder="intervalos, o cuánto dura el descanso"
                     />
                     <Field
                       label="Descanso (seg)"

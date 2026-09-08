@@ -85,11 +85,11 @@ export function EditarBloque({
 
           <FieldRow>
             <Field
-              label="Duración por ronda (seg)"
+              label="Duración (seg)"
               name="duracionSegundos"
               type="number"
               defaultValue={bloque.duracion_ms === null ? "" : String(bloque.duracion_ms / 1000)}
-              placeholder="solo intervalos"
+              placeholder="intervalos, o cuánto dura el descanso"
             />
             <Field
               label="Descanso (seg)"

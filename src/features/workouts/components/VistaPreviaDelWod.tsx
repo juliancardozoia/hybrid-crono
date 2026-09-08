@@ -55,7 +55,36 @@ export function VistaPreviaDelWod({
 
   const plan = planDelWod(estructura);
 
-  if (plan.length === 0) {
+  // En un AMRAP, `bloque.rounds` no es una decision del organizador: es un
+  // techo interno que el constructor completa solo (ver `repeticionesDelBloque`
+  // en `workouts/actions.ts`) porque el reductor no tiene forma de desplegar
+  // "rondas ilimitadas". Desplegar las 50 rondas ACA seria mostrar un plan que
+  // no existe -el atleta hace las que pueda, no 50- asi que se muestra una
+  // sola ronda con una nota, en vez de la lista entera.
+  const esAmrap = estructura.scheme === "ventana";
+  const ventanaEnMinutos = estructura.windowMs ? estructura.windowMs / 60_000 : null;
+
+  // Los bloques de descanso no generan pasos -`planDelWod` los saltea a
+  // proposito, porque no se marcan- pero eso los dejaba invisibles TAMBIEN
+  // aca, en la vista previa. Un bloque de descanso entre dos de trabajo
+  // desaparecia de la lista y parecia que las dos partes iban seguidas sin
+  // pausa. Se intercalan como un separador, en el orden real del WOD, usando
+  // los mismos bloques que ya recibe el componente -no un segundo calculo.
+  const bloquesOrdenados = [...blocks].sort((a, b) => a.order_index - b.order_index);
+
+  const grupos = bloquesOrdenados.map((bloque) => {
+    const pasosDelBloque = plan.filter((p) => p.blockId === bloque.id);
+    const seRepite = esAmrap && bloque.repeticiones > 1;
+    return {
+      bloque,
+      seRepite,
+      pasos: seRepite ? pasosDelBloque.filter((p) => p.round === 1) : pasosDelBloque,
+    };
+  });
+
+  const totalPasosMostrados = grupos.reduce((suma, g) => suma + g.pasos.length, 0);
+
+  if (totalPasosMostrados === 0 && !bloquesOrdenados.some((b) => b.kind === "descanso")) {
     return (
       <p className="rounded-2xl border border-dashed border-neutral-800 p-4 text-center text-sm text-neutral-600">
         Sin pasos todavía. Agrega un bloque con sus movimientos y acá vas a ver
@@ -67,53 +96,86 @@ export function VistaPreviaDelWod({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-neutral-500">
-        {plan.length} paso{plan.length === 1 ? "" : "s"} — lo que el juez va a
-        marcar, en orden.
+        {totalPasosMostrados} paso{totalPasosMostrados === 1 ? "" : "s"} — lo
+        que el juez va a marcar, en orden.
       </p>
 
       <ol className="flex flex-col divide-y divide-neutral-900 overflow-hidden rounded-2xl border border-neutral-800">
-        {plan.map((paso, i) => {
-          const estilo = ESTILO[paso.captureStyle];
-          // Separador de ronda: es lo que deja confirmar ANTES del día de la
-          // competencia que "21-15-9" armó tres rondas y no algo distinto —
-          // sin esto la lista es plana y no dice dónde empieza cada una.
-          // Solo con más de una ronda: con una sola, "Ronda 1 de 1" no
-          // agrega nada.
-          const empiezaRonda =
-            paso.totalRounds > 1 && (i === 0 || plan[i - 1].round !== paso.round);
-          return (
-            <li key={paso.index}>
-              {empiezaRonda && (
-                <p className="bg-neutral-900/70 px-4 py-1 text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-                  Ronda {paso.round} de {paso.totalRounds}
-                </p>
-              )}
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-sm">
-                <span className="w-6 shrink-0 font-mono text-xs text-neutral-600">
-                  {paso.index + 1}
+        {grupos.flatMap(({ bloque, seRepite, pasos }) => {
+          if (bloque.kind === "descanso") {
+            return (
+              <li
+                key={bloque.id}
+                className="bg-neutral-900/60 px-4 py-2 text-xs font-medium tracking-wide text-neutral-500 uppercase"
+              >
+                Descanso
+                {bloque.duracion_ms !== null && ` — ${bloque.duracion_ms / 1000} s`}
+                <span className="ml-2 normal-case text-neutral-600">
+                  (no se marca: el reloj sigue corriendo)
                 </span>
-                <span className="font-mono text-neutral-400">
-                  {paso.maxReps ? "máx" : `${paso.target}${UNIDAD[paso.unit] ?? ""}`}
-                </span>
-                <span className="font-medium">{paso.name}</span>
-                {paso.loadKg !== null && (
-                  <span className="text-neutral-400">
-                    {formatearCarga(paso.loadKg, paso.loadUnit)}
-                  </span>
+              </li>
+            );
+          }
+
+          const filas = pasos.map((paso, i) => {
+            const estilo = ESTILO[paso.captureStyle];
+            // Separador de ronda: es lo que deja confirmar ANTES del día de la
+            // competencia que "21-15-9" armó tres rondas y no algo distinto —
+            // sin esto la lista es plana y no dice dónde empieza cada una.
+            // Solo con más de una ronda REAL: en un AMRAP no hay "ronda X de
+            // Y" que mostrar, es la nota de "se repite" la que ya lo dice.
+            const empiezaRonda =
+              !seRepite &&
+              paso.totalRounds > 1 &&
+              (i === 0 || pasos[i - 1].round !== paso.round);
+            return (
+              <li key={paso.index}>
+                {empiezaRonda && (
+                  <p className="bg-neutral-900/70 px-4 py-1 text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                    Ronda {paso.round} de {paso.totalRounds}
+                  </p>
                 )}
-                <span className="ml-auto flex items-center gap-2 text-xs">
-                  {paso.isTiebreak && (
-                    <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-300">
-                      desempate
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-sm">
+                  <span className="w-6 shrink-0 font-mono text-xs text-neutral-600">
+                    {paso.index + 1}
+                  </span>
+                  <span className="font-mono text-neutral-400">
+                    {paso.maxReps ? "máx" : `${paso.target}${UNIDAD[paso.unit] ?? ""}`}
+                  </span>
+                  <span className="font-medium">{paso.name}</span>
+                  {paso.loadKg !== null && (
+                    <span className="text-neutral-400">
+                      {formatearCarga(paso.loadKg, paso.loadUnit)}
                     </span>
                   )}
-                  <span className={estilo?.clase ?? "text-neutral-500"}>
-                    {estilo?.texto ?? paso.captureStyle}
+                  <span className="ml-auto flex items-center gap-2 text-xs">
+                    {paso.isTiebreak && (
+                      <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-300">
+                        desempate
+                      </span>
+                    )}
+                    <span className={estilo?.clase ?? "text-neutral-500"}>
+                      {estilo?.texto ?? paso.captureStyle}
+                    </span>
                   </span>
-                </span>
-              </div>
-            </li>
-          );
+                </div>
+              </li>
+            );
+          });
+
+          if (seRepite) {
+            filas.push(
+              <li
+                key={`${bloque.id}-se-repite`}
+                className="bg-neutral-900/60 px-4 py-2 text-xs font-medium tracking-wide text-neutral-500 uppercase"
+              >
+                ↻ Se repite hasta agotar el tiempo
+                {ventanaEnMinutos !== null && ` (ventana: ${ventanaEnMinutos} min)`}
+              </li>,
+            );
+          }
+
+          return filas;
         })}
       </ol>
     </div>
