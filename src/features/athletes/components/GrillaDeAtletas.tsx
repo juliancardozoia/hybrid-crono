@@ -5,6 +5,7 @@ import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
+import { Modal } from "@/shared/components/Modal";
 import { Selector } from "@/shared/components/Selector";
 import {
   DetalleDeAtleta,
@@ -258,17 +259,7 @@ export function GrillaDeAtletas({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    {canManage && alQuitar && (
-                      <FormularioDeEstado
-                        accion={alQuitar.bind(null, t.id)}
-                        estadoInicial={{ error: null }}
-                        etiqueta="✕"
-                        pendienteTexto="…"
-                        mensajeDeCarga="Quitando el equipo…"
-                        title="Quitar equipo"
-                        className="px-2 text-neutral-600 hover:text-red-400"
-                      />
-                    )}
+                    {canManage && alQuitar && <QuitarEquipo equipo={t} alQuitar={alQuitar} />}
                   </td>
                 </tr>
 
@@ -318,6 +309,68 @@ export function GrillaDeAtletas({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Quitar un equipo, con confirmacion.
+ *
+ * ANTES DISPARABA LA ACCION DIRECTO AL CLICK. Es irreversible —el equipo sale
+ * del evento— y el boton "✕" vivia en una celda angosta pegada a "Categoría" y
+ * "Correo" en una tabla densa: un toque desviado, sobre todo en celular, lo
+ * alcanzaba sin querer.
+ */
+function QuitarEquipo({
+  equipo,
+  alQuitar,
+}: {
+  equipo: TeamWithMembers;
+  alQuitar: (teamId: string, prev: FormState, formData: FormData) => Promise<FormState>;
+}) {
+  const [confirmar, setConfirmar] = useState(false);
+  const nombre = equipo.name ?? `#${equipo.bib_number}`;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmar(true)}
+        title="Quitar equipo"
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
+      >
+        ✕
+      </button>
+
+      <Modal
+        abierto={confirmar}
+        alCerrar={() => setConfirmar(false)}
+        titulo="Quitar equipo"
+        ancho="max-w-sm"
+      >
+        <div className="text-left">
+          <p className="text-sm text-neutral-300">
+            ¿Quitar a <span className="font-medium">{nombre}</span> de la competencia? Se pierde
+            su dorsal y su lugar en cualquier heat. Esta acción no se puede deshacer.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmar(false)}
+              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
+            >
+              Cancelar
+            </button>
+            <FormularioDeEstado
+              accion={alQuitar.bind(null, equipo.id)}
+              estadoInicial={{ error: null }}
+              etiqueta="Quitar equipo"
+              mensajeDeCarga="Quitando el equipo…"
+              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+            />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

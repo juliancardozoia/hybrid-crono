@@ -125,6 +125,19 @@ export function CarrilClient() {
     );
   }
 
+  if (estado.bundle.manualCapture) {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-neutral-950 px-8 text-center text-neutral-300">
+        <p className="text-lg font-semibold">Nada para cronometrar aca</p>
+        <p className="text-sm text-neutral-500">
+          {estado.bundle.workoutName
+            ? `"${estado.bundle.workoutName}" se carga a mano desde el panel de la organizacion, no desde el celular del juez.`
+            : "Esta prueba se carga a mano desde el panel de la organizacion, no desde el celular del juez."}
+        </p>
+      </main>
+    );
+  }
+
   return (
     <JudgeScreen
       laneId={estado.bundle.laneId}

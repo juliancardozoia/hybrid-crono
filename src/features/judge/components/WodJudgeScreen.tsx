@@ -18,6 +18,7 @@ import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
 import { CuentaRegresiva } from "./CuentaRegresiva";
+import { AvisoDeDrift, BarraDeEstadoJuez, RanuraDeDeshacer } from "./EstadoDeJuez";
 
 /**
  * La pantalla del juez de CrossFit.
@@ -124,12 +125,8 @@ export function WodJudgeScreen({
   const [kilos, setKilos] = useState("");
   const [confirmandoDnf, setConfirmandoDnf] = useState(false);
   // Se recalcula una vez por segundo, no por frame: alcanza para detectar el
-  // cap y no cuesta bateria. Guarda el reloj de pared ademas del contador
-  // porque la cuenta atras de DESHACER lo necesita, y leer `Date.now()` durante
-  // el render da un valor que cambia solo cuando el arbol se re-renderiza por
-  // otra cosa — o sea, un numero que se congela sin motivo visible.
+  // cap y no cuesta bateria.
   const [tick, setTick] = useState(0);
-  const [ahoraMs, setAhoraMs] = useState(0);
 
   const parte = partes[Math.min(indiceParte, partes.length - 1)];
 
@@ -159,10 +156,7 @@ export function WodJudgeScreen({
 
   useEffect(() => {
     if (!anchor) return;
-    const timer = setInterval(() => {
-      setTick((t) => t + 1);
-      setAhoraMs(Date.now());
-    }, 1000);
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(timer);
   }, [anchor]);
 
@@ -214,6 +208,32 @@ export function WodJudgeScreen({
     capeadoAntesRef.current = capeadoAhora;
   }, [resultado?.capped]);
 
+  // El recalculo del servidor (el que cierra `heats.ended_at`, ver
+  // recompute.ts) solo se dispara cuando llega un LOTE nuevo al sincronizar —
+  // y un AMRAP que agota su ventana, o un For Time que llega al cap, no
+  // generan ningun evento nuevo si el juez no vuelve a tocar nada: el
+  // reductor lo detecta solo, comparando contra el reloj. Sin este empujon la
+  // tarjeta de la torre de control se queda con el reloj corriendo para
+  // siempre, aunque el WOD ya haya terminado en la pantalla del juez. Dispara
+  // UNA vez, en la misma transicion que ya usa la vibracion del cap — cubre
+  // ademas el cierre normal (`finished`) y DNF/DQ, no solo el cap.
+  const terminalAntesRef = useRef(false);
+  useEffect(() => {
+    const terminalAhora =
+      resultado?.status === "finished" ||
+      resultado?.status === "dnf" ||
+      resultado?.status === "dq" ||
+      (resultado?.capped ?? false);
+    if (terminalAhora && !terminalAntesRef.current) {
+      void fetch("/api/resultados/recalcular", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ laneId }),
+      }).catch(() => {});
+    }
+    terminalAntesRef.current = terminalAhora;
+  }, [resultado?.status, resultado?.capped, laneId]);
+
   const marcar = useCallback(
     (type: Parameters<typeof markWod>[0]["type"], payload: Record<string, unknown> = {}) => {
       if (!parte) return;
@@ -253,11 +273,9 @@ export function WodJudgeScreen({
 
   return (
     <main className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
-      <BarraDeEstado
-        online={online}
-        pendientes={pendingCount}
-        almacenamiento={storagePersisted}
-      />
+      <div className="safe-top">
+        <BarraDeEstadoJuez online={online} pendientes={pendingCount} persistido={storagePersisted} />
+      </div>
 
       <header className="px-4 pt-2">
         <div className="flex items-baseline gap-3">
@@ -296,11 +314,7 @@ export function WodJudgeScreen({
         </p>
       )}
 
-      {anchorDriftMs !== null && anchorDriftMs !== 0 && (
-        <p className="mx-4 mt-3 rounded-xl border border-neutral-700 bg-neutral-900 p-3 text-sm text-neutral-300">
-          El reloj se ajustó {formatElapsed(Math.abs(anchorDriftMs))} al llegar la salida oficial.
-        </p>
-      )}
+      <AvisoDeDrift anchorDriftMs={anchorDriftMs} />
 
       {!anchor ? (
         <EsperandoLargada
@@ -311,7 +325,9 @@ export function WodJudgeScreen({
         />
       ) : (
         <>
-          <section className="px-4 pt-4 text-center">
+          {/* `destello-de-largada`: ver globals.css. Mismo tratamiento que
+              JudgeScreen — se dispara solo al montarse esta seccion. */}
+          <section className="destello-de-largada rounded-2xl px-4 pt-4 text-center">
             {esquema === "ventana" && parte.structure.windowMs ? (
               <CuentaRegresiva
                 anchor={anchor}
@@ -420,22 +436,12 @@ export function WodJudgeScreen({
             />
           )}
 
-          {/* La ranura de deshacer reserva su alto SIEMPRE, aunque este vacia:
-              un boton que se mueve entre taps es una fuente de marcajes
-              errados. */}
-          <div className="h-[5.5rem] px-4">
-            {undoTarget && (
-              <button
-                type="button"
-                onClick={() => void undoLast()}
-                className="h-full w-full rounded-2xl border border-neutral-700 text-lg font-semibold text-neutral-300"
-              >
-                DESHACER
-                <span className="ml-2 font-mono text-sm text-neutral-500">
-                  {Math.max(0, Math.ceil((undoTarget.expiresAt - ahoraMs) / 1000))}s
-                </span>
-              </button>
-            )}
+          <div className="px-4">
+            <RanuraDeDeshacer
+              undoTarget={undoTarget}
+              onUndo={() => void undoLast()}
+              subtitulo="última marca"
+            />
           </div>
 
           <Progreso
@@ -490,28 +496,21 @@ export function WodJudgeScreen({
   );
 }
 
-function BarraDeEstado({
-  online,
-  pendientes,
-  almacenamiento,
-}: {
-  online: boolean;
-  pendientes: number;
-  almacenamiento: boolean;
-}) {
-  return (
-    <div className="safe-top flex items-center gap-3 px-4 py-2 text-xs">
-      <span className={online ? "text-lime-400" : "text-amber-400"}>
-        ● {online ? "En línea" : "Offline"}
-      </span>
-      {pendientes > 0 && <span className="text-neutral-400">{pendientes} sin sincronizar</span>}
-      {!almacenamiento && (
-        <span className="ml-auto text-neutral-600">almacenamiento no fijado</span>
-      )}
-    </div>
-  );
-}
-
+/**
+ * El heat todavia no largo.
+ *
+ * MISMO TRATAMIENTO QUE JudgeScreen: "ESPERANDO LARGADA" como estado
+ * principal, sin ningun numero que pueda leerse como un reloj corriendo — acá
+ * nunca hubo un "00:00.00" falso, pero el titulo vivia en texto normal
+ * (`text-xl font-semibold`) sin distinguirse del resto de la pantalla. Las dos
+ * pantallas de juez tienen que verse como el mismo estado, no como dos
+ * comportamientos parecidos.
+ *
+ * "VERIFICAR AHORA" TAMBIEN SE AGREGA ACA. Esta pantalla ya pregunta sola cada
+ * 3s mientras haya señal, pero a diferencia de JudgeScreen no le daba al juez
+ * ningun control manual — si el poll tarda o el juez quiere confirmar antes de
+ * que llegue, no tenia nada que tocar. Mismo boton, mismo comportamiento.
+ */
 function EsperandoLargada({
   online,
   localStart,
@@ -523,6 +522,8 @@ function EsperandoLargada({
   onCheck: () => Promise<void>;
   onStartLocal: () => void;
 }) {
+  const [buscando, setBuscando] = useState(false);
+
   useEffect(() => {
     if (!online) return;
     const timer = setInterval(() => void onCheck(), 3000);
@@ -533,12 +534,34 @@ function EsperandoLargada({
 
   return (
     <section className="flex flex-1 flex-col items-center justify-center gap-6 px-8 text-center">
-      <p className="text-xl font-semibold">Esperando la largada</p>
-      <p className="text-sm text-neutral-500">
-        {online
-          ? "La organización todavía no largó este heat."
-          : "Sin señal. Cuando vuelva, la largada oficial llega sola."}
-      </p>
+      <div>
+        <div className="inline-flex items-center gap-2.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-5 py-2.5">
+          <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-400" />
+          <span className="text-lg font-black tracking-wide text-amber-300 uppercase sm:text-xl">
+            Esperando largada
+          </span>
+        </div>
+        <p className="mt-4 text-sm text-neutral-500">
+          {online
+            ? "La organización todavía no largó este heat."
+            : "Sin señal. Cuando vuelva, la largada oficial llega sola."}
+        </p>
+      </div>
+
+      {online && (
+        <button
+          type="button"
+          onClick={async () => {
+            setBuscando(true);
+            await onCheck();
+            setBuscando(false);
+          }}
+          className="rounded-xl border border-neutral-700 px-5 py-3 text-sm"
+        >
+          {buscando ? "Consultando…" : "Verificar ahora"}
+        </button>
+      )}
+
       {ofrecerLocal && (
         <button
           type="button"
@@ -706,7 +729,7 @@ function Marcador({
         <button
           type="button"
           onClick={noRep}
-          className="rounded-2xl border border-red-500/50 py-4 text-lg font-bold text-red-300"
+          className="rounded-2xl border border-red-500/50 py-4 text-lg font-bold text-red-300 transition-transform active:scale-[0.99] active:bg-red-500/10"
         >
           NO REP
         </button>
@@ -736,6 +759,9 @@ function Marcador({
       </div>
 
       {pidiendoMotivo && (
+        // Targets de al menos 44px de alto: eran `py-1.5` (~34px), el unico
+        // punto de esta pantalla por debajo del minimo tactil recomendado, y
+        // justo en un flujo post-no-rep donde el juez puede estar apurado.
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-neutral-500">Motivo:</span>
           {MOTIVOS.map((m) => (
@@ -746,7 +772,7 @@ function Marcador({
                 onMotivo(m);
                 setPidiendoMotivo(false);
               }}
-              className="rounded-xl border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300"
+              className="min-h-11 rounded-xl border border-neutral-700 px-3 text-sm text-neutral-300"
             >
               {m}
             </button>
@@ -754,7 +780,7 @@ function Marcador({
           <button
             type="button"
             onClick={() => setPidiendoMotivo(false)}
-            className="ml-auto px-2 text-sm text-neutral-600"
+            className="ml-auto min-h-11 px-2 text-sm text-neutral-600"
           >
             omitir
           </button>

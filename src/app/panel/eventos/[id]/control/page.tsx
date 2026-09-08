@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDivisions, getHeats, getJudges } from "@/features/events/config/queries";
+import { getPruebas } from "@/features/workouts/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import {
   cancelHeatStart,
@@ -24,16 +25,24 @@ export default async function ControlPage({
 
   if (!canVerify) redirect(`/panel/eventos/${id}`);
 
-  const [heats, cola, judges, divisiones] = await Promise.all([
+  const [heats, cola, judges, divisiones, pruebas] = await Promise.all([
     getHeats(id),
     getVerificationQueue(id),
     getJudges(id),
     getDivisions(id),
+    getPruebas(id),
   ]);
 
   const porCarril = new Map(cola.map((c) => [c.laneId, c]));
   const porJuez = new Map(judges.map((j) => [j.userId, j.label]));
   const nombreDivision = new Map(divisiones.map((d) => [d.id, d.name]));
+
+  // Mismo patron que /heats: el nombre de la prueba se trae plano y se une en
+  // memoria, sin agregar un embed `workouts (name)` al ya pesado `getHeats`.
+  const nombresDePruebas = pruebas.map(({ workout }) => ({
+    id: workout.id,
+    name: workout.name,
+  }));
 
   const sinJuez = heats.flatMap((h) =>
     h.lanes.filter((l) => l.team_id && !l.judge_id),
@@ -50,6 +59,10 @@ export default async function ControlPage({
   // "0 para revisar" se lee como "no queda nada por hacer", que es justo lo
   // contrario de lo que pasa cuando un atleta acaba de terminar.
   const sinVerificar = cola.filter(estaPendienteDeVerificar).length;
+
+  // La pregunta que "0 para revisar" tampoco contesta: que esta pasando AHORA
+  // MISMO. Sin este numero, saberlo obliga a leer la lista entera de heats.
+  const enCursoAhora = heats.filter((h) => h.started_at && !h.ended_at).length;
 
   // Un solo arreglo de datos ya resueltos, sin Maps: cruza la frontera hacia
   // el componente de cliente que arma la lista (filtro por division, reloj en
@@ -70,6 +83,8 @@ export default async function ControlPage({
       startSource: heat.start_source,
       divisionId: heat.division_id,
       divisionName: heat.division_id ? (nombreDivision.get(heat.division_id) ?? null) : null,
+      workoutId: heat.workout_id,
+      workoutName: nombresDePruebas.find((p) => p.id === heat.workout_id)?.name ?? null,
       marcajesTotales: marcajesDelHeat,
       conAtletaCount: conAtleta.length,
       sinJuezCount: conAtleta.filter((l) => l.judge_id === null).length,
@@ -99,22 +114,37 @@ export default async function ControlPage({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Dos por fila en celular: cuatro no entran legibles en 360px. */}
-      <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+      {/* "En curso ahora" primero: es la pregunta que un operador hace apenas
+          entra, antes que ninguna otra. Tres por fila en celular, cinco en
+          desktop — con cinco tarjetas en dos columnas la ultima quedaba sola
+          y desalineada. */}
+      <section className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-5">
+        <Indicador
+          valor={enCursoAhora}
+          etiqueta="en curso ahora"
+          // No es una alerta: que haya heats corriendo es lo normal durante
+          // el evento. Se destaca en lima, no en ambar, cuando hay algo — el
+          // mismo criterio de color que ya usa "EN CURSO" en cada tarjeta.
+          alerta={false}
+          destacar={enCursoAhora > 0}
+        />
         <Indicador
           valor={sinJuez}
           etiqueta="carriles sin juez"
           alerta={sinJuez > 0}
+          href={sinJuez > 0 ? `/panel/eventos/${id}/heats` : undefined}
         />
         <Indicador
           valor={sinMarcajes}
           etiqueta="sin marcajes"
           alerta={sinMarcajes > 0}
+          href={sinMarcajes > 0 ? `/panel/eventos/${id}/verificacion` : undefined}
         />
         <Indicador
           valor={conAnomalias}
           etiqueta="con anomalías"
           alerta={conAnomalias > 0}
+          href={conAnomalias > 0 ? `/panel/eventos/${id}/verificacion` : undefined}
         />
         <Indicador
           valor={sinVerificar}
@@ -127,7 +157,9 @@ export default async function ControlPage({
       <TorreDeHeats
         eventId={id}
         timezone={event.timezone}
+        formato={event.format}
         divisiones={divisiones.map((d) => ({ id: d.id, name: d.name }))}
+        pruebas={nombresDePruebas}
         heats={heatsVista}
         largar={largar}
         deshacer={deshacer}
@@ -141,26 +173,36 @@ function Indicador({
   valor,
   etiqueta,
   alerta,
+  destacar = false,
   href,
 }: {
   valor: number;
   etiqueta: string;
   alerta: boolean;
+  /** Distinto de `alerta`: no es un problema, es actividad normal que
+   *  conviene notar (heats en curso). Se destaca en lima, nunca en ambar —
+   *  el mismo color que ya usa el badge "EN CURSO" de cada tarjeta. */
+  destacar?: boolean;
   /** Si el numero se puede accionar, la tarjeta lleva ahi. */
   href?: string;
 }) {
   const Caja = href ? Link : "div";
+  const tono = alerta ? "amber" : destacar ? "lime" : null;
 
   return (
     <Caja
       href={href!}
       className={`block rounded-2xl border p-3 text-center sm:p-4 ${
-        alerta ? "border-amber-500/40 bg-amber-500/10" : "border-neutral-800"
+        tono === "amber"
+          ? "border-amber-500/40 bg-amber-500/10"
+          : tono === "lime"
+            ? "border-lime-500/30 bg-lime-500/5"
+            : "border-neutral-800"
       } ${href ? "transition-colors hover:border-neutral-600" : ""}`}
     >
       <p
         className={`font-mono text-2xl font-black tabular-nums sm:text-3xl ${
-          alerta ? "text-amber-300" : "text-neutral-600"
+          tono === "amber" ? "text-amber-300" : tono === "lime" ? "text-lime-400" : "text-neutral-600"
         }`}
       >
         {valor}

@@ -50,6 +50,17 @@ export interface LaneBundle {
    * menciona.
    */
   workoutName?: string;
+  /**
+   * La prueba de este carril existe pero se captura A MANO (`capture_mode !==
+   * "en_vivo"`), y no es un circuito: no hay nada que cronometrar aca.
+   *
+   * Sin esta bandera, `wod` vacio se interpretaba SIEMPRE como "es un
+   * circuito" y el juez caia en `JudgeScreen` con `segments: []` — reloj y
+   * boton de PENALIZAR, sin "SIGUIENTE" porque no hay ningun segmento que
+   * marcar, y ninguna explicacion de por que. Pasa con cualquier WOD que
+   * todavia no se paso a "en vivo" (o que no puede, por el plan gratuito).
+   */
+  manualCapture?: boolean;
   cachedAt: number;
 }
 
@@ -158,6 +169,11 @@ export async function fetchLaneBundle(laneId: string): Promise<LaneBundle | null
     divisionId,
   );
 
+  const hayPartesAMano = (partes ?? []).some(
+    (p) => p.time_scheme !== "circuito" && p.capture_mode !== "en_vivo",
+  );
+  const manualCapture = !circuito && wod.length === 0 && hayPartesAMano;
+
   return {
     laneId,
     eventId: row.event_id,
@@ -185,6 +201,7 @@ export async function fetchLaneBundle(laneId: string): Promise<LaneBundle | null
     judgeId: row.judge_id,
     wod,
     workoutName: row.workout_name ?? undefined,
+    manualCapture,
     cachedAt: Date.now(),
   };
 }

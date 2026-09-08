@@ -29,8 +29,8 @@ export default async function EnVivoPage({ params }: { params: Promise<{ slug: s
   return (
     <>
       <LeaderboardLive slug={slug} inicial={leaderboard} eventName={info.name} />
-      {/* La tabla general se esconde sola cuando el evento tiene una sola
-          prueba: ahi el general y el ranking de esa prueba son lo mismo. */}
+      {/* La tabla general se esconde sola solo cuando es redundante con el
+          leaderboard de tiempos de arriba: una sola prueba y de circuito. */}
       <div className="mx-auto w-full max-w-4xl px-4 pb-10">
         <TablaGeneral slug={slug} inicial={general} />
       </div>

@@ -41,8 +41,8 @@ export default async function LeaderboardsPage({
         hayResultados ? (
           <div className="flex flex-col gap-4">
             <LeaderboardLive slug={slug} inicial={leaderboard} eventName={evento.name} compacto />
-            {/* Se esconde sola cuando el evento tiene una sola prueba: ahí el
-                general y el ranking de esa prueba son lo mismo. */}
+            {/* Se esconde sola solo cuando es redundante con el leaderboard de
+                tiempos de arriba: una sola prueba y ademas de circuito. */}
             <TablaGeneral slug={slug} inicial={general} />
           </div>
         ) : inscritos ? (

@@ -82,8 +82,8 @@ export default async function LeaderboardPage({
             eventName={event.name}
             compacto
           />
-          {/* Se esconde sola cuando el evento tiene una sola prueba: ahí el
-              general y el ranking de esa prueba son lo mismo. */}
+          {/* Se esconde sola solo cuando es redundante con el leaderboard de
+              tiempos de arriba: una sola prueba y ademas de circuito. */}
           <TablaGeneral slug={event.public_slug} inicial={general} />
         </div>
       )}

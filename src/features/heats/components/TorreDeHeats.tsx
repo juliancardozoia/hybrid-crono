@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { EventFormat } from "@/lib/supabase/types";
 import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
@@ -32,6 +33,8 @@ export interface HeatVista {
   startSource: string | null;
   divisionId: string | null;
   divisionName: string | null;
+  workoutId: string;
+  workoutName: string | null;
   marcajesTotales: number;
   conAtletaCount: number;
   sinJuezCount: number;
@@ -70,7 +73,9 @@ type AccionCarril = (
 export function TorreDeHeats({
   eventId,
   timezone,
+  formato,
   divisiones,
+  pruebas,
   heats,
   largar,
   deshacer,
@@ -78,13 +83,20 @@ export function TorreDeHeats({
 }: {
   eventId: string;
   timezone: string;
+  /** Decide como se nombra un carril "en carrera": una carrera hibrida corre,
+   *  un CrossFit trabaja un WOD — la misma palabra no sirve para los dos. */
+  formato: EventFormat;
   divisiones: Array<{ id: string; name: string }>;
+  /** En el orden en que corren. Con una sola, la pantalla no la menciona —
+   *  mismo criterio que ya usa /heats. */
+  pruebas: Array<{ id: string; name: string }>;
   heats: HeatVista[];
   largar: AccionHeat;
   deshacer: AccionHeat;
   marcarDnfAccion: AccionCarril;
 }) {
   const [divisionId, setDivisionId] = useState("");
+  const [workoutId, setWorkoutId] = useState("");
   const router = useRouter();
 
   // Sin esto, un DNF marcado desde el celular del juez -o cualquier otro
@@ -104,44 +116,139 @@ export function TorreDeHeats({
     return divisiones.filter((d) => ids.has(d.id));
   }, [divisiones, heats]);
 
-  const visibles = divisionId ? heats.filter((h) => h.divisionId === divisionId) : heats;
+  const variasPruebas = pruebas.length > 1;
+  const nombrePrueba = useMemo(() => new Map(pruebas.map((p) => [p.id, p.name])), [pruebas]);
+  const ordenPrueba = useMemo(() => new Map(pruebas.map((p, i) => [p.id, i])), [pruebas]);
+
+  const visibles = useMemo(
+    () =>
+      heats.filter(
+        (h) =>
+          (!divisionId || h.divisionId === divisionId) &&
+          (!workoutId || h.workoutId === workoutId),
+      ),
+    [heats, divisionId, workoutId],
+  );
+
+  // Agrupado por PRUEBA y CATEGORIA, mismo patron que /heats: en un CrossFit
+  // multi-WOD, "que esta pasando en el WOD 2" es la pregunta real y una lista
+  // plana de quince heats no la contesta sin leerla entera.
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, HeatVista[]>();
+    for (const heat of visibles) {
+      const clave = `${heat.workoutId}|${heat.divisionId ?? ""}`;
+      mapa.set(clave, [...(mapa.get(clave) ?? []), heat]);
+    }
+    return mapa;
+  }, [visibles]);
+
+  const clavesOrdenadas = useMemo(
+    () =>
+      [...grupos.keys()].sort((a, b) => {
+        const [wa, da] = a.split("|");
+        const [wb, db] = b.split("|");
+        const porPrueba = (ordenPrueba.get(wa) ?? 0) - (ordenPrueba.get(wb) ?? 0);
+        if (porPrueba !== 0) return porPrueba;
+        if (da === "") return 1;
+        if (db === "") return -1;
+        const nombreDivision = new Map(divisiones.map((d) => [d.id, d.name]));
+        return (nombreDivision.get(da) ?? "").localeCompare(nombreDivision.get(db) ?? "");
+      }),
+    [grupos, ordenPrueba, divisiones],
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      {divisionesConHeat.length > 1 && (
-        <label className="flex items-center gap-2 self-start text-sm">
-          <span className="text-neutral-500">Categoría</span>
-          <Selector
-            value={divisionId}
-            onChange={(e) => setDivisionId(e.target.value)}
-            className="py-2 text-sm"
-          >
-            <option value="">Todas</option>
-            {divisionesConHeat.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </Selector>
-        </label>
+      {(variasPruebas || divisionesConHeat.length > 1) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {variasPruebas && (
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-neutral-500">Prueba</span>
+              <Selector
+                value={workoutId}
+                onChange={(e) => setWorkoutId(e.target.value)}
+                className="py-2 text-sm"
+              >
+                <option value="">Todas</option>
+                {pruebas.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Selector>
+            </label>
+          )}
+
+          {divisionesConHeat.length > 1 && (
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-neutral-500">Categoría</span>
+              <Selector
+                value={divisionId}
+                onChange={(e) => setDivisionId(e.target.value)}
+                className="py-2 text-sm"
+              >
+                <option value="">Todas</option>
+                {divisionesConHeat.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </Selector>
+            </label>
+          )}
+        </div>
       )}
 
       {visibles.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-neutral-700 p-6 text-center text-sm text-neutral-500">
-          {heats.length === 0 ? "No hay heats armados todavía." : "Ninguna categoría coincide."}
+          {heats.length === 0 ? "No hay heats armados todavía." : "Ningún heat coincide con el filtro."}
         </p>
       ) : (
-        visibles.map((heat) => (
-          <TarjetaDeHeat
-            key={heat.id}
-            eventId={eventId}
-            timezone={timezone}
-            heat={heat}
-            largar={largar}
-            deshacer={deshacer}
-            marcarDnfAccion={marcarDnfAccion}
-          />
-        ))
+        <div className="flex flex-col gap-6">
+          {clavesOrdenadas.map((clave) => {
+            const [claveWorkout, claveDivision] = clave.split("|");
+            const categoria = claveDivision
+              ? (divisiones.find((d) => d.id === claveDivision)?.name ?? "Categoría")
+              : "Sin categoría";
+
+            // Solo se muestra un encabezado si agrega informacion: con una
+            // sola prueba y una sola categoria, la lista plana de antes ya
+            // decia todo lo que hacia falta y un encabezado repetido en cada
+            // heat era ruido.
+            const mostrarEncabezado = variasPruebas || divisionesConHeat.length > 1;
+
+            return (
+              <section key={clave} className="flex flex-col gap-4">
+                {mostrarEncabezado && (
+                  <h2 className="text-sm font-semibold tracking-wide text-neutral-400 uppercase">
+                    {variasPruebas && (
+                      <>
+                        <span className="text-lime-400">
+                          {nombrePrueba.get(claveWorkout) ?? "Prueba"}
+                        </span>
+                        <span className="mx-2 text-neutral-700">·</span>
+                      </>
+                    )}
+                    {categoria}
+                  </h2>
+                )}
+
+                {(grupos.get(clave) ?? []).map((heat) => (
+                  <TarjetaDeHeat
+                    key={heat.id}
+                    eventId={eventId}
+                    timezone={timezone}
+                    formato={formato}
+                    heat={heat}
+                    largar={largar}
+                    deshacer={deshacer}
+                    marcarDnfAccion={marcarDnfAccion}
+                  />
+                ))}
+              </section>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -150,6 +257,7 @@ export function TorreDeHeats({
 function TarjetaDeHeat({
   eventId,
   timezone,
+  formato,
   heat,
   largar,
   deshacer,
@@ -157,6 +265,7 @@ function TarjetaDeHeat({
 }: {
   eventId: string;
   timezone: string;
+  formato: EventFormat;
   heat: HeatVista;
   largar: AccionHeat;
   deshacer: AccionHeat;
@@ -165,7 +274,15 @@ function TarjetaDeHeat({
   const enCurso = Boolean(heat.startedAt) && !heat.endedAt;
 
   return (
-    <section className="rounded-2xl border border-neutral-800 p-4 sm:p-5">
+    // El heat en curso se distingue por borde y fondo, ademas del badge — no
+    // solo por texto o por detectar que el reloj se mueve. Es la UNICA
+    // tarjeta que lleva este acento a la vez, asi que no convierte toda la
+    // pantalla en color: el resto se queda en el gris neutral de siempre.
+    <section
+      className={`rounded-2xl border p-4 sm:p-5 ${
+        enCurso ? "border-lime-500/40 bg-lime-500/5" : "border-neutral-800"
+      }`}
+    >
       {/*
         En celular el titulo y la accion van apilados, y el boton ocupa el
         ancho completo. Antes compartian una fila con flex-wrap y el boton
@@ -173,11 +290,15 @@ function TarjetaDeHeat({
       */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h2 className="font-semibold">
+          <h2 className="flex flex-wrap items-center gap-2 font-semibold">
             {heat.name}
             {heat.divisionName && (
-              <span className="ml-2 text-xs font-normal text-neutral-500">
-                {heat.divisionName}
+              <span className="text-xs font-normal text-neutral-500">{heat.divisionName}</span>
+            )}
+            {enCurso && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-lime-500/40 bg-lime-500/10 px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-lime-400 uppercase">
+                <span className="h-1.5 w-1.5 rounded-full bg-lime-400" />
+                En curso
               </span>
             )}
           </h2>
@@ -271,7 +392,7 @@ function TarjetaDeHeat({
                   {tieneTiempo ? (
                     formatElapsed(lane.totalMs!)
                   ) : (
-                    <EstadoCarril estado={lane.status} />
+                    <EstadoCarril estado={lane.status} formato={formato} />
                   )}
                 </p>
                 <p className="text-xs text-neutral-600">
@@ -430,12 +551,19 @@ function DeshacerInicio({
 }
 
 /**
- * Boton de largada.
+ * Boton de largada, con confirmacion.
  *
  * Se deshabilita hasta que TODOS los carriles con atleta tengan juez. La base lo
  * rechaza igual, pero un boton gris que dice por que es mucho mejor que un
  * click que falla en silencio: es la regla de la competencia, no un capricho de
  * la app. Ningun atleta corre sin alguien que le tome los parciales.
+ *
+ * PIDE CONFIRMAR. Antes disparaba la largada directo al click — a diferencia de
+ * "Deshacer Inicio" y el DNF, que ya pedian un segundo paso. Largar un heat es
+ * tan dificil de revertir como esos dos (solo se puede deshacer mientras nadie
+ * marco nada) y esta al lado de la lista de carriles, en la misma tarjeta que
+ * el organizador toca para revisar quien falta: un click apenas desviado larga
+ * la carrera de verdad.
  */
 function LargarHeat({
   eventId,
@@ -447,19 +575,20 @@ function LargarHeat({
   largar: AccionHeat;
 }) {
   const listo = heat.conAtletaCount > 0 && heat.sinJuezCount === 0;
+  const [confirmar, setConfirmar] = useState(false);
 
   return (
     // En celular ocupa el ancho completo y el texto va alineado a la izquierda,
     // como el resto de la tarjeta. Recien en pantalla ancha se va a la derecha.
     <div className="shrink-0 sm:max-w-[17rem] sm:text-right">
-      <FormularioDeEstado
-        accion={largar.bind(null, eventId, heat.id)}
-        estadoInicial={{ error: null }}
-        etiqueta="INICIAR HEAT"
-        mensajeDeCarga="Largando el heat…"
+      <button
+        type="button"
+        onClick={() => setConfirmar(true)}
         disabled={!listo}
         className="w-full rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2.5"
-      />
+      >
+        INICIAR HEAT
+      </button>
       {!listo && (
         <p className="mt-2 text-xs text-amber-400">
           {heat.conAtletaCount === 0
@@ -467,14 +596,55 @@ function LargarHeat({
             : `Faltan ${heat.sinJuezCount} juez/jueces: cada atleta necesita el suyo antes de iniciar.`}
         </p>
       )}
+
+      <Modal
+        abierto={confirmar}
+        alCerrar={() => setConfirmar(false)}
+        titulo="Largar heat"
+        ancho="max-w-sm"
+      >
+        <div className="text-left">
+          <p className="text-sm text-neutral-300">
+            ¿Largar <span className="font-medium">{heat.name}</span>? El reloj arranca para todos
+            los carriles con atleta y esta acción no se puede deshacer una vez que alguien marque
+            un tiempo.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmar(false)}
+              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
+            >
+              Cancelar
+            </button>
+            <FormularioDeEstado
+              accion={largar.bind(null, eventId, heat.id)}
+              estadoInicial={{ error: null }}
+              etiqueta="Confirmar largada"
+              mensajeDeCarga="Largando el heat…"
+              className="rounded-xl bg-lime-400 px-4 py-2 text-sm font-bold text-lime-950 hover:bg-lime-300"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
 
-function EstadoCarril({ estado }: { estado: string }) {
+function EstadoCarril({
+  estado,
+  formato,
+}: {
+  estado: string;
+  formato: EventFormat;
+}) {
   const copy: Record<string, { texto: string; clase: string }> = {
     idle: { texto: "esperando", clase: "text-neutral-600" },
-    running: { texto: "en carrera", clase: "text-lime-400" },
+    // "en carrera" describe un circuito; un WOD no se "corre", se trabaja.
+    running: {
+      texto: formato === "crossfit" ? "en el WOD" : "en carrera",
+      clase: "text-lime-400",
+    },
     finished: { texto: "terminó", clase: "text-emerald-400" },
     dnf: { texto: "DNF", clase: "text-neutral-500" },
     dq: { texto: "DQ", clase: "text-red-400" },

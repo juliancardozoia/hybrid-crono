@@ -6,9 +6,14 @@ import { getTablaGeneral, type TablaGeneral as Datos } from "../queries";
 /**
  * Tabla general por puntos.
  *
- * Solo aparece cuando el evento tiene mas de una prueba. Con una sola —el caso
- * de una carrera hibrida— el general y el ranking de esa prueba son lo mismo, y
- * mostrar dos tablas identicas confunde en vez de informar.
+ * Se esconde SOLO cuando es redundante con el leaderboard de tiempos
+ * (`LeaderboardLive`, que lee `results`): una carrera hibrida con una sola
+ * prueba de circuito muestra el mismo ranking en los dos lados. Un WOD de
+ * CrossFit no tiene fila en `results` —se puntua por `workout_scores`—, asi
+ * que con una sola prueba esta tabla sigue siendo la UNICA que muestra algo;
+ * esconderla ahi dejaba el leaderboard completamente vacio aunque el juez ya
+ * hubiera cargado el resultado. `soloCircuito` es la senal que distingue los
+ * dos casos (ver queries.ts).
  *
  * Refresca por polling, igual que el resto de las pantallas publicas y por la
  * misma razon: el rol anonimo no tiene permisos sobre ninguna tabla y
@@ -44,7 +49,8 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
     };
   }, [slug]);
 
-  if (data.cantidadDePruebas <= 1 || data.divisiones.length === 0) return null;
+  if (data.divisiones.length === 0) return null;
+  if (data.cantidadDePruebas <= 1 && data.soloCircuito) return null;
 
   // La clave combina division + etapa: una categoria con un corte confirmado
   // tiene dos filas en `divisiones` (Stage 1 y Stage 2), con el mismo nombre.

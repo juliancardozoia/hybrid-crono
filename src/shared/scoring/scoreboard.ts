@@ -37,6 +37,13 @@ export type ScoreboardPart = {
    * corren siempre juntas.
    */
   stage: number;
+  /**
+   * `circuito` o el esquema del WOD (`cap`, `ventana`, etc). Solo se usa para
+   * decidir si la tabla general es redundante con el leaderboard de tiempos
+   * (`getLeaderboard`/`results`) -- ver TablaGeneral.tsx -- que solo muestra
+   * carriles de circuito.
+   */
+  timeScheme: string;
   scoreUnit: ScoreUnit;
   scoreDir: ScoreDir;
   capUnit: ScoreUnit | null;

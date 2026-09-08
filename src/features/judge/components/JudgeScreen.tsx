@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
 import { SUSPICIOUS_SPLIT_MS } from "@/shared/timing/reducer";
 import type { PenaltyPayload, Segment } from "@/shared/timing/types";
@@ -11,6 +11,7 @@ import { useSincronizarEventosRemotos } from "../lib/useSincronizarEventosRemoto
 import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
+import { AvisoDeDrift, BarraDeEstadoJuez, RanuraDeDeshacer } from "./EstadoDeJuez";
 
 export interface JudgeScreenProps {
   laneId: string;
@@ -153,7 +154,7 @@ export function JudgeScreen({
   return (
     <main className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-50 select-none">
       <div className="safe-top">
-        <StatusBar online={online} pendingCount={pendingCount} persisted={storagePersisted} />
+        <BarraDeEstadoJuez online={online} pendientes={pendingCount} persistido={storagePersisted} />
       </div>
 
       {/*
@@ -211,12 +212,7 @@ export function JudgeScreen({
         </p>
       )}
 
-      {anchorDriftMs !== null && anchorDriftMs !== 0 && (
-        <p className="mx-4 mt-3 rounded-xl border border-sky-500/40 sm:mx-5 bg-sky-500/10 p-3 text-sm text-sky-200">
-          El reloj se ajustó {formatElapsed(Math.abs(anchorDriftMs), { centis: false })} al llegar la
-          salida oficial del heat. Tus parciales se corrigieron solos.
-        </p>
-      )}
+      <AvisoDeDrift anchorDriftMs={anchorDriftMs} />
 
       {!anchor ? (
         <EsperandoLargada
@@ -228,7 +224,10 @@ export function JudgeScreen({
         />
       ) : (
         <>
-          <section className="px-4 py-5 text-center sm:px-5 sm:py-6">
+          {/* `destello-de-largada`: ver globals.css. Se dispara solo, porque
+              esta seccion recien se monta en el instante en que `anchor` deja
+              de ser null. */}
+          <section className="destello-de-largada rounded-2xl px-4 py-5 text-center sm:px-5 sm:py-6">
             <LiveClock
               anchor={anchor}
               frozenMs={finalStatus ? (result?.stoppedAtMs ?? 0) : null}
@@ -291,40 +290,15 @@ export function JudgeScreen({
               </button>
             )}
 
-            {/*
-              Deshacer es la red de seguridad del tap sin confirmacion, y solo
-              sirve si el juez la ve: contrasta y la cuenta regresiva se lee de
-              lejos.
-
-              La ranura ocupa SIEMPRE el mismo alto, aunque este vacia. Si
-              apareciera y desapareciera, cada marcaje correria el boton de
-              marcar hacia arriba y hacia abajo — y el juez ya aprendio donde
-              apoyar el pulgar. Un boton que se mueve solo es un marcaje errado.
-            */}
+            {/* Deshacer es la red de seguridad del tap sin confirmacion: solo
+                sirve si el juez la ve, y la ranura reserva su alto siempre
+                (vea EstadoDeJuez.tsx) para que nada mas se corra al aparecer. */}
             {running && (
-              <div className="mt-3 h-[5.5rem] shrink-0">
-                {undoTarget && (
-                  <button
-                    type="button"
-                    onClick={() => void undoLast()}
-                    className="flex h-full w-full items-center justify-between rounded-2xl border-2 border-amber-400 bg-amber-400/15 px-5 text-left transition-transform active:scale-[0.99] active:bg-amber-400/25"
-                  >
-                    <span className="flex items-center gap-3">
-                      <span className="text-3xl leading-none text-amber-300">↺</span>
-                      <span>
-                        <span className="block text-xl font-black tracking-wide text-amber-200">
-                          DESHACER
-                        </span>
-                        <span className="block text-xs text-amber-300/70">último marcaje</span>
-                      </span>
-                    </span>
-                    <Countdown
-                      expiresAt={undoTarget.expiresAt}
-                      className="font-mono text-3xl font-bold text-amber-300 tabular-nums"
-                    />
-                  </button>
-                )}
-              </div>
+              <RanuraDeDeshacer
+                undoTarget={undoTarget}
+                onUndo={() => void undoLast()}
+                subtitulo="último marcaje"
+              />
             )}
 
             <SplitList result={result} />
@@ -373,6 +347,15 @@ export function JudgeScreen({
  * La largada la estampa el servidor para que los seis carriles del heat
  * compartan exactamente el mismo cero. Solo si no hay señal se ofrece largar
  * desde el dispositivo, y queda marcado para que la organizacion lo revise.
+ *
+ * SIN RELOJ FALSO. Antes esta pantalla mostraba "00:00.00" en fuente de reloj
+ * (mono, tabular, 5xl) como lo primero que se ve — y ese es exactamente el
+ * aspecto que tiene el reloj real apenas arranca una carrera. Un vistazo
+ * rapido no distingue "todavia no largo" de "largo hace un instante", y es
+ * justo el vistazo que el juez le da a la pantalla mientras mira al atleta.
+ * El estado principal ahora es un texto, no un numero: "ESPERANDO LARGADA" en
+ * mayusculas, sin la tipografia monoespaciada que el reloj usa en todos lados,
+ * para que no pueda confundirse ni de lejos ni de cerca.
  */
 function EsperandoLargada({
   online,
@@ -411,9 +394,13 @@ function EsperandoLargada({
   return (
     <section className="safe-bottom flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center sm:px-8">
       <div>
-        <p className="font-mono text-5xl font-bold text-neutral-700 tabular-nums">00:00.00</p>
-        <p className="mt-4 text-xl font-semibold">Esperando la salida</p>
-        <p className="mt-2 text-sm text-neutral-500">
+        <div className="inline-flex items-center gap-2.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-5 py-2.5">
+          <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-amber-400" />
+          <span className="text-lg font-black tracking-wide text-amber-300 uppercase sm:text-xl">
+            Esperando largada
+          </span>
+        </div>
+        <p className="mt-4 text-sm text-neutral-500">
           {!onCheck
             ? "Modo laboratorio: inicia tú el reloj."
             : online
@@ -456,39 +443,6 @@ function EsperandoLargada({
   );
 }
 
-function StatusBar({
-  online,
-  pendingCount,
-  persisted,
-}: {
-  online: boolean;
-  pendingCount: number;
-  persisted: boolean;
-}) {
-  const synced = pendingCount === 0;
-  const tone = online && synced ? "text-emerald-400" : "text-amber-400";
-
-  return (
-    <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-900/80 px-5 py-2 text-sm">
-      <span className={`flex items-center gap-2 font-medium ${tone}`}>
-        <span className="text-lg leading-none">●</span>
-        {online ? "En linea" : "Sin conexión"}
-      </span>
-      <span className={synced ? "text-neutral-500" : "font-semibold text-amber-400"}>
-        {synced ? "Todo sincronizado" : `${pendingCount} sin sincronizar`}
-      </span>
-      {!persisted && (
-        <span
-          className="text-xs text-neutral-600"
-          title="El navegador podría liberar el almacenamiento local"
-        >
-          almacenamiento no fijado
-        </span>
-      )}
-    </div>
-  );
-}
-
 /**
  * El boton de marcar.
  *
@@ -511,32 +465,6 @@ function BigButton({ onClick, children }: { onClick: () => void; children: React
       {children}
     </button>
   );
-}
-
-/**
- * Segundos que quedan de la ventana de deshacer.
- *
- * Mismo criterio que LiveClock: un valor que cambia diez veces por segundo no
- * tiene por que re-renderizar la pantalla del juez. Se escribe al nodo directo.
- */
-function Countdown({ expiresAt, className }: { expiresAt: number; className?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-
-    const paint = () => {
-      const left = Math.max(0, expiresAt - Date.now());
-      node.textContent = `${Math.ceil(left / 1000)}s`;
-    };
-
-    paint();
-    const timer = setInterval(paint, 100);
-    return () => clearInterval(timer);
-  }, [expiresAt]);
-
-  return <span ref={ref} className={className} />;
 }
 
 function FinishCard({

@@ -32,6 +32,8 @@ import {
 import { BotonesDeOrden } from "@/features/workouts/components/BotonesDeOrden";
 import { PesosPorCategoria } from "@/features/workouts/components/PesosPorCategoria";
 import { VistaPreviaDelWod } from "@/features/workouts/components/VistaPreviaDelWod";
+import { SimuladorDeJuez } from "@/features/workouts/components/SimuladorDeJuez";
+import { armarEstructuraDeWod } from "@/shared/timing/wodStructure";
 import { desdeKilos } from "@/shared/unidades/carga";
 
 /**
@@ -536,9 +538,20 @@ function SeccionDeParte({
           )}
 
           <div>
-            <h4 className="text-sm font-semibold text-neutral-400 uppercase">
-              Como lo ve el juez
-            </h4>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold text-neutral-400 uppercase">
+                Como lo ve el juez
+              </h4>
+              <SimuladorDeJuez
+                estructura={armarEstructuraDeWod({
+                  parte: part,
+                  bloques: blocks,
+                  movimientos: movements,
+                  nombres: nombrePorMovimiento,
+                  specs: new Map(),
+                })}
+              />
+            </div>
             <div className="mt-3">
               <VistaPreviaDelWod
                 part={part}

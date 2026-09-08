@@ -165,6 +165,66 @@ describe("start_heat exige que los jueces no esten ocupados en otro heat en curs
   });
 });
 
+describe("start_heat exige que los atletas no esten corriendo otro heat sin terminar", () => {
+  /** Una segunda prueba, para que el mismo equipo pueda tener carril ahi sin
+   * chocar contra `lanes_team_once_per_workout` (un equipo no corre dos veces
+   * la MISMA prueba, pero si corre pruebas distintas en heats separados). */
+  async function crearSegundaPrueba(): Promise<string> {
+    const w = await s.db.query<{ id: string }>(
+      "insert into workouts (event_id, order_index, name) values ($1, 1, 'Prueba 2') returning id",
+      [s.eventId],
+    );
+    return w.rows[0].id;
+  }
+
+  it("no larga un segundo heat con un equipo que ya esta corriendo el primero", async () => {
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, () => s.db.query("select start_heat($1)", [s.heatId]));
+
+    await asUser(s.db, s.users.owner, async () => {
+      const wod2 = await crearSegundaPrueba();
+      const heat2 = await s.db.query<{ id: string }>(
+        "insert into heats (event_id, workout_id, name, lane_count) values ($1, $2, 'Heat 2', 1) returning id",
+        [s.eventId, wod2],
+      );
+      await s.db.query(
+        `insert into lanes (heat_id, event_id, lane_number, team_id, judge_id)
+         values ($1, $2, 1, $3, $4)`,
+        [heat2.rows[0].id, s.eventId, s.teamIds[0], s.users.judgeB],
+      );
+
+      const msg = await expectDenied(() =>
+        s.db.query("select start_heat($1)", [heat2.rows[0].id]),
+      );
+      expect(msg).toContain("Todavía están corriendo otro heat sin terminar");
+    });
+  });
+
+  it("larga sin problema si el otro heat del equipo ya terminó (ended_at)", async () => {
+    await asignarJueces();
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query("select start_heat($1)", [s.heatId]);
+      await s.db.query("update heats set ended_at = now() where id = $1", [s.heatId]);
+
+      const wod2 = await crearSegundaPrueba();
+      const heat2 = await s.db.query<{ id: string }>(
+        "insert into heats (event_id, workout_id, name, lane_count) values ($1, $2, 'Heat 2', 1) returning id",
+        [s.eventId, wod2],
+      );
+      await s.db.query(
+        `insert into lanes (heat_id, event_id, lane_number, team_id, judge_id)
+         values ($1, $2, 1, $3, $4)`,
+        [heat2.rows[0].id, s.eventId, s.teamIds[0], s.users.judgeB],
+      );
+
+      const res = await s.db.query<{ status: string }>("select status from start_heat($1)", [
+        heat2.rows[0].id,
+      ]);
+      expect(res.rows[0].status).toBe("running");
+    });
+  });
+});
+
 describe("cancel_heat_start", () => {
   it("deshace una largada hecha por error", async () => {
     await asignarJueces();

@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { asAnon, asUser, expectDenied } from "./harness";
+import { asAdmin, asAnon, asUser, expectDenied } from "./harness";
 import { asignarJueces, seedScenario, type Scenario } from "./fixtures";
 
 let s: Scenario;
@@ -221,6 +221,113 @@ describe("verification_queue", () => {
     await asUser(s.db, s.users.judgeA, async () => {
       const res = await s.db.query("select * from verification_queue($1)", [s.eventId]);
       expect(res.rows).toHaveLength(0);
+    });
+  });
+
+  // Regresion: un carril de WOD nunca tiene fila en `results` (esa tabla es
+  // solo de circuitos), asi que antes del fix la consulta caia siempre al
+  // fallback `l.status` -que ningun codigo actualiza- y un atleta que ya
+  // termino su WOD seguia mostrando "en el WOD" en la torre de control.
+  describe("con un carril de WOD (sin fila en results)", () => {
+    let workoutId: string;
+    let partId: string;
+
+    beforeEach(async () => {
+      await asAdmin(s.db, async () => {
+        // Juzgar un WOD en vivo es del plan Pro; el gate se prueba en
+        // planes.test.ts, aca solo hace falta pasarlo para poder insertar.
+        await s.db.query("update organizations set plan = 'pro' where id = $1", [s.orgId]);
+
+        // El fixture de este archivo (arriba) le da a TODOS los carriles una
+        // fila en `results`, porque el escenario base es de circuito. Un
+        // carril de WOD puro no tiene ninguna: se borra la del carril que
+        // usan estos tests para reproducir ese caso de verdad.
+        await s.db.query("delete from results where lane_id = $1", [s.laneIds[1]]);
+
+        workoutId = (
+          await s.db.query<{ id: string }>(
+            `insert into workouts (event_id, name, order_index)
+             values ($1, 'WOD 1', coalesce((select max(order_index) + 1 from workouts where event_id = $1), 0))
+             returning id`,
+            [s.eventId],
+          )
+        ).rows[0].id;
+
+        partId = (
+          await s.db.query<{ id: string }>(
+            `insert into workout_parts
+               (workout_id, event_id, order_index, time_scheme, capture_mode, score_unit, score_dir)
+             values ($1, $2, 0, 'cap', 'en_vivo', 'tiempo', 'menor_gana') returning id`,
+            [workoutId, s.eventId],
+          )
+        ).rows[0].id;
+      });
+    });
+
+    it("terminado (todas las partes en vivo validas) se ve como 'finished', no como el status pegado del carril", async () => {
+      await asAdmin(s.db, () =>
+        s.db.query(
+          `insert into workout_scores (part_id, team_id, event_id, division_id, score_unit, status, value_num, lane_id, source)
+           values ($1, $2, $3, $4, 'tiempo', 'valido', 300000, $5, 'en_vivo')`,
+          [partId, s.teamIds[1], s.eventId, s.divisionId, s.laneIds[1]],
+        ),
+      );
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ status: string }>(
+          "select status from verification_queue($1) where lane_id = $2",
+          [s.eventId, s.laneIds[1]],
+        );
+        expect(res.rows[0].status).toBe("finished");
+      });
+    });
+
+    it("todavia en curso NO se ve como terminado", async () => {
+      await asAdmin(s.db, () =>
+        s.db.query(
+          `insert into workout_scores (part_id, team_id, event_id, division_id, score_unit, status, lane_id, source)
+           values ($1, $2, $3, $4, 'tiempo', 'en_curso', $5, 'en_vivo')`,
+          [partId, s.teamIds[1], s.eventId, s.divisionId, s.laneIds[1]],
+        ),
+      );
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ status: string }>(
+          "select status from verification_queue($1) where lane_id = $2",
+          [s.eventId, s.laneIds[1]],
+        );
+        expect(res.rows[0].status).toBe("running");
+      });
+    });
+
+    it("DQ manda sobre un score valido de otra parte del mismo carril", async () => {
+      const parte2 = (
+        await asAdmin(s.db, () =>
+          s.db.query<{ id: string }>(
+            `insert into workout_parts
+               (workout_id, event_id, order_index, time_scheme, capture_mode, score_unit, score_dir)
+             values ($1, $2, 1, 'cap', 'en_vivo', 'tiempo', 'menor_gana') returning id`,
+            [workoutId, s.eventId],
+          ),
+        )
+      ).rows[0].id;
+
+      await asAdmin(s.db, () =>
+        s.db.query(
+          `insert into workout_scores (part_id, team_id, event_id, division_id, score_unit, status, value_num, lane_id, source)
+           values ($1, $3, $4, $5, 'tiempo', 'valido', 300000, $6, 'en_vivo'),
+                  ($2, $3, $4, $5, 'tiempo', 'dq', null, $6, 'en_vivo')`,
+          [partId, parte2, s.teamIds[1], s.eventId, s.divisionId, s.laneIds[1]],
+        ),
+      );
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ status: string }>(
+          "select status from verification_queue($1) where lane_id = $2",
+          [s.eventId, s.laneIds[1]],
+        );
+        expect(res.rows[0].status).toBe("dq");
+      });
     });
   });
 });

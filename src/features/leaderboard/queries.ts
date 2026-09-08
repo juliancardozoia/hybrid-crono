@@ -119,8 +119,18 @@ export async function getEventInfo(slug: string): Promise<EventInfo | null> {
 
 export interface TablaGeneral {
   divisiones: ScoreboardDivisionResult[];
-  /** Cuantas pruebas tiene el evento en total. Con una sola, el general no aporta. */
+  /** Cuantas pruebas tiene el evento en total. Con una sola, el general PUEDE no aportar. */
   cantidadDePruebas: number;
+  /**
+   * Si TODAS las pruebas del evento son de circuito. Con una sola prueba de
+   * circuito (el caso de una carrera hibrida), el leaderboard de tiempos
+   * (`getLeaderboard`, que solo lee `results`) ya muestra exactamente el mismo
+   * ranking, asi que la tabla general es redundante y se esconde. Un WOD de
+   * CrossFit no tiene fila en `results` -- se puntua por `workout_scores` -- asi
+   * que con una sola prueba la tabla general sigue siendo la UNICA que muestra
+   * algo.
+   */
+  soloCircuito: boolean;
   official: boolean;
   updatedAt: number;
 }
@@ -128,6 +138,7 @@ export interface TablaGeneral {
 const VACIA: TablaGeneral = {
   divisiones: [],
   cantidadDePruebas: 0,
+  soloCircuito: false,
   official: false,
   updatedAt: 0,
 };
@@ -148,10 +159,12 @@ export async function getTablaGeneral(slug: string): Promise<TablaGeneral> {
   if (error || !data) return { ...VACIA, updatedAt: Date.now() };
 
   const documento = data as unknown as ScoreboardInput;
+  const partes = documento.parts ?? [];
 
   return {
     divisiones: buildScoreboard(documento),
-    cantidadDePruebas: documento.parts?.length ?? 0,
+    cantidadDePruebas: partes.length,
+    soloCircuito: partes.length > 0 && partes.every((p) => p.timeScheme === "circuito"),
     official: Boolean(documento.event?.official),
     updatedAt: Date.now(),
   };

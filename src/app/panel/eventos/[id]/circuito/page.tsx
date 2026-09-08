@@ -19,6 +19,7 @@ import {
 } from "@/shared/components/SimpleForm";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { NuevoCircuito } from "@/features/events/components/NuevoCircuito";
+import { SimuladorDeJuezCircuito } from "@/features/events/components/SimuladorDeJuezCircuito";
 
 const TIPOS: Record<string, string> = {
   run: "Corrida",
@@ -73,23 +74,29 @@ export default async function CircuitoPage({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-semibold">{template.name}</h2>
 
-              {canManage &&
-                (enUso > 0 ? (
+              <div className="flex items-center gap-4">
+                {template.segments.length > 0 && (
+                  <SimuladorDeJuezCircuito segments={template.segments} />
+                )}
+
+                {canManage &&
+                  (enUso > 0 ? (
                   <span className="text-xs text-neutral-500">
                     {enUso === 1
                       ? "1 categoría usa este circuito"
                       : `${enUso} categorías usan este circuito`}
                   </span>
-                ) : (
-                  <FormularioDeEstado
-                    accion={eliminarCircuito.bind(null, id, template.id)}
-                    estadoInicial={{ error: null }}
-                    etiqueta="Eliminar circuito"
-                    mensajeDeCarga="Eliminando el circuito…"
-                    title="Eliminar circuito"
-                    className="text-xs text-neutral-600 hover:text-red-400"
-                  />
-                ))}
+                  ) : (
+                    <FormularioDeEstado
+                      accion={eliminarCircuito.bind(null, id, template.id)}
+                      estadoInicial={{ error: null }}
+                      etiqueta="Eliminar circuito"
+                      mensajeDeCarga="Eliminando el circuito…"
+                      title="Eliminar circuito"
+                      className="text-xs text-neutral-600 hover:text-red-400"
+                    />
+                  ))}
+              </div>
             </div>
 
             {template.segments.length === 0 ? (

@@ -87,3 +87,33 @@ body {
 .tabs-scroll::-webkit-scrollbar {
   display: none;
 }
+
+/*
+ * El destello que marca "esto arranco ahora mismo".
+ *
+ * JudgeScreen y WodJudgeScreen montan esta seccion recien cuando `anchor` deja
+ * de ser null (el ternario `!anchor ? esperando : <seccion del reloj>`), asi
+ * que el destello se dispara solo por el propio montaje del nodo — sin ningun
+ * estado de React ni efecto que lo dispare a mano. Un anillo lima que se
+ * desvanece en menos de un segundo, la unica vez que el reloj hace algo mas
+ * que mostrar la hora: es la transicion "esperando -> corriendo" hecha
+ * visible, no solo instantanea.
+ */
+@keyframes destello-de-largada {
+  from {
+    box-shadow: inset 0 0 0 3px rgba(163, 230, 53, 0.5);
+  }
+  to {
+    box-shadow: inset 0 0 0 3px rgba(163, 230, 53, 0);
+  }
+}
+
+.destello-de-largada {
+  animation: destello-de-largada 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .destello-de-largada {
+    animation: none;
+  }
+}

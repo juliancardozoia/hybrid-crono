@@ -5,6 +5,7 @@ import { HeatCard, type TeamOption } from "./HeatCard";
 import { NuevoHeat } from "./NuevoHeat";
 import { DistribuirHeats } from "./DistribuirHeats";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Modal } from "@/shared/components/Modal";
 import { Selector } from "@/shared/components/Selector";
 import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
 
@@ -216,15 +217,7 @@ export function PantallaDeHeats({
                   />
                   {canManage && heat.started_at === null && (
                     <div className="absolute top-4 right-4">
-                      <FormularioDeEstado
-                        accion={quitarHeat.bind(null, eventId, heat.id)}
-                        estadoInicial={{ error: null }}
-                        etiqueta="✕"
-                        pendienteTexto="…"
-                        mensajeDeCarga="Quitando el heat…"
-                        title="Quitar heat"
-                        className="text-sm text-neutral-700 hover:text-red-400"
-                      />
+                      <QuitarHeat eventId={eventId} heat={heat} quitarHeat={quitarHeat} />
                     </div>
                   )}
                 </div>
@@ -235,5 +228,69 @@ export function PantallaDeHeats({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Quitar un heat, con confirmacion.
+ *
+ * ANTES DISPARABA LA ACCION DIRECTO AL CLICK. Solo se ofrece cuando el heat
+ * todavia no largo (ver el llamador), asi que no destruye ningun tiempo — pero
+ * SI borra la asignacion de equipos y jueces que el organizador ya armo, y el
+ * boton "✕" vive pegado a la esquina de la tarjeta sin ningun otro control
+ * cerca: un toque desviado en celular lo alcanza sin querer.
+ */
+function QuitarHeat({
+  eventId,
+  heat,
+  quitarHeat,
+}: {
+  eventId: string;
+  heat: HeatWithLanes;
+  quitarHeat: AccionQuitar;
+}) {
+  const [confirmar, setConfirmar] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmar(true)}
+        title="Quitar heat"
+        className="flex h-9 w-9 items-center justify-center rounded-lg text-sm text-neutral-700 hover:bg-neutral-900 hover:text-red-400"
+      >
+        ✕
+      </button>
+
+      <Modal
+        abierto={confirmar}
+        alCerrar={() => setConfirmar(false)}
+        titulo="Quitar heat"
+        ancho="max-w-sm"
+      >
+        <div className="text-left">
+          <p className="text-sm text-neutral-300">
+            ¿Quitar <span className="font-medium">{heat.name}</span>? Se borra junto con los
+            equipos y jueces ya asignados a sus carriles. Esta acción no se puede deshacer.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirmar(false)}
+              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
+            >
+              Cancelar
+            </button>
+            <FormularioDeEstado
+              accion={quitarHeat.bind(null, eventId, heat.id)}
+              estadoInicial={{ error: null }}
+              etiqueta="Quitar heat"
+              mensajeDeCarga="Quitando el heat…"
+              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+            />
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
