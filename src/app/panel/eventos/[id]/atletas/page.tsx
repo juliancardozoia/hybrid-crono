@@ -6,6 +6,7 @@ import {
 } from "@/features/athletes/actions";
 import { getDivisions, getTeams } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
+import { createClient } from "@/lib/supabase/server";
 import { AltaDeAtleta } from "@/features/athletes/components/AltaDeAtleta";
 import { GrillaDeAtletas } from "@/features/athletes/components/GrillaDeAtletas";
 
@@ -39,6 +40,19 @@ export default async function AtletasPage({
     getTeams(id),
     getDivisions(id),
   ]);
+
+  // Si la categoria ACTUAL de un equipo habilita el cambio, ver
+  // `actualizarEquipo` en features/athletes/actions.ts. Consulta aparte y no
+  // un embed: son dos tablas chicas del mismo evento, no hace falta que
+  // PostgREST resuelva una relacion para esto.
+  const supabase = await createClient();
+  const { data: registros } = await supabase
+    .from("division_registration")
+    .select("division_id, allows_division_change")
+    .eq("event_id", id);
+  const permiteCambioPorDivision = new Map(
+    (registros ?? []).map((r) => [r.division_id, r.allows_division_change]),
+  );
 
   async function quitar(teamId: string, _prev: FormState, _formData: FormData) {
     "use server";
@@ -103,7 +117,12 @@ export default async function AtletasPage({
 
       <GrillaDeAtletas
         teams={teams}
-        divisiones={divisions.map((d) => ({ id: d.id, name: d.name }))}
+        divisiones={divisions.map((d) => ({
+          id: d.id,
+          name: d.name,
+          teamSize: d.team_size,
+          permiteCambioCategoria: permiteCambioPorDivision.get(d.id) ?? false,
+        }))}
         canManage={canManage}
         alQuitar={canManage ? quitar : undefined}
         alCambiarAprobacion={canManage ? cambiarAprobacion : undefined}

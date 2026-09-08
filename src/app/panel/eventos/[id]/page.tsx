@@ -13,11 +13,13 @@ import {
   getTeams,
 } from "@/features/events/config/queries";
 import { getPruebas } from "@/features/workouts/queries";
+import { ModoDeCaptura } from "@/features/workouts/components/ModoDeCaptura";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { BotonPublicar } from "@/features/events/components/BotonPublicar";
 import { getEstadoDelPlan } from "@/features/planes/queries";
 import { AvisoDePlan } from "@/features/planes/components/AvisoDePlan";
 import { Icono } from "@/shared/components/Icono";
+import type { CaptureMode } from "@/lib/supabase/types";
 
 /**
  * "Resumen" (la pestaña de produccion) y "Config Competencia" (la barra
@@ -127,6 +129,19 @@ export default async function ResumenPage({
       opcional: true,
     },
   ];
+
+  // El circuito queda afuera: ya esta exento del gate de plan y siempre se
+  // juzga en vivo en los dos planes, no hay nada que elegir ahi. Si ninguna
+  // prueba tiene una parte que no sea circuito (carrera hibrida, o un
+  // CrossFit sin pruebas todavia), el control no tiene nada que mostrar.
+  const partesJuzgables = pruebas
+    .flatMap((p) => p.parts)
+    .filter((p) => p.time_scheme !== "circuito");
+  const modoDeCapturaActual: CaptureMode = partesJuzgables.some(
+    (p) => p.capture_mode === "en_vivo",
+  )
+    ? "en_vivo"
+    : "manual";
 
   const carrilesConAtleta = heats.reduce(
     (n, h) => n + h.lanes.filter((l) => l.team_id !== null).length,
@@ -280,6 +295,24 @@ export default async function ResumenPage({
               </>
             )}
           </div>
+
+          {partesJuzgables.length > 0 && (
+            <div className="mt-5 border-t border-neutral-800 pt-4">
+              <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+                Cómo se juzgan las pruebas
+              </p>
+              <p className="mt-1 mb-3 text-sm text-neutral-500">
+                Aplica a TODAS las pruebas de esta competencia, no a una en
+                particular — es una capacidad que se contrata para todo el
+                evento.
+              </p>
+              <ModoDeCaptura
+                eventId={id}
+                actual={modoDeCapturaActual}
+                bloqueado={plan ? !plan.puedeJuzgarEnVivo : false}
+              />
+            </div>
+          )}
 
           <div className="mt-5 border-t border-neutral-800 pt-4">
             <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">

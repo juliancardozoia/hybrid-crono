@@ -291,6 +291,94 @@ export async function crearRegistroManual(
   return { error: null };
 }
 
+/**
+ * Corrige lo único que se puede accionar desde el detalle de un equipo ya
+ * inscripto: el estado de registro (siempre), y la categoría, solo si la
+ * categoría ACTUAL del equipo tiene habilitado el cambio. Los datos
+ * personales de cada integrante NO se tocan acá — se cargaron al inscribirlo
+ * y esta pantalla es de solo lectura para eso.
+ *
+ * EL CAMBIO DE CATEGORÍA SE REVALIDA ACÁ, NO SOLO EN LA PANTALLA. El selector
+ * del cliente ya se oculta si la categoría actual no lo permite, pero eso es
+ * comodidad de UI — la garantía real es esta: se relee `allows_division_change`
+ * de la categoría ACTUAL del equipo antes de escribir, y se rechaza igual si
+ * alguien arma el POST a mano. También se exige que la categoría destino
+ * tenga el mismo `team_size` que integrantes tiene HOY el equipo (contados en
+ * la base, no en lo que mande el formulario): mover un equipo de 2 a una
+ * categoría individual dejaría un integrante sin ningún lado donde vivir.
+ */
+export async function actualizarEquipo(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  const teamId = String(formData.get("teamId") ?? "");
+  await requireManage(eventId);
+
+  const estado = String(formData.get("estado") ?? "aprobado");
+  if (estado !== "aprobado" && estado !== "pendiente") {
+    return { error: "Estado de registro inválido." };
+  }
+
+  const supabase = await createClient();
+
+  const actualizacionEquipo: { approved: boolean; division_id?: string } = {
+    approved: estado === "aprobado",
+  };
+
+  const nuevaDivisionId = String(formData.get("divisionId") ?? "").trim();
+  if (nuevaDivisionId) {
+    const { data: equipo } = await supabase
+      .from("teams")
+      .select("division_id")
+      .eq("id", teamId)
+      .maybeSingle();
+
+    if (equipo && equipo.division_id !== nuevaDivisionId) {
+      const { data: registro } = await supabase
+        .from("division_registration")
+        .select("allows_division_change")
+        .eq("division_id", equipo.division_id)
+        .maybeSingle();
+
+      if (!registro?.allows_division_change) {
+        return {
+          error: "La categoría actual de este equipo no tiene habilitado el cambio de categoría.",
+        };
+      }
+
+      const [{ data: destino }, { count: integrantes }] = await Promise.all([
+        supabase
+          .from("divisions")
+          .select("team_size")
+          .eq("id", nuevaDivisionId)
+          .maybeSingle(),
+        supabase
+          .from("team_members")
+          .select("athlete_id", { count: "exact", head: true })
+          .eq("team_id", teamId),
+      ]);
+
+      if (destino && integrantes !== null && destino.team_size !== integrantes) {
+        return {
+          error: `Esa categoría es de equipos de ${destino.team_size}; este registro tiene ${integrantes} integrante(s).`,
+        };
+      }
+
+      actualizacionEquipo.division_id = nuevaDivisionId;
+    }
+  }
+
+  const { error } = await supabase
+    .from("teams")
+    .update(actualizacionEquipo)
+    .eq("id", teamId);
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return { error: null };
+}
+
 export async function deleteTeam(
   eventId: string,
   teamId: string,

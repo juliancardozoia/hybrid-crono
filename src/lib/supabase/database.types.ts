@@ -367,6 +367,7 @@ export type Database = {
       }
       division_registration: {
         Row: {
+          allows_division_change: boolean
           allows_member_swap: boolean
           capacity: number | null
           closes_at: string | null
@@ -377,6 +378,7 @@ export type Database = {
           price_cents: number | null
         }
         Insert: {
+          allows_division_change?: boolean
           allows_member_swap?: boolean
           capacity?: number | null
           closes_at?: string | null
@@ -387,6 +389,7 @@ export type Database = {
           price_cents?: number | null
         }
         Update: {
+          allows_division_change?: boolean
           allows_member_swap?: boolean
           capacity?: number | null
           closes_at?: string | null

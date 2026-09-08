@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { invitarColaborador, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { Interruptor } from "@/shared/components/Interruptor";
 
 const inicial: FormState = { error: null };
 
@@ -173,60 +174,6 @@ export function AgregarColaborador({
         Agregar colaborador
       </BotonDeEnvio>
     </form>
-  );
-}
-
-/**
- * Un permiso, con su explicacion al lado.
- *
- * El interruptor es un checkbox de verdad —no un div con `onClick`— porque asi
- * viaja en el `FormData` sin estado que sincronizar, funciona con teclado y lo
- * anuncia un lector de pantalla. Lo que se ve es un `<span>` estilado sobre el
- * checkbox oculto.
- */
-function Interruptor({
-  name,
-  titulo,
-  detalle,
-  activo,
-  onChange,
-  destacado,
-}: {
-  name: string;
-  titulo: string;
-  detalle: string;
-  activo?: boolean;
-  onChange?: (v: boolean) => void;
-  destacado?: boolean;
-}) {
-  return (
-    <label
-      className={`flex cursor-pointer items-start justify-between gap-4 rounded-2xl border p-4 transition-colors ${
-        destacado
-          ? "border-neutral-700 bg-neutral-900/60"
-          : "border-neutral-800 hover:border-neutral-700"
-      }`}
-    >
-      <span className="min-w-0">
-        <span className="block font-medium">{titulo}</span>
-        <span className="mt-0.5 block text-sm leading-relaxed text-neutral-500">
-          {detalle}
-        </span>
-      </span>
-
-      <span className="relative mt-0.5 shrink-0">
-        <input
-          type="checkbox"
-          name={name}
-          checked={activo}
-          onChange={onChange ? (e) => onChange(e.target.checked) : undefined}
-          defaultChecked={activo === undefined ? false : undefined}
-          className="peer sr-only"
-        />
-        <span className="block h-6 w-11 rounded-full bg-neutral-700 transition-colors peer-checked:bg-lime-400 peer-focus-visible:ring-2 peer-focus-visible:ring-lime-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-neutral-950" />
-        <span className="absolute top-1 left-1 block h-4 w-4 rounded-full bg-neutral-950 transition-transform peer-checked:translate-x-5" />
-      </span>
-    </label>
   );
 }
 

@@ -106,6 +106,10 @@ export async function guardarCategoria(
         ...(esEquipo
           ? { allows_member_swap: formData.get("permiteCambios") === "on" }
           : {}),
+        // A diferencia de "permiteCambios", esto no depende de si compite mas
+        // de una persona: mover un atleta de categoria no tiene nada que ver
+        // con cuantos integrantes tenga.
+        allows_division_change: formData.get("permiteCambioCategoria") === "on",
       },
       { onConflict: "division_id" },
     );

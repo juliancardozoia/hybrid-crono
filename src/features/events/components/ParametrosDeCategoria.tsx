@@ -15,6 +15,7 @@ import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Selector } from "@/shared/components/Selector";
+import { Interruptor } from "@/shared/components/Interruptor";
 import type { CategoriaConfigurada } from "@/features/events/config/queries";
 import type {
   CourseTemplate,
@@ -442,6 +443,17 @@ function CamposCupoYPuntuacion({
           </span>
         </label>
       )}
+
+      {/* A diferencia del anterior, esto vale igual para categorias
+          individuales: mover a alguien de categoria no depende de cuantos
+          integrantes tenga. Apagado por defecto porque un equipo ya asignado
+          a un heat puede quedar apuntando a una categoria que ya no es la
+          suya — es una puerta que el organizador abre a propósito. */}
+      <Interruptor
+        name="permiteCambioCategoria"
+        titulo="Habilitar cambio de categoría"
+        defaultActivo={categoria.permiteCambioCategoria}
+      />
     </div>
   );
 }

@@ -276,6 +276,10 @@ export interface CategoriaConfigurada {
   capacity: number | null;
   /** Solo aplica si compite mas de una persona. */
   permiteCambios: boolean;
+  /** Si se puede cambiar la categoria de un equipo ya inscripto en esta.
+   *  Default false: mover un equipo ya asignado a un heat puede dejar
+   *  carriles y resultados apuntando a una categoria que ya no es la suya. */
+  permiteCambioCategoria: boolean;
   /** Cuantos equipos ya corren en esta categoria. Si es > 0, no se puede borrar
    *  —`teams.division_id` es `on delete restrict`— asi que la pantalla ni
    *  siquiera ofrece el boton. */
@@ -309,7 +313,7 @@ export async function getCategoriasConfiguradas(
         .order("name"),
       supabase
         .from("division_registration")
-        .select("division_id, capacity, allows_member_swap")
+        .select("division_id, capacity, allows_member_swap, allows_division_change")
         .eq("event_id", eventId),
       supabase
         .from("division_movements")
@@ -351,6 +355,8 @@ export async function getCategoriasConfiguradas(
     courseTemplateId: d.course_template_id,
     capacity: registroPorDivision.get(d.id)?.capacity ?? null,
     permiteCambios: registroPorDivision.get(d.id)?.allows_member_swap ?? false,
+    permiteCambioCategoria:
+      registroPorDivision.get(d.id)?.allows_division_change ?? false,
     equiposInscritos: equiposPorDivision.get(d.id) ?? 0,
     movimientos: (movimientos ?? [])
       .filter((m) => m.division_id === d.id)

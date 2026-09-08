@@ -131,9 +131,15 @@ export function AltaDeAtleta({
           </div>
 
           <div className="flex flex-col gap-5">
+            {/* La key es SOLO el indice, no `${divisionId}-${i}`. Con el
+                divisionId adentro, cambiar de categoria a medio llenar el
+                formulario remontaba TODOS los bloques y borraba lo ya
+                escrito — el bug reportado. Cambiar de categoria solo agrega o
+                quita bloques del final (`teamSize` distinto); los que ya
+                estaban no tienen por que perder lo que tenian. */}
             {Array.from({ length: teamSize }, (_, i) => (
               <BloqueDeIntegrante
-                key={`${divisionId}-${i}`}
+                key={i}
                 indice={i}
                 soloUno={teamSize === 1}
                 tallas={tallas}

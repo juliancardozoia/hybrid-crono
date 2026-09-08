@@ -24,7 +24,6 @@ import { describirParte } from "@/features/workouts/lib/describir";
 import { SimpleForm, Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { NuevoMovimiento } from "@/features/workouts/components/NuevoMovimiento";
-import { ModoDeCaptura } from "@/features/workouts/components/ModoDeCaptura";
 import { EditarPrueba, EditarParte } from "@/features/workouts/components/EditarParte";
 import {
   EditarBloque,
@@ -33,7 +32,6 @@ import {
 import { BotonesDeOrden } from "@/features/workouts/components/BotonesDeOrden";
 import { PesosPorCategoria } from "@/features/workouts/components/PesosPorCategoria";
 import { VistaPreviaDelWod } from "@/features/workouts/components/VistaPreviaDelWod";
-import { getEstadoDelPlan } from "@/features/planes/queries";
 import { desdeKilos } from "@/shared/unidades/carga";
 
 /**
@@ -61,11 +59,10 @@ export default async function PruebaPage({
   const { id, workoutId } = await params;
   const { canManage } = await requireEventAccess(id);
 
-  const [prueba, divisiones, catalogo, plan, categorias, todasLasPruebas] = await Promise.all([
+  const [prueba, divisiones, catalogo, categorias, todasLasPruebas] = await Promise.all([
     getPruebaCompleta(workoutId),
     getDivisions(id),
     getCatalogoDeMovimientos(),
-    getEstadoDelPlan(id),
     getCategoriasConfiguradas(id),
     getPruebas(id),
   ]);
@@ -164,7 +161,6 @@ export default async function PruebaPage({
           parte={parte}
           unaSolaParte={unaSolaParte}
           canManage={canManage}
-          puedeJuzgarEnVivo={plan ? plan.puedeJuzgarEnVivo : true}
           divisiones={divisiones}
           nombreDivision={nombreDivision}
           nombrePorMovimiento={nombrePorMovimiento}
@@ -209,7 +205,6 @@ function SeccionDeParte({
   parte,
   unaSolaParte,
   canManage,
-  puedeJuzgarEnVivo,
   divisiones,
   nombreDivision,
   nombrePorMovimiento,
@@ -226,7 +221,6 @@ function SeccionDeParte({
   parte: ParteCompleta;
   unaSolaParte: boolean;
   canManage: boolean;
-  puedeJuzgarEnVivo: boolean;
   divisiones: Array<{ id: string; name: string }>;
   nombreDivision: Map<string, string>;
   nombrePorMovimiento: Map<string, string>;
@@ -288,15 +282,6 @@ function SeccionDeParte({
         </p>
       ) : (
         <>
-          {canManage && (
-            <ModoDeCaptura
-              eventId={eventId}
-              partId={part.id}
-              actual={part.capture_mode}
-              bloqueado={!puedeJuzgarEnVivo}
-            />
-          )}
-
           <div>
             <h4 className="text-sm font-semibold text-neutral-400 uppercase">
               Categorías que la corren

@@ -1,13 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { cambiarModoDeCaptura } from "../actions";
+import { cambiarModoDeCapturaEvento } from "../actions";
 import { useCargaMientras } from "@/shared/components/Carga";
 import type { CaptureMode } from "@/lib/supabase/types";
 
 /**
- * Como se puntua esta prueba: cargando el resultado a mano, o juzgandola en
- * vivo con la app del juez.
+ * Como se capturan las pruebas de ESTA competencia: cargando el resultado a
+ * mano, o juzgandolas en vivo con la app del juez.
+ *
+ * Es una decision de la COMPETENCIA ENTERA, no de un WOD suelto — por eso vive
+ * en el Resumen y no en cada prueba: juzgar en vivo es una capacidad que se
+ * contrata para todo el evento, y ofrecerla por WOD invitaba a una mezcla sin
+ * sentido comercial (la mitad en vivo, la mitad a mano). Aplica a TODAS las
+ * partes no-circuito de una sola vez.
  *
  * NO va dentro de un `<form action={...}>`. Es el caso del bug de HeatCard: al
  * terminar la accion React llama al `form.reset()` nativo y el control vuelve a
@@ -17,12 +23,10 @@ import type { CaptureMode } from "@/lib/supabase/types";
  */
 export function ModoDeCaptura({
   eventId,
-  partId,
   actual,
   bloqueado,
 }: {
   eventId: string;
-  partId: string;
   actual: CaptureMode;
   /** El plan no habilita el vivo: se muestra igual, deshabilitado y explicado. */
   bloqueado: boolean;
@@ -38,7 +42,7 @@ export function ModoDeCaptura({
     setModo(nuevo);
     setError(null);
     startTransition(async () => {
-      const res = await cambiarModoDeCaptura(eventId, partId, nuevo);
+      const res = await cambiarModoDeCapturaEvento(eventId, nuevo);
       if (res.error) {
         // Volver a lo que habia: dejarlo marcado seria mentirle al organizador
         // sobre lo que quedo guardado.

@@ -206,16 +206,24 @@ export async function crearPrueba(
 }
 
 /**
- * Cambia como se captura una prueba: a mano o juzgandola en vivo.
+ * Cambia como se capturan TODAS las pruebas de la competencia: a mano o
+ * juzgandolas en vivo.
+ *
+ * Es una decision de la COMPETENCIA ENTERA, no de un WOD suelto — juzgar en
+ * vivo es una capacidad que se contrata para todo el evento, asi que un
+ * control por prueba invitaba a una mezcla que no tiene sentido comercial
+ * (la mitad en vivo, la mitad a mano, en la misma competencia). Por eso
+ * actualiza TODAS las partes no-circuito de una sola vez, en vez de pedir el
+ * `partId`. El circuito queda afuera: ya esta exento del gate de plan y
+ * siempre se juzga en vivo en los dos planes.
  *
  * La restriccion de plan NO se chequea aca. La aplica un trigger de Postgres,
  * que es lo unico que no se saltea llamando a PostgREST con la misma sesion; lo
  * que hace esta accion es devolver ese mensaje tal cual para que la pantalla lo
  * muestre.
  */
-export async function cambiarModoDeCaptura(
+export async function cambiarModoDeCapturaEvento(
   eventId: string,
-  partId: string,
   modo: CaptureMode,
 ): Promise<FormState> {
   await requireManage(eventId);
@@ -224,7 +232,8 @@ export async function cambiarModoDeCaptura(
   const { error } = await supabase
     .from("workout_parts")
     .update({ capture_mode: modo })
-    .eq("id", partId);
+    .eq("event_id", eventId)
+    .neq("time_scheme", "circuito");
 
   if (error) return { error: traducir(error) };
   refrescar(eventId);

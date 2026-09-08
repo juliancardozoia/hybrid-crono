@@ -46,6 +46,7 @@ const CATEGORIA: CategoriaConfigurada = {
   courseTemplateId: "tpl-1",
   capacity: null,
   permiteCambios: false,
+  permiteCambioCategoria: false,
   equiposInscritos: 0,
   movimientos: [],
   segmentos: {},
@@ -280,6 +281,34 @@ describe("cambio de integrantes", () => {
     abrir();
 
     expect(screen.getByText(/Permitir cambiar integrantes/i)).toBeTruthy();
+  });
+});
+
+describe("cambio de categoría", () => {
+  // A diferencia de "cambiar integrantes", esto vale igual en individual: no
+  // depende del formato ni de cuantos integrantes compitan.
+  it("se ofrece en crossfit, individual", () => {
+    pintar("crossfit");
+    abrir();
+
+    expect(screen.getByText(/Habilitar cambio de categoría/i)).toBeTruthy();
+  });
+
+  it("se ofrece en carrera híbrida", () => {
+    pintar("carrera_hibrida");
+    abrir();
+
+    expect(screen.getByText(/Habilitar cambio de categoría/i)).toBeTruthy();
+  });
+
+  it("refleja el valor ya guardado", () => {
+    pintar("crossfit", { ...CATEGORIA, permiteCambioCategoria: true });
+    abrir();
+
+    const toggle = screen.getByRole("checkbox", {
+      name: /Habilitar cambio de categoría/i,
+    }) as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
   });
 });
 

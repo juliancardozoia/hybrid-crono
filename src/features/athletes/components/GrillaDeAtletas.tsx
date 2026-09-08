@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
 import { Selector } from "@/shared/components/Selector";
+import {
+  DetalleDeAtleta,
+  type DivisionParaDetalle,
+} from "@/features/athletes/components/DetalleDeAtleta";
 import type { TeamWithMembers } from "@/features/events/config/queries";
 import type { FormState } from "@/features/athletes/actions";
 
@@ -42,7 +46,7 @@ export function GrillaDeAtletas({
   alCambiarAprobacion,
 }: {
   teams: TeamWithMembers[];
-  divisiones: Array<{ id: string; name: string }>;
+  divisiones: DivisionParaDetalle[];
   canManage: boolean;
   alQuitar?: (
     teamId: string,
@@ -61,6 +65,9 @@ export function GrillaDeAtletas({
   const [busqueda, setBusqueda] = useState("");
   const [divisionId, setDivisionId] = useState("");
   const [pagina, setPagina] = useState(1);
+  // Acordeon de a uno: abrir un registro cierra el anterior, asi la grilla no
+  // termina con diez detalles desplegados a la vez.
+  const [expandido, setExpandido] = useState<string | null>(null);
 
   const filtrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -141,34 +148,35 @@ export function GrillaDeAtletas({
               </tr>
             </thead>
             <tbody>
-              {visibles.map((t) => (
-                <tr
-                  key={t.id}
-                  className="border-b border-neutral-900 last:border-0"
-                >
+              {visibles.map((t) => {
+                const abierto = expandido === t.id;
+                return (
+                <Fragment key={t.id}>
+                <tr className="border-b border-neutral-900 last:border-0">
                   <td className="px-4 py-3 font-mono font-bold tabular-nums">
                     {t.bib_number}
                   </td>
                   <td className="px-3 py-3">
-                    {t.name && (
-                      <p className="mb-1 font-medium">{t.name}</p>
-                    )}
-                    {t.members.length === 0 ? (
-                      <p className="text-neutral-400">sin integrantes</p>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandido((actual) => (actual === t.id ? null : t.id))
+                        }
+                        className="flex w-full items-start gap-2 text-left"
+                        aria-expanded={abierto}
+                        title={abierto ? "Ocultar detalle" : "Ver y editar detalle"}
+                      >
+                        <Icono
+                          nombre="flecha"
+                          className={`mt-1 h-3 w-3 shrink-0 text-neutral-500 transition-transform ${
+                            abierto ? "rotate-90" : ""
+                          }`}
+                        />
+                        <ContenidoDelEquipo t={t} />
+                      </button>
                     ) : (
-                      <div className="flex flex-col gap-1.5">
-                        {t.members.map((m) => (
-                          <p
-                            key={m.id}
-                            className={`flex h-[1.625rem] items-center gap-1.5 ${t.name ? "text-neutral-400" : ""}`}
-                          >
-                            <Bandera codigo={m.country} className="h-3 w-4 shrink-0" />
-                            <span>
-                              {m.first_name} {m.last_name}
-                            </span>
-                          </p>
-                        ))}
-                      </div>
+                      <ContenidoDelEquipo t={t} />
                     )}
                   </td>
                   <td className="px-3 py-3 text-neutral-400">
@@ -249,7 +257,7 @@ export function GrillaDeAtletas({
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
                     {canManage && alQuitar && (
                       <FormularioDeEstado
                         accion={alQuitar.bind(null, t.id)}
@@ -263,7 +271,24 @@ export function GrillaDeAtletas({
                     )}
                   </td>
                 </tr>
-              ))}
+
+                {/* El detalle se despliega EN EL LUGAR, no en un modal aparte:
+                    el organizador ya esta mirando la fila. */}
+                {abierto && (
+                  <tr className="border-b border-neutral-900 last:border-0">
+                    <td colSpan={7} className="bg-neutral-900/40 px-4 py-5">
+                      <DetalleDeAtleta
+                        eventId={t.event_id}
+                        team={t}
+                        divisiones={divisiones}
+                        alCerrar={() => setExpandido(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -293,5 +318,32 @@ export function GrillaDeAtletas({
         </div>
       )}
     </div>
+  );
+}
+
+/** El nombre del equipo y sus integrantes: se pinta igual adentro y afuera
+ *  del botón que despliega el detalle (sin botón cuando no se puede editar). */
+function ContenidoDelEquipo({ t }: { t: TeamWithMembers }) {
+  return (
+    <span className="min-w-0 flex-1">
+      {t.name && <span className="mb-1 block font-medium">{t.name}</span>}
+      {t.members.length === 0 ? (
+        <span className="block text-neutral-400">sin integrantes</span>
+      ) : (
+        <span className="flex flex-col gap-1.5">
+          {t.members.map((m) => (
+            <span
+              key={m.id}
+              className={`flex h-[1.625rem] items-center gap-1.5 ${t.name ? "text-neutral-400" : ""}`}
+            >
+              <Bandera codigo={m.country} className="h-3 w-4 shrink-0" />
+              <span>
+                {m.first_name} {m.last_name}
+              </span>
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
   );
 }

@@ -8,6 +8,7 @@ import {
 import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
+import { Interruptor } from "@/shared/components/Interruptor";
 import type { CourseTemplate, EventFormat } from "@/lib/supabase/types";
 
 const inicial: FormState = { error: null };
@@ -143,6 +144,15 @@ export function NuevaDivision({
               ]}
             />
           )}
+
+          {/* Siempre al final del formulario, y habilitado por defecto: es la
+              categoria recien creada, todavia sin equipos, asi que no hay
+              ningun riesgo en dejarlo prendido desde el arranque. */}
+          <Interruptor
+            name="permiteCambioCategoria"
+            titulo="Habilitar cambio de categoría"
+            defaultActivo
+          />
 
           {state.error && (
             <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">

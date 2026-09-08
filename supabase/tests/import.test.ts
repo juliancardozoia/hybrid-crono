@@ -304,6 +304,40 @@ describe("assign_heat_lanes", () => {
     });
   });
 
+  // Bug real: reasignar los carriles borraba y volvia a crear las filas de
+  // `lanes`, y con ellas el juez que ya estaba asignado a esa posicion —
+  // sin ningun aviso. El juez esta atado al carril (la posicion fisica), no
+  // al equipo que corre ahi, asi que tiene que sobrevivir a un reordenamiento.
+  it("conserva el juez ya asignado a un carril al reasignar los equipos", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query("select assign_heat_lanes($1, $2::uuid[])", [
+        s.heatId,
+        [s.teamIds[2], s.teamIds[0], s.teamIds[1]],
+      ]);
+
+      const antes = await s.db.query<{ id: string }>(
+        "select id from lanes where heat_id = $1 and lane_number = 2",
+        [s.heatId],
+      );
+      await s.db.query("select transfer_lane($1, $2)", [
+        antes.rows[0].id,
+        s.users.judgeA,
+      ]);
+
+      // Se reordena de nuevo: otro equipo pasa a ocupar el carril 2.
+      await s.db.query("select assign_heat_lanes($1, $2::uuid[])", [
+        s.heatId,
+        [s.teamIds[1], s.teamIds[0], s.teamIds[2]],
+      ]);
+
+      const despues = await s.db.query<{ judge_id: string | null }>(
+        "select judge_id from lanes where heat_id = $1 and lane_number = 2",
+        [s.heatId],
+      );
+      expect(despues.rows[0].judge_id).toBe(s.users.judgeA);
+    });
+  });
+
   it("no acepta mas equipos que carriles", async () => {
     await asUser(s.db, s.users.owner, async () => {
       await s.db.query("update heats set lane_count = 2 where id = $1", [s.heatId]);

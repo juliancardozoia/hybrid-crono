@@ -267,6 +267,10 @@ export async function createDivision(
   const ageMax = formData.get("ageMax") ? Number(formData.get("ageMax")) : null;
   const level = String(formData.get("level") ?? "").trim() || null;
   const cupoBruto = String(formData.get("capacity") ?? "").trim();
+  // El checkbox viaja "on" cuando esta marcado y no viaja NADA cuando no —
+  // por eso no se puede leer con `?? "on"`, hay que comparar el string.
+  const permiteCambioCategoria =
+    formData.get("permiteCambioCategoria") === "on";
 
   await requireManage(eventId);
 
@@ -316,15 +320,19 @@ export async function createDivision(
 
   // El cupo vive en `division_registration` y no en `divisions`: es un dato del
   // TRAMITE, no de la categoria — la categoria sigue existiendo cuando las
-  // inscripciones cierran. Solo se crea la fila si hay algo que guardar.
-  if (capacity !== null) {
-    await supabase
-      .from("division_registration")
-      .upsert(
-        { division_id: creada.id, event_id: eventId, capacity },
-        { onConflict: "division_id" },
-      );
-  }
+  // inscripciones cierran. Antes esta fila solo se creaba si habia cupo que
+  // guardar; ahora SIEMPRE se crea, porque el toggle de cambio de categoria
+  // viaja habilitado por defecto y tiene que quedar guardado aunque no haya
+  // cupo.
+  await supabase.from("division_registration").upsert(
+    {
+      division_id: creada.id,
+      event_id: eventId,
+      capacity,
+      allows_division_change: permiteCambioCategoria,
+    },
+    { onConflict: "division_id" },
+  );
 
   refrescar(eventId);
   return OK;
