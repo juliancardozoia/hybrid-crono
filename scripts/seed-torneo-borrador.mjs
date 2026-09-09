@@ -1,20 +1,20 @@
 /**
- * Siembra una competencia EN BORRADOR para probar, a mano y en orden, todo lo
- * que un organizador real hace entre crear el evento y largar el primer heat:
+ * Siembra una competencia EN BORRADOR, LISTA para probar el juzgamiento en
+ * vivo: 1 categoria, 10 atletas, y las 5 pruebas ya armadas (bloques,
+ * movimientos y `capture_mode = 'en_vivo'`), repartidas en 3 fases.
  *
  *   node scripts/seed-torneo-borrador.mjs
  *
  * A diferencia de seed-torneo-etapas.mjs y seed-torneo-3-fases.mjs, este
  * script NO CARGA NINGUN SCORE, NO ARMA HEATS y NO CONFIRMA NINGUN CORTE DE
- * ETAPA. Deja la competencia con categorias, atletas y las 5 pruebas
- * (capture_mode 'en_vivo') listas, para que el organizador la termine de
- * configurar y avance el resto a mano: distribuir heats, jugar la clasificatoria
- * con la pantalla del juez de verdad, confirmar quien pasa a semifinal, etc.
+ * ETAPA -- eso es lo que queda para hacer a mano: distribuir heats, jugar
+ * cada fase con la pantalla del juez de verdad, y confirmar en /puntuacion
+ * quien avanza de una etapa a la siguiente.
  *
  * REUSA la organizacion y el usuario que ya crearon seed-torneo-3-fases.mjs
  * (liga.3fases@prueba.com / prueba1234, org "Liga 3 Fases de Prueba", plan
- * Pro) en vez de crear un tercer usuario de prueba -- capture_mode 'en_vivo'
- * de paso necesita plan Pro, y esa organizacion ya lo tiene. Si esa
+ * Pro) en vez de crear un tercer usuario de prueba -- `capture_mode =
+ * 'en_vivo'` exige plan Pro, y esa organizacion ya lo tiene. Si esa
  * organizacion no existe todavia, corre primero `npm run seed:3fases`.
  *
  * Es idempotente PERO ACOTADO: borra solo ESTE evento por su slug, nunca la
@@ -22,7 +22,7 @@
  * toca.
  *
  *   Fase 1 — Clasificatoria: 3 WODs. Fase 2 — Semifinal: 1 WOD.
- *   Fase 3 — Final: 1 WOD. 3 categorias, 10 atletas.
+ *   Fase 3 — Final: 1 WOD. 1 categoria, 10 atletas.
  */
 
 import { readFileSync } from "node:fs";
@@ -46,17 +46,34 @@ function morir(paso, error) {
   process.exit(1);
 }
 
+/**
+ * Reintenta un `TypeError: fetch failed` -- un blip de red en medio de un
+ * script que encadena varios cientos de requests, no un error de datos. Un
+ * error de Postgres (constraint, permiso) NO es un `TypeError` y sigue
+ * abortando de una, que es lo que corresponde.
+ */
+async function conReintentos(fn, intentos = 4) {
+  for (let i = 1; i <= intentos; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!(error instanceof TypeError) || i === intentos) throw error;
+      const espera = 500 * i;
+      console.log(`   (red inestable, reintento ${i}/${intentos - 1} en ${espera}ms…)`);
+      await new Promise((r) => setTimeout(r, espera));
+    }
+  }
+}
+
 async function insertar(tabla, filas, paso) {
-  const { data, error } = await db.from(tabla).insert(filas).select();
+  const { data, error } = await conReintentos(() => db.from(tabla).insert(filas).select());
   if (error) morir(paso ?? tabla, error);
   return data;
 }
 
-const { data: org, error: errorOrg } = await db
-  .from("organizations")
-  .select("id, plan")
-  .eq("slug", ORG_SLUG)
-  .maybeSingle();
+const { data: org, error: errorOrg } = await conReintentos(() =>
+  db.from("organizations").select("id, plan").eq("slug", ORG_SLUG).maybeSingle(),
+);
 if (errorOrg || !org) {
   morir(
     "buscar la organización",
@@ -101,30 +118,31 @@ async function borrarEvento(eventId) {
     "course_templates",
     "penalty_types",
   ]) {
-    const { error } = await db.from(tabla).delete().eq("event_id", eventId);
+    const { error } = await conReintentos(() => db.from(tabla).delete().eq("event_id", eventId));
     if (error) morir(`borrar ${tabla}`, error);
   }
-  const { error } = await db.from("events").delete().eq("id", eventId);
+  const { error } = await conReintentos(() => db.from("events").delete().eq("id", eventId));
   if (error) morir("borrar el evento", error);
 }
 
-const { data: previo } = await db.from("events").select("id").eq("public_slug", EVENT_SLUG).maybeSingle();
+const { data: previo } = await conReintentos(() =>
+  db.from("events").select("id").eq("public_slug", EVENT_SLUG).maybeSingle(),
+);
 if (previo) {
   console.log("Borrando la siembra anterior de este evento…");
   await borrarEvento(previo.id);
 }
 
-// ---------------------------------------------------------------------------
-// Busca un movimiento del catalogo por nombre exacto.
-// ---------------------------------------------------------------------------
-
+/** Busca un movimiento del catalogo por nombre exacto. */
 async function movimiento(nombre) {
-  const { data, error } = await db.from("movements").select("id").eq("name", nombre).maybeSingle();
+  const { data, error } = await conReintentos(() =>
+    db.from("movements").select("id").eq("name", nombre).maybeSingle(),
+  );
   if (error || !data) morir(`buscar el movimiento "${nombre}"`, error ?? "no está en el catálogo");
   return data.id;
 }
 
-/** Una prueba de una sola parte, EN VIVO, con su bloque y sus movimientos. */
+/** Una prueba de una sola parte, EN VIVO, con su bloque, sus movimientos y su categoria asignada. */
 async function crearPrueba(eventId, divisiones, { nombre, stage, orden, parte, bloque, movimientos }) {
   const [w] = await insertar("workouts", {
     event_id: eventId,
@@ -186,11 +204,7 @@ const [evento] = await insertar("events", {
   shirt_sizes: ["S", "M", "L"],
 });
 
-const CATEGORIAS = [
-  { name: "Rx Masculino", gender_rule: "male", cupo: 4 },
-  { name: "Rx Femenino", gender_rule: "female", cupo: 3 },
-  { name: "Scaled Masculino", gender_rule: "male", cupo: 3 },
-];
+const CATEGORIAS = [{ name: "Rx Masculino", gender_rule: "male", cupo: 10 }];
 
 const divisiones = await insertar(
   "divisions",
@@ -203,22 +217,19 @@ const divisiones = await insertar(
   })),
 );
 
-const NOMBRES_H = ["Andrés", "Camilo", "Daniel", "Esteban", "Felipe", "Gabriel", "Héctor"];
-const NOMBRES_M = ["Ana", "Beatriz", "Carolina", "Daniela", "Elena"];
+const NOMBRES_H = ["Andrés", "Camilo", "Daniel", "Esteban", "Felipe", "Gabriel", "Héctor", "Iván", "Jorge", "Kevin"];
 const APELLIDOS = ["Álvarez", "Bermúdez", "Castaño", "Duarte", "Escobar", "Franco", "Gómez", "Herrera", "Ibáñez", "Jaramillo"];
 
-console.log("Creando 10 atletas en 3 categorías…");
+console.log("Creando 10 atletas en 1 categoría…");
 let dorsal = 101;
 for (const [i, division] of divisiones.entries()) {
   const cupo = CATEGORIAS[i].cupo;
-  const esFemenino = division.gender_rule === "female";
-  const pila = esFemenino ? NOMBRES_M : NOMBRES_H;
   for (let j = 0; j < cupo; j += 1) {
     const [atleta] = await insertar("athletes", {
       event_id: evento.id,
-      first_name: pila[dorsal % pila.length],
+      first_name: NOMBRES_H[dorsal % NOMBRES_H.length],
       last_name: APELLIDOS[(dorsal * 3) % APELLIDOS.length],
-      gender: esFemenino ? "female" : "male",
+      gender: "male",
     });
     const [equipo] = await insertar("teams", {
       event_id: evento.id,
@@ -231,9 +242,11 @@ for (const [i, division] of divisiones.entries()) {
 }
 
 // ---------------------------------------------------------------------------
-// Las 5 pruebas: Fase 1 (3 WODs), Fase 2 (semifinal), Fase 3 (final).
-// SIN scores, SIN heats, SIN cortes confirmados -- eso lo hace el organizador
-// a mano, que es justo lo que este seed existe para poder ensayar.
+// Las 5 pruebas: Fase 1 (3 WODs), Fase 2 (semifinal), Fase 3 (final). Todas
+// 'en vivo', con bloques y movimientos reales, y ya asignadas a la unica
+// categoria del evento -- listas para largar un heat y jugarlas con la
+// pantalla del juez de verdad. SIN scores, SIN heats, SIN cortes
+// confirmados: eso lo hace el organizador a mano.
 // ---------------------------------------------------------------------------
 
 console.log("Creando las 5 pruebas (todas 'en vivo')…");
@@ -255,7 +268,14 @@ await crearPrueba(evento.id, divisiones, {
   stage: 1,
   orden: 1,
   parte: { time_scheme: "ventana", score_unit: "rondas_reps", score_dir: "mayor_gana", window_ms: 1_200_000 },
-  bloque: { repeticiones: 1 },
+  // Un AMRAP no tiene "cuantas rondas": se repiten los mismos movimientos
+  // hasta que se acaba la ventana (misma doctrina que RONDAS_AMRAP_SIN_LIMITE
+  // en features/workouts/actions.ts). Con `repeticiones: 1` el plan del juez
+  // solo tenia UNA ronda: la pantalla se bloqueaba como "completo" apenas se
+  // cerraba pull-up/push-up/air-squat la primera vez, a los ~3 minutos de un
+  // AMRAP de 20 -- y los diez atletas quedaban empatados en "1 ronda, 0 reps"
+  // sin haber tenido chance de marcar mas.
+  bloque: { repeticiones: 50 },
   movimientos: [
     { nombre: "Pull-up", objetivo: [5] },
     { nombre: "Push-up", objetivo: [10] },
@@ -298,9 +318,9 @@ Listo. Quedó en BORRADOR, a propósito: falta todo lo que vas a ir haciendo vos
 
   Lo que ya está armado:
 
-    3 categorías (Rx Masculino ×4, Rx Femenino ×3, Scaled Masculino ×3 = 10
-    atletas), y las 5 pruebas — todas 'en vivo', con sus bloques y
-    movimientos reales — repartidas en 3 fases:
+    1 categoría (Rx Masculino ×10 atletas), y las 5 pruebas — todas 'en
+    vivo', con sus bloques y movimientos reales, ya asignadas a la
+    categoría — repartidas en 3 fases:
 
       Fase 1 — Clasificatoria: Fran, Cindy, Deadlift máximo (las 3 corren
                                 todos los atletas de la fase).
@@ -311,9 +331,8 @@ Listo. Quedó en BORRADOR, a propósito: falta todo lo que vas a ir haciendo vos
 
     1. "Marcar como lista" en Resumen, cuando termines de revisar.
     2. Invitar jueces (o asignarte vos mismo) desde /jueces.
-    3. Distribuir los heats de la Fase 1 (Config. competencia → Heats →
-       "Distribuir automáticamente", elegí el WOD y cuántos carriles por
-       heat).
+    3. Distribuir los heats de la Fase 1 (Heats → "Distribuir
+       automáticamente", elegí el WOD y cuántos carriles por heat).
     4. Largar los heats y jugarlos con la pantalla del juez de verdad.
     5. Cuando la Fase 1 termine, confirmar en /puntuacion quién avanza a la
        Semifinal (Fase 2) — ahí vas a poder ver en vivo el mismo caso que

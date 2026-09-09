@@ -93,7 +93,18 @@ export function rankPart(params: {
     status: item.status,
     position,
     tiedWith,
-    points: pointsForPosition(table, position),
+    // Sin un valor real (pendiente, en_curso, dnf, dq) la posicion es solo el
+    // lugar que ocupa en el padron mientras "falta cargar" — no una prueba
+    // corrida. Puntuarla por la curva le daba puntos a un equipo que nunca
+    // arranco el WOD, con el fieldSize completo empatado justo detras de los
+    // pocos que si terminaron. La tabla de tiempo total ("points" vacio) usa
+    // la posicion misma como valor a sumar -- ahi position=points es el
+    // mecanismo de orden de una carrera, no un puntaje que se le muestre a
+    // nadie, asi que sigue igual.
+    points:
+      item.comparable.value !== null || table.points.length === 0
+        ? pointsForPosition(table, position)
+        : 0,
     comparable: item.comparable satisfies ComparableScore,
   }));
 }

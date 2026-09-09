@@ -130,6 +130,24 @@ describe("rankPart", () => {
     expect(pendiente?.position).toBe(3);
   });
 
+  it("un equipo sin marca no cobra puntos de la curva, aunque comparta posicion con pocos rivales", () => {
+    // Bug real: en una categoria de 10 con un solo finisher, los otros 9
+    // quedaban EMPATADOS en la posicion 2 -- y la curva de Games en la
+    // posicion 2 de un field de 10 vale ~92 puntos. Un atleta que nunca salio
+    // a competir terminaba con casi el maximo del WOD.
+    const placements = rankPart({
+      part: POR_REPS,
+      table: tablaDinamica(10),
+      teamIds: ["ganador", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+      scores: [reps("ganador", 100)],
+    });
+
+    const sinMarca = placements.filter((p) => p.teamId !== "ganador");
+    expect(sinMarca.every((p) => p.status === "pendiente")).toBe(true);
+    expect(sinMarca.every((p) => p.points === 0)).toBe(true);
+    expect(placements.find((p) => p.teamId === "ganador")?.points).toBe(100);
+  });
+
   it("ignora scores de otra prueba", () => {
     const ajeno: RawScore = { ...reps("b", 999), partId: "otra" };
     const placements = rankPart({
