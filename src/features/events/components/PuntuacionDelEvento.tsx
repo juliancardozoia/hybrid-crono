@@ -313,7 +313,17 @@ function BloqueDeEtapa({
         </p>
       ) : (
         <>
-          <ul className="mt-2 flex flex-wrap gap-2">
+          {etapa.pool.every((t) => t.position === null) && (
+            <p className="mt-2 text-xs text-neutral-500">
+              Todavía no hay ningún resultado cargado: el orden de abajo no refleja ningún
+              acumulado.
+            </p>
+          )}
+          {/* Ordenado por el acumulado real hasta esta etapa (no solo el
+              ultimo WOD): es la misma cifra que va a usar el leaderboard, asi
+              que el corte se confirma mirando el mismo numero, no una lista
+              de bibs sin orden. */}
+          <ul className="mt-2 flex flex-col divide-y divide-neutral-900 overflow-hidden rounded-xl border border-neutral-800">
             {etapa.pool.map((t) => {
               const activo = seleccion.has(t.teamId);
               return (
@@ -321,13 +331,23 @@ function BloqueDeEtapa({
                   <button
                     type="button"
                     onClick={() => alternar(t.teamId)}
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
+                    className={`flex w-full items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors ${
                       activo
-                        ? "border-lime-400 text-lime-300"
-                        : "border-neutral-700 text-neutral-500 hover:border-neutral-600"
+                        ? "bg-lime-400/10 text-lime-300"
+                        : "text-neutral-400 hover:bg-neutral-900"
                     }`}
                   >
-                    {activo ? "✓ " : ""}#{t.bib} {t.nombre ?? ""}
+                    <span className="flex items-baseline gap-2">
+                      <span className="font-mono tabular-nums text-neutral-600">
+                        {t.position !== null ? `${t.position}.º` : "—"}
+                      </span>
+                      {activo ? "✓ " : ""}#{t.bib} {t.nombre ?? ""}
+                    </span>
+                    {t.totalPoints !== null && (
+                      <span className="font-mono tabular-nums text-neutral-500">
+                        {formatear(t.totalPoints)} pts
+                      </span>
+                    )}
                   </button>
                 </li>
               );

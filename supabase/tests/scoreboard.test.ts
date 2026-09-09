@@ -331,8 +331,8 @@ describe("el gate del plan, aplicado en Postgres", () => {
   });
 
   it("el anonimo no puede llamar a scoreboard_document directamente", async () => {
-    // Solo la funcion public_* esta abierta: la interna aplicaria el gate del
-    // plan por su cuenta, o sea que no lo aplicaria.
+    // No es `public_*`: el rol anonimo no tiene EXECUTE en absoluto, sin
+    // importar el plan ni el estado del evento.
     await setPlan("free");
     await asAnon(s.db, async () => {
       let fallo = false;
@@ -342,6 +342,66 @@ describe("el gate del plan, aplicado en Postgres", () => {
         fallo = true;
       }
       expect(fallo).toBe(true);
+    });
+  });
+
+  it("un autenticado SIN relacion con el evento no puede llamar a scoreboard_document directamente para saltear el gate", async () => {
+    // El hueco real: `scoreboard_document` no es `public_*`, asi que
+    // `apply_function_lockdown()` le da EXECUTE a CUALQUIER usuario
+    // autenticado -- no solo a quien pasa por `public_scoreboard`. Sin un
+    // guard propio, un atleta con cuenta (o alguien de OTRA organizacion)
+    // podia pedir el documento COMPLETO de un evento en plan gratuito
+    // todavia sin publicar, con solo su uuid.
+    await setPlan("free");
+    await setStatus("live"); // free + live: publico() ya devuelve null aca.
+    await asUser(s.db, s.users.forastero, async () => {
+      const res = await s.db.query<{ scoreboard_document: unknown }>(
+        "select scoreboard_document($1, true)",
+        [s.eventId],
+      );
+      expect(res.rows[0].scoreboard_document).toBeNull();
+    });
+  });
+
+  it("un evento en borrador tampoco se filtra por scoreboard_document directo", async () => {
+    await setStatus("draft");
+    await asUser(s.db, s.users.forastero, async () => {
+      const res = await s.db.query<{ scoreboard_document: unknown }>(
+        "select scoreboard_document($1, true)",
+        [s.eventId],
+      );
+      expect(res.rows[0].scoreboard_document).toBeNull();
+    });
+  });
+
+  it("quien SI tiene un rol en el evento sigue viendo el documento crudo, aunque no este publicado", async () => {
+    // El organizador (y cualquier staff del evento) no queda atado al mismo
+    // gate que el publico: lo necesita para trabajar (torre de control,
+    // verificacion) antes de publicar nada. `puede_leer_evento` es el mismo
+    // helper que ya usan ~25 politicas de lectura de estructura.
+    await setPlan("free");
+    await setStatus("live");
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ scoreboard_document: { teams: unknown[] } }>(
+        "select scoreboard_document($1, true)",
+        [s.eventId],
+      );
+      expect(res.rows[0].scoreboard_document).not.toBeNull();
+      expect(res.rows[0].scoreboard_document.teams).toHaveLength(3);
+    });
+  });
+
+  it("un evento publicado es publico de verdad: hasta un autenticado sin relacion lo ve", async () => {
+    // Publicado es exactamente lo que la palabra dice: no es un hueco que
+    // esto siga visible para cualquiera con cuenta, es la regla de negocio.
+    await setPlan("free");
+    await setStatus("published");
+    await asUser(s.db, s.users.forastero, async () => {
+      const res = await s.db.query<{ scoreboard_document: unknown }>(
+        "select scoreboard_document($1, true)",
+        [s.eventId],
+      );
+      expect(res.rows[0].scoreboard_document).not.toBeNull();
     });
   });
 

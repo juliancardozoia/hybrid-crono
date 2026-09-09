@@ -282,16 +282,203 @@ describe("buildScoreboard", () => {
       expect(etapa1.entries.map((e) => e.teamId).sort()).toEqual(["t1", "t2"]);
     });
 
-    it("la etapa 2 usa su propia curva congelada, independiente de la etapa 1", () => {
+    it("la etapa 2 usa su propia curva congelada para SU parte, sin tocar la de la etapa 1", () => {
       const doc = documentoConEtapa2();
       doc.stageAdvancements = [{ divisionId: "d1", stage: 2, teamId: "t1" }];
-      doc.snapshots = [{ divisionId: "d1", stage: 2, points: [100, 40], locked: true }];
+      doc.snapshots = [
+        { divisionId: "d1", stage: 1, points: [100, 0], locked: true },
+        { divisionId: "d1", stage: 2, points: [100, 40], locked: true },
+      ];
 
       const resultados = buildScoreboard(doc);
       const etapa2 = resultados.find((r) => r.stage === 2)!;
-      // Con un solo equipo elegible, la curva congelada (2 puestos) igual
-      // aplica su primer valor: la tabla no se recalcula al field de hoy.
-      expect(etapa2.entries[0].placements[0].points).toBe(100);
+      const t1 = etapa2.entries.find((e) => e.teamId === "t1")!;
+
+      // La parte p3 (etapa 2, un solo elegible) usa la curva congelada de la
+      // etapa 2: primer puesto de esa curva son 100 puntos.
+      expect(t1.placements.find((p) => p.partId === "p3")!.points).toBe(100);
+      // Las partes p1/p2 (etapa 1, dos equipos) siguen valorandose con LA
+      // CURVA DE LA ETAPA 1 -- nunca se recalculan con la de la final.
+      expect(t1.placements.find((p) => p.partId === "p1")!.points).toBe(100);
+      expect(t1.placements.find((p) => p.partId === "p2")!.points).toBe(0);
+    });
+
+    it("un corte NUNCA reinicia los puntos: la etapa 2 acumula lo de la etapa 1", () => {
+      // Con la base de "documento()": t1 gana p1 (100) y pierde p2 (0); t2 al
+      // reves -- p1(0) y p2(100). Entran EMPATADOS a la final con 100 cada
+      // uno (mismo caso que el primer test del archivo).
+      const doc = documentoConEtapa2();
+      // Los dos avanzan a la final.
+      doc.stageAdvancements = [
+        { divisionId: "d1", stage: 2, teamId: "t1" },
+        { divisionId: "d1", stage: 2, teamId: "t2" },
+      ];
+
+      const resultados = buildScoreboard(doc);
+      const etapa1 = resultados.find((r) => r.stage === 1)!;
+      const etapa2 = resultados.find((r) => r.stage === 2)!;
+
+      const totalEtapa1 = (id: string) => etapa1.entries.find((e) => e.teamId === id)!.totalPoints;
+      const totalEtapa2 = (id: string) => etapa2.entries.find((e) => e.teamId === id)!.totalPoints;
+
+      // La vista de la final trae los 3 WODs (p1, p2 de la etapa 1 + p3 de la
+      // final), no solo p3.
+      expect(etapa2.parts.map((p) => p.id)).toEqual(["p1", "p2", "p3"]);
+
+      expect(totalEtapa1("t1")).toBe(100);
+      expect(totalEtapa1("t2")).toBe(100);
+
+      // En la final (curva dinamica de 2, [100, 0]) t2 gana p3 (80 > 50
+      // reps): se lleva 100 puntos MAS, no en vez de, los 100 que ya traia.
+      // t1 pierde p3: sigue con exactamente los 100 que ya tenia, nunca baja
+      // a cero. El resultado de la final NO borra lo anterior, se le suma.
+      expect(totalEtapa2("t1")).toBe(totalEtapa1("t1") + 0);
+      expect(totalEtapa2("t2")).toBe(totalEtapa1("t2") + 100);
+      expect(totalEtapa2("t1")).toBe(100);
+      expect(totalEtapa2("t2")).toBe(200);
+
+      // Ganar la final alcanza para pasar al frente (t2 sube de empatado en
+      // el 1 a unico primero), pero SOLO porque el acumulado lo respalda --
+      // no por haber ganado la ultima prueba en si misma.
+      const t1Final = etapa2.entries.find((e) => e.teamId === "t1")!;
+      const t2Final = etapa2.entries.find((e) => e.teamId === "t2")!;
+      expect(t2Final.position).toBe(1);
+      expect(t1Final.position).toBe(2);
+    });
+
+    it("los eliminados por el corte conservan su clasificacion en la etapa donde quedaron", () => {
+      // t1 gana LAS DOS pruebas de la etapa 1 (se fuerza que tambien gane p2,
+      // que en la base pierde) para que el corte no sea un empate: t1=200,
+      // t2=0, sin ambiguedad de a quien le toca avanzar.
+      const doc = documentoConEtapa2();
+      doc.scores = doc.scores.map((s) =>
+        s.partId === "p2" && s.teamId === "t1" ? { ...s, value: 200_000 } : s,
+      );
+      doc.stageAdvancements = [{ divisionId: "d1", stage: 2, teamId: "t1" }];
+
+      const resultados = buildScoreboard(doc);
+      const etapa1 = resultados.find((r) => r.stage === 1)!;
+      const etapa2 = resultados.find((r) => r.stage === 2)!;
+
+      const t1EnEtapa1 = etapa1.entries.find((e) => e.teamId === "t1")!;
+      const t2EnEtapa1 = etapa1.entries.find((e) => e.teamId === "t2")!;
+      // El eliminado conserva su resultado real y su posicion, no desaparece
+      // ni queda en cero por no haber avanzado.
+      expect(t1EnEtapa1.totalPoints).toBe(200);
+      expect(t1EnEtapa1.position).toBe(1);
+      expect(t2EnEtapa1.totalPoints).toBe(0);
+      expect(t2EnEtapa1.position).toBe(2);
+      // Pero no participa de ningun WOD posterior al corte.
+      expect(etapa2.entries.some((e) => e.teamId === "t2")).toBe(false);
+    });
+
+    it("dos cortes: el acumulado de la final suma las TRES etapas, no solo la ultima", () => {
+      // 4 atletas -> corte a 3 -> corte a 2 -> final entre 2.
+      const doc: ScoreboardInput = {
+        version: 5,
+        detalle: true,
+        event: { name: "Copa Test", venue: null, status: "live", format: "crossfit", official: false },
+        divisions: [{ id: "d1", name: "RX Masculino" }],
+        teams: [
+          { id: "t1", divisionId: "d1", bib: 1, name: null, athletes: "T1" },
+          { id: "t2", divisionId: "d1", bib: 2, name: null, athletes: "T2" },
+          { id: "t3", divisionId: "d1", bib: 3, name: null, athletes: "T3" },
+          { id: "t4", divisionId: "d1", bib: 4, name: null, athletes: "T4" },
+        ],
+        parts: [
+          {
+            id: "p1", workoutId: "w1", workoutName: "WOD 1", label: "", orderIndex: 0, stage: 1,
+            timeScheme: "rondas_reps", scoreUnit: "reps", scoreDir: "mayor_gana", capUnit: null,
+            maxPoints: 100, tiebreakUnit: null, tiebreakDir: null, tiebreakPartId: null,
+          },
+          {
+            id: "p2", workoutId: "w2", workoutName: "WOD 2", label: "", orderIndex: 1000, stage: 2,
+            timeScheme: "rondas_reps", scoreUnit: "reps", scoreDir: "mayor_gana", capUnit: null,
+            maxPoints: 100, tiebreakUnit: null, tiebreakDir: null, tiebreakPartId: null,
+          },
+          {
+            id: "p3", workoutId: "w3", workoutName: "Final", label: "", orderIndex: 2000, stage: 3,
+            timeScheme: "rondas_reps", scoreUnit: "reps", scoreDir: "mayor_gana", capUnit: null,
+            maxPoints: 100, tiebreakUnit: null, tiebreakDir: null, tiebreakPartId: null,
+          },
+        ],
+        assignments: [
+          { partId: "p1", divisionId: "d1" },
+          { partId: "p2", divisionId: "d1" },
+          { partId: "p3", divisionId: "d1" },
+        ],
+        scores: [
+          // WOD 1 (los 4): t1 1ro, t2 2do, t3 3ro, t4 4to (ultimo, eliminado).
+          { partId: "p1", teamId: "t1", status: "valido", value: 400, reps: null, capValue: null, tiebreak: null },
+          { partId: "p1", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null },
+          { partId: "p1", teamId: "t3", status: "valido", value: 200, reps: null, capValue: null, tiebreak: null },
+          { partId: "p1", teamId: "t4", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+          // WOD 2 (top 3): se invierte -- t3 gana, t2 2do, t1 ultimo.
+          { partId: "p2", teamId: "t3", status: "valido", value: 500, reps: null, capValue: null, tiebreak: null },
+          { partId: "p2", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null },
+          { partId: "p2", teamId: "t1", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+          // Final (top 2, t2 y t3): t2 gana grande.
+          { partId: "p3", teamId: "t2", status: "valido", value: 600, reps: null, capValue: null, tiebreak: null },
+          { partId: "p3", teamId: "t3", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+        ],
+        snapshots: [
+          { divisionId: "d1", stage: 1, points: [100, 70, 40, 0], locked: true },
+          { divisionId: "d1", stage: 2, points: [100, 50, 0], locked: true },
+          { divisionId: "d1", stage: 3, points: [100, 0], locked: true },
+        ],
+        stageAdvancements: [
+          // Corte 1: top 3 (t1, t2, t3). t4 queda afuera.
+          { divisionId: "d1", stage: 2, teamId: "t1" },
+          { divisionId: "d1", stage: 2, teamId: "t2" },
+          { divisionId: "d1", stage: 2, teamId: "t3" },
+          // Corte 2: top 2 (t2, t3). t1 queda afuera.
+          { divisionId: "d1", stage: 3, teamId: "t2" },
+          { divisionId: "d1", stage: 3, teamId: "t3" },
+        ],
+      };
+
+      const resultados = buildScoreboard(doc);
+      const etapa1 = resultados.find((r) => r.stage === 1)!;
+      const etapa2 = resultados.find((r) => r.stage === 2)!;
+      const etapa3 = resultados.find((r) => r.stage === 3)!;
+
+      const total = (etapa: typeof etapa1, id: string) =>
+        etapa.entries.find((e) => e.teamId === id)?.totalPoints;
+
+      // Etapa 1: los 4, con la curva congelada de la etapa 1.
+      expect(total(etapa1, "t1")).toBe(100);
+      expect(total(etapa1, "t2")).toBe(70);
+      expect(total(etapa1, "t3")).toBe(40);
+      expect(total(etapa1, "t4")).toBe(0);
+
+      // Etapa 2: solo t1,t2,t3, y el WOD 1 sigue valiendo lo que valio (no se
+      // recalcula con la curva de 3). t3 dio vuelta el WOD 2: 40+100=140.
+      expect(etapa2.entries.map((e) => e.teamId).sort()).toEqual(["t1", "t2", "t3"]);
+      expect(total(etapa2, "t1")).toBe(100 + 0);
+      expect(total(etapa2, "t2")).toBe(70 + 50);
+      expect(total(etapa2, "t3")).toBe(40 + 100);
+
+      // Etapa 3 (final): solo t2 y t3 -- t1 quedo eliminado en el segundo
+      // corte y NO aparece aca, pero su fila de la etapa 2 (100 puntos,
+      // 3er puesto) sigue existiendo y consultable.
+      expect(etapa3.entries.map((e) => e.teamId).sort()).toEqual(["t2", "t3"]);
+      expect(total(etapa2, "t1")).toBe(100);
+      const t1EnEtapa2 = etapa2.entries.find((e) => e.teamId === "t1")!;
+      expect(t1EnEtapa2.position).toBe(3);
+
+      // El acumulado final SUMA LAS TRES etapas: 70 (WOD1) + 50 (WOD2) + 100
+      // (final) para t2, y 40 + 100 + 0 para t3. t2 entraba segundo a la
+      // final (120 contra 140) pero gana la final por margen suficiente para
+      // dar vuelta el resultado -- no porque "ganar la final" alcance solo.
+      expect(total(etapa3, "t2")).toBe(70 + 50 + 100);
+      expect(total(etapa3, "t3")).toBe(40 + 100 + 0);
+      expect(total(etapa3, "t2")).toBe(220);
+      expect(total(etapa3, "t3")).toBe(140);
+
+      const t2Final = etapa3.entries.find((e) => e.teamId === "t2")!;
+      const t3Final = etapa3.entries.find((e) => e.teamId === "t3")!;
+      expect(t2Final.position).toBe(1);
+      expect(t3Final.position).toBe(2);
     });
   });
 });

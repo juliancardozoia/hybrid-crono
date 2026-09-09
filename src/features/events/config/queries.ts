@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { buildScoreboard, type ScoreboardInput } from "@/shared/scoring/scoreboard";
 import type {
   AthleteRow,
   ConfigIssue,
@@ -438,11 +439,24 @@ export async function getContactosDeLaOrganizacion(
   }));
 }
 
-/** Un equipo tal como aparece en el pool de una etapa: solo lo que hace falta para reconocerlo. */
+/** Un equipo tal como aparece en el pool de una etapa: lo que hace falta para reconocerlo y decidir. */
 export interface EquipoDeEtapa {
   teamId: string;
   bib: number;
   nombre: string | null;
+  /**
+   * El ACUMULADO de la categoria hasta la etapa anterior (todos los WODs que
+   * ya corrio, no solo el ultimo) y su posicion en ese ranking. Null cuando
+   * todavia no hay ningun score cargado -- ahi el organizador ve el pool sin
+   * ordenar, igual que antes.
+   *
+   * Esto es lo que le permite al organizador confirmar el corte MIRANDO el
+   * mismo acumulado que va a usar el leaderboard, en vez de una lista de
+   * bibs sin ningun orden: la decision de quien avanza es explicita, pero
+   * "explicita" no tiene que decir "a ciegas".
+   */
+  totalPoints: number | null;
+  position: number | null;
 }
 
 export interface EtapaDeCategoria {
@@ -498,6 +512,7 @@ export async function getPuntuacionDelEvento(
     { data: partes },
     { data: asignaciones },
     { data: avances },
+    { data: documento },
   ] = await Promise.all([
     supabase.from("divisions").select("id, name").eq("event_id", eventId).order("name"),
     supabase
@@ -516,7 +531,30 @@ export async function getPuntuacionDelEvento(
       .from("stage_advancements")
       .select("division_id, stage, team_id")
       .eq("event_id", eventId),
+    // Sin parciales (`p_detalle: false`): esta pantalla necesita el
+    // acumulado y las posiciones, no los splits de cada segmento.
+    // `scoreboard_document` valida acceso por su cuenta (`puede_leer_evento`)
+    // -- si por lo que sea no devuelve nada, el pool sigue mostrandose sin
+    // ordenar, como antes de este cambio.
+    supabase.rpc("scoreboard_document", { p_event_id: eventId, p_detalle: false }),
   ]);
+
+  // (division, etapa) -> el ranking ACUMULADO de esa vista, ya resuelto por
+  // el mismo motor que usa el leaderboard en vivo (`buildScoreboard`): un
+  // solo lugar donde se calcula esto, ver scoreboard.ts.
+  const rankingPorDivisionYEtapa = new Map<
+    string,
+    Map<string, { totalPoints: number; position: number }>
+  >();
+  if (documento) {
+    const resultados = buildScoreboard(documento as unknown as ScoreboardInput);
+    for (const r of resultados) {
+      rankingPorDivisionYEtapa.set(
+        `${r.division.id}|${r.stage}`,
+        new Map(r.entries.map((e) => [e.teamId, { totalPoints: e.totalPoints, position: e.position }])),
+      );
+    }
+  }
 
   const activosPorDivision = new Map<string, number>();
   const equipoPorId = new Map(
@@ -568,12 +606,26 @@ export async function getPuntuacionDelEvento(
           ? (equiposActivosPorDivision.get(d.id) ?? [])
           : (avanzanPorDivisionYEtapa.get(`${d.id}|${stage - 1}`) ?? []);
 
+      // El acumulado con el que se decide ESTE corte es el de la etapa
+      // ANTERIOR (todos los WODs corridos hasta ahi), nunca el de la etapa
+      // que se esta por armar.
+      const rankingPrevio = rankingPorDivisionYEtapa.get(`${d.id}|${stage - 1}`);
+
+      const pool: EquipoDeEtapa[] = poolIds.flatMap((id) => {
+        const t = equipoPorId.get(id);
+        if (!t) return [];
+        const r = rankingPrevio?.get(id);
+        return [{ ...t, totalPoints: r?.totalPoints ?? null, position: r?.position ?? null }];
+      });
+      // Ordenado por el acumulado: es lo que el organizador tiene que ver
+      // para decidir el corte con criterio, no una lista de bibs al azar.
+      // Sin ranking (todavia no hay ningun score cargado) el orden se
+      // mantiene como llego -- no hay nada por lo que ordenar.
+      pool.sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
+
       etapas.push({
         stage,
-        pool: poolIds.flatMap((id) => {
-          const t = equipoPorId.get(id);
-          return t ? [t] : [];
-        }),
+        pool,
         avanzan: avanzanPorDivisionYEtapa.get(`${d.id}|${stage}`) ?? null,
       });
     }

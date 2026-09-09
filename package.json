@@ -14,7 +14,9 @@
     "verify:security": "node scripts/verify-security.mjs",
     "verify:remote": "npm run verify:queries && npm run verify:security",
     "seed:dev": "node scripts/seed-dev.mjs",
-    "seed:etapas": "node scripts/seed-torneo-etapas.mjs"
+    "seed:etapas": "node scripts/seed-torneo-etapas.mjs",
+    "seed:3fases": "node scripts/seed-torneo-3-fases.mjs",
+    "seed:borrador": "node scripts/seed-torneo-borrador.mjs"
   },
   "dependencies": {
     "@serwist/next": "^9.5.12",

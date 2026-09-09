@@ -8,10 +8,12 @@
  * implementaciones que puedan divergir, hay una.
  */
 
-import { computeOverall, resolverTiebreaksDeOtraPrueba } from "./overall";
+import { computeOverall, compareTiebreakVectors, resolverTiebreaksDeOtraPrueba } from "./overall";
+import { assignPhysicalPositions } from "./place";
 import { escalarTabla, tablaDeCategoria } from "./points";
 import type {
   OverallEntry,
+  PartPlacement,
   PartSpec,
   RawScore,
   ScoreDir,
@@ -195,10 +197,22 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
     const etapas = new Set(partesPorEtapa.keys());
     etapas.add(1);
 
-    for (const stage of [...etapas].sort((a, b) => a - b)) {
+    // PASO 1: cada etapa se rankea AISLADA, contra SU PROPIO pool y SU
+    // PROPIA curva -- exactamente como corrio en la realidad. El placement y
+    // los puntos que un equipo se gano en el WOD 1 (contra 30 atletas) se
+    // calculan UNA sola vez aca y nunca se recalculan despues, ni siquiera al
+    // mirar la vista de la final con 6 finalistas: renkear una prueba vieja
+    // contra el pool angosto de hoy le borraria el resultado real que sacaron
+    // los eliminados, y el signo del corte no es "esto nunca paso", es
+    // "estos siguen, los demas no".
+    const entradasPorEtapa = new Map<number, OverallEntry[]>();
+    const partesPorEtapaOrdenadas = new Map<number, ScoreboardPart[]>();
+
+    for (const stage of etapas) {
       const partes = [...(partesPorEtapa.get(stage) ?? [])].sort(
         (a, b) => a.orderIndex - b.orderIndex,
       );
+      partesPorEtapaOrdenadas.set(stage, partes);
 
       // Quien compite en esta etapa: en la 1, toda la categoria. De ahi en
       // mas, SOLO quien avanzo -- una decision explicita del organizador, que
@@ -208,10 +222,13 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
           ? equipos.map((t) => t.id)
           : [...(avanzanPorDivisionYEtapa.get(`${division.id}|${stage}`) ?? [])];
 
-      if (equipoIds.length === 0) continue;
+      if (equipoIds.length === 0) {
+        entradasPorEtapa.set(stage, []);
+        continue;
+      }
 
-      // La curva de la etapa: la congelada si ya se genero, o una al vuelo
-      // con el field de hoy. Una carrera hibrida no reparte puntos.
+      // La curva de esta etapa: la congelada si ya se genero, o una al vuelo
+      // con el field que la corrio. Una carrera hibrida no reparte puntos.
       const snapshot = snapshotPorDivisionYEtapa.get(`${division.id}|${stage}`);
       const tabla: ScoringTable = tablaDeCategoria({
         formato: input.event.format,
@@ -223,24 +240,90 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
       // expresaba asignandole otra TABLA a la parte; un multiplicador dice lo
       // mismo sin poder desincronizarse de la curva de la categoria.
       const pesoPorParte = new Map(partes.map((p) => [p.id, p.maxPoints]));
-
       const specs: PartSpec[] = partes.map((p) => specPorId.get(p.id)).filter((s): s is PartSpec => Boolean(s));
 
-      const general = computeOverall({
-        parts: specs,
-        tableFor: (part) => escalarTabla(tabla, pesoPorParte.get(part.id) ?? 100),
-        teamIds: equipoIds,
-        scores: crudos,
+      entradasPorEtapa.set(
+        stage,
+        computeOverall({
+          parts: specs,
+          tableFor: (part) => escalarTabla(tabla, pesoPorParte.get(part.id) ?? 100),
+          teamIds: equipoIds,
+          scores: crudos,
+        }),
+      );
+    }
+
+    // PASO 2: la VISTA de la etapa N acumula lo ya calculado en las etapas
+    // 1..N -- suma de puntos y union de placements -- y solo vuelve a
+    // rankear (assignPhysicalPositions) el TOTAL entre quienes siguen en el
+    // pool de N. Un corte reduce quien sigue compitiendo, pero nunca reinicia
+    // los puntos: es la regla de dominio de Scora para fases y cortes dentro
+    // de una misma competencia.
+    for (const stage of [...etapas].sort((a, b) => a - b)) {
+      const entradasDeLaEtapa = entradasPorEtapa.get(stage) ?? [];
+      if (entradasDeLaEtapa.length === 0) continue;
+
+      const poolDeLaEtapa = new Set(entradasDeLaEtapa.map((e) => e.teamId));
+      const etapasAcumulables = [...etapas].filter((s) => s <= stage).sort((a, b) => a - b);
+
+      const partesAcumuladas = etapasAcumulables.flatMap(
+        (s) => partesPorEtapaOrdenadas.get(s) ?? [],
+      );
+      const ordenDeParte = new Map(partesAcumuladas.map((p, i) => [p.id, i]));
+
+      const acumulado = new Map<string, { placements: PartPlacement[]; totalPoints: number }>();
+      for (const teamId of poolDeLaEtapa) acumulado.set(teamId, { placements: [], totalPoints: 0 });
+
+      for (const s of etapasAcumulables) {
+        for (const entrada of entradasPorEtapa.get(s) ?? []) {
+          const acc = acumulado.get(entrada.teamId);
+          if (!acc) continue; // quedo eliminado en un corte anterior a esta vista.
+          acc.placements.push(...entrada.placements);
+          acc.totalPoints += entrada.totalPoints;
+        }
+      }
+
+      // La direccion de la suma es la misma en toda la categoria (mezclar
+      // direcciones entre etapas seria una configuracion incoherente que la
+      // UI no ofrece), asi que alcanza con la de cualquier etapa ya resuelta.
+      const dir = tablaDeCategoria({ formato: input.event.format, snapshot: null, fieldSize: 1 }).dir;
+      const signo = dir === "menor_gana" ? 1 : -1;
+
+      const listaAcumulada = [...acumulado.entries()].map(([teamId, { placements, totalPoints }]) => {
+        const ordenados = [...placements].sort(
+          (a, b) => (ordenDeParte.get(a.partId) ?? 0) - (ordenDeParte.get(b.partId) ?? 0),
+        );
+        return {
+          teamId,
+          totalPoints,
+          placements: ordenados,
+          tiebreakVector: ordenados.map((p) => p.position).sort((a, b) => a - b),
+        };
       });
 
-      const entries = general.flatMap((entrada) => {
-        const team = equipoPorId.get(entrada.teamId);
-        return team ? [{ ...entrada, team }] : [];
+      const ubicados = assignPhysicalPositions(listaAcumulada, (a, b) => {
+        if (a.totalPoints !== b.totalPoints) return signo * (a.totalPoints - b.totalPoints);
+        return compareTiebreakVectors(a.tiebreakVector, b.tiebreakVector);
+      });
+
+      const entries = ubicados.flatMap(({ item, position, tiedWith }) => {
+        const team = equipoPorId.get(item.teamId);
+        if (!team) return [];
+        const entrada: OverallEntry & { team: ScoreboardTeam } = {
+          teamId: item.teamId,
+          totalPoints: item.totalPoints,
+          placements: item.placements,
+          tiebreakVector: item.tiebreakVector,
+          position,
+          tiedWith,
+          team,
+        };
+        return [entrada];
       });
 
       if (entries.length === 0) continue;
 
-      resultados.push({ division, stage, parts: partes, entries });
+      resultados.push({ division, stage, parts: partesAcumuladas, entries });
     }
   }
 
