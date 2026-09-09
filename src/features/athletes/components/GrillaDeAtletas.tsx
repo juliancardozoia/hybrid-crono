@@ -109,13 +109,13 @@ export function GrillaDeAtletas({
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, correo, DNI o dorsal…"
-          className="min-w-0 flex-1 rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
+          className="h-10 min-w-0 flex-1 rounded-xl border border-neutral-700 bg-transparent px-3 text-sm outline-none focus:border-lime-400"
         />
         {divisiones.length > 1 && (
           <Selector
             value={divisionId}
             onChange={(e) => setDivisionId(e.target.value)}
-            className="w-auto py-2 text-sm"
+            className="h-10 w-auto text-sm"
           >
             <option value="">Todas las categorías</option>
             {divisiones.map((d) => (
