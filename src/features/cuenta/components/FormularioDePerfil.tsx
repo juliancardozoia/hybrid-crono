@@ -5,6 +5,7 @@ import { guardarPerfil, type FormState } from "../actions";
 import { PAISES } from "@/shared/utils/paises";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { Perfil } from "../queries";
 
 const initial: FormState = { error: null, message: null };
@@ -136,12 +137,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
       </div>
 
       {state.error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300"
-        >
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
       {state.message && (
         <p

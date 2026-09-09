@@ -7,8 +7,10 @@ import { ADAPTADORES, MEDIOS_OFRECIDOS } from "@/features/pagos/adapters";
 import { MONEDAS } from "@/features/pagos/lib/monedas";
 import { CodigosDeDescuento } from "@/features/pagos/components/CodigosDeDescuento";
 import { pasoAnterior, pasoSiguiente } from "@/features/events/lib/asistente";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type {
   DiscountCodeRow,
   DivisionRegistration,
@@ -261,9 +263,7 @@ export function FormularioInscripcionAsistente({
         )}
 
         {state.error && (
-          <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-            {state.error}
-          </p>
+          <MensajeDeError>{state.error}</MensajeDeError>
         )}
       </form>
 
@@ -297,7 +297,7 @@ export function FormularioInscripcionAsistente({
           type="submit"
           form="paso-inscripcion"
           disabled={pending}
-          className="rounded-xl bg-lime-400 px-6 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary" })}
         >
           {pending ? "Guardando…" : siguiente ? "Continuar →" : "Finalizar"}
         </button>

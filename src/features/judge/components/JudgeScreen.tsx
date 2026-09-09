@@ -11,6 +11,7 @@ import { useSincronizarEventosRemotos } from "../lib/useSincronizarEventosRemoto
 import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
+import { Boton } from "@/shared/components/Boton";
 import { AvisoDeDrift, BarraDeEstadoJuez, RanuraDeDeshacer } from "./EstadoDeJuez";
 
 export interface JudgeScreenProps {
@@ -410,17 +411,18 @@ function EsperandoLargada({
       </div>
 
       {online && onCheck && (
-        <button
-          type="button"
+        <Boton
+          variante="secondary"
+          cargando={buscando}
+          textoCargando="Consultando…"
           onClick={async () => {
             setBuscando(true);
             await onCheck();
             setBuscando(false);
           }}
-          className="rounded-xl border border-neutral-700 px-5 py-3 text-sm"
         >
-          {buscando ? "Consultando…" : "Verificar ahora"}
-        </button>
+          Verificar ahora
+        </Boton>
       )}
 
       {(localStart === "siempre" || (localStart === "offline" && !online)) && (

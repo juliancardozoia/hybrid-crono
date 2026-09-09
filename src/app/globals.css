@@ -66,6 +66,11 @@ body {
   [role="button"],
   a.boton {
     min-height: 44px;
+    /* Antes solo forzaba el alto. Un boton-icono (copiar, quitar, expandir)
+       quedaba alto pero angosto — un rectangulo, no el cuadrado de 44x44 que
+       pide el target tactil. Un boton ancho con texto no se ve afectado: el
+       minimo es un piso, nunca un tamaño fijo. */
+    min-width: 44px;
   }
 }
 

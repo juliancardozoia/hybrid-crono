@@ -3,6 +3,8 @@
 import { useActionState, useState } from "react";
 import { invitarColaborador, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { claseDeBoton } from "@/shared/components/Boton";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 const inicial: FormState = { error: null };
 
@@ -112,18 +114,13 @@ export function AgregarJuez({
       )}
 
       {state.error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300"
-        >
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
 
       <BotonDeEnvio
         pendienteTexto="Invitando…"
         mensajeDeCarga="Invitando al juez…"
-        className="w-fit rounded-xl bg-lime-400 px-6 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+        className={`w-fit ${claseDeBoton({ variante: "primary" })}`}
       >
         Agregar juez
       </BotonDeEnvio>

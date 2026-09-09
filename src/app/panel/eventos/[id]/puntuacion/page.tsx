@@ -54,8 +54,7 @@ function Encabezado() {
       <p className="mt-1 max-w-2xl text-sm text-neutral-400">
         <span className="font-medium text-neutral-300">Games 2026 Dynamic.</span>{" "}
         El 1.º saca 100 puntos y el último 0, con la curva de los CrossFit Games
-        2026 ajustada a la cantidad de atletas de cada categoría. El peso de cada
-        prueba se configura en Workouts.
+        2026 ajustada a la cantidad de atletas de cada categoría.
       </p>
     </div>
   );

@@ -2,8 +2,10 @@
 
 import { useActionState, useState } from "react";
 import { agregarMovimiento, type FormState } from "../actions";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 /**
  * Alta de un movimiento dentro de un bloque.
@@ -192,16 +194,14 @@ export function NuevoMovimiento({
       </div>
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError compacto>{state.error}</MensajeDeError>
       )}
 
       <div>
         <BotonDeEnvio
           pendienteTexto="Agregando…"
           mensajeDeCarga="Agregando el movimiento…"
-          className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
+          className={claseDeBoton({ variante: "secondary", compacto: true })}
         >
           Agregar movimiento
         </BotonDeEnvio>

@@ -2,7 +2,9 @@
 
 import { useActionState } from "react";
 import { createCourseTemplate } from "@/features/events/config/actions";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { FormState } from "@/features/events/config/actions";
 
 const inicial: FormState = { error: null };
@@ -46,7 +48,7 @@ export function CircuitoDeHyrox({ eventId }: { eventId: string }) {
           <BotonDeEnvio
             pendienteTexto="Creando…"
             mensajeDeCarga="Creando el circuito…"
-            className="rounded-xl bg-lime-400 px-5 py-2.5 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+            className={claseDeBoton({ variante: "primary", compacto: true })}
           >
             Usar el circuito Hyrox
           </BotonDeEnvio>
@@ -67,9 +69,7 @@ export function CircuitoDeHyrox({ eventId }: { eventId: string }) {
       </div>
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
     </section>
   );

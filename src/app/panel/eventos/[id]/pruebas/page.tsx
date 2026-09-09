@@ -70,9 +70,6 @@ export default async function PruebasPage({
         <p className="mt-2 text-sm text-neutral-500">
           <strong className="text-neutral-300">Publicar</strong> muestra el
           contenido de la prueba —movimientos, pesos y cap— en la ficha pública.
-          Hasta entonces los atletas ven el nombre y &ldquo;se anuncia más
-          adelante&rdquo;, que es lo que deja cargar los WODs con anticipación
-          para configurar al juez sin revelarlos antes de tiempo.
         </p>
       </div>
 

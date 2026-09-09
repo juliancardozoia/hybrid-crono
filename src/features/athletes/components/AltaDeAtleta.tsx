@@ -5,11 +5,10 @@ import { crearRegistroManual, type FormState } from "../actions";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import { Selector } from "@/shared/components/Selector";
+import { CampoBase, Field, Select } from "@/shared/components/SimpleForm";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import { PAISES } from "@/shared/utils/paises";
 
-const campo =
-  "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400";
-const selector = "w-full py-2.5 text-sm";
 const subtitulo =
   "text-xs font-medium tracking-wide text-neutral-500 uppercase";
 
@@ -94,20 +93,19 @@ export function AltaDeAtleta({
           key={abierto ? "abierto" : "cerrado"}
           id="nuevo-registro"
           action={formAction}
-          className="flex flex-col gap-6 text-left"
+          className="flex flex-col gap-4 text-left"
         >
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="teamSize" value={teamSize} />
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Categoría</span>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CampoBase label="Categoría">
               <Selector
                 name="divisionId"
                 required
                 value={divisionId}
                 onChange={(e) => setDivisionId(e.target.value)}
-                className={selector}
+                className="w-full py-3"
               >
                 <option value="" disabled>
                   Elige una categoría…
@@ -118,19 +116,14 @@ export function AltaDeAtleta({
                   </option>
                 ))}
               </Selector>
-            </label>
+            </CampoBase>
 
             {teamSize > 1 && (
-              <label className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">
-                  Nombre del equipo (opcional)
-                </span>
-                <input name="teamName" className={campo} />
-              </label>
+              <Field label="Nombre del equipo (opcional)" name="teamName" />
             )}
           </div>
 
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4">
             {/* La key es SOLO el indice, no `${divisionId}-${i}`. Con el
                 divisionId adentro, cambiar de categoria a medio llenar el
                 formulario remontaba TODOS los bloques y borraba lo ya
@@ -147,18 +140,20 @@ export function AltaDeAtleta({
             ))}
           </div>
 
-          <label className="flex flex-col gap-1.5 border-t border-neutral-800 pt-5">
-            <span className="text-sm font-medium">Estado de registro</span>
-            <Selector name="estado" defaultValue="aprobado" className={selector}>
-              <option value="aprobado">Aprobado</option>
-              <option value="pendiente">Pendiente</option>
-            </Selector>
-          </label>
+          <div className="border-t border-neutral-800 pt-4">
+            <Select
+              label="Estado de registro"
+              name="estado"
+              defaultValue="aprobado"
+              options={[
+                { value: "aprobado", label: "Aprobado" },
+                { value: "pendiente", label: "Pendiente" },
+              ]}
+            />
+          </div>
 
           {state.error && (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-              {state.error}
-            </p>
+            <MensajeDeError>{state.error}</MensajeDeError>
           )}
         </form>
 
@@ -197,50 +192,32 @@ function BloqueDeIntegrante({
       )}
 
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <p className={subtitulo}>Campos requeridos</p>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Nombre</span>
-              <input name={`firstName_${indice}`} required className={campo} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Apellido</span>
-              <input name={`lastName_${indice}`} required className={campo} />
-            </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Nombre" name={`firstName_${indice}`} required />
+            <Field label="Apellido" name={`lastName_${indice}`} required />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Email</span>
-              <input
-                name={`email_${indice}`}
-                type="email"
-                required
-                className={campo}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Fecha de nacimiento</span>
-              <input
-                name={`birthDate_${indice}`}
-                type="date"
-                required
-                className={campo}
-              />
-            </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Email" name={`email_${indice}`} type="email" required />
+            <Field
+              label="Fecha de nacimiento"
+              name={`birthDate_${indice}`}
+              type="date"
+              required
+            />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">País</span>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <CampoBase label="País">
               <Selector
                 name={`country_${indice}`}
                 required
                 defaultValue=""
                 onChange={(e) => setPais(e.target.value)}
-                className={selector}
+                className="w-full py-3"
               >
                 <option value="" disabled>
                   Elige un país…
@@ -251,69 +228,49 @@ function BloqueDeIntegrante({
                   </option>
                 ))}
               </Selector>
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Documento (DNI)</span>
-              <input name={`documentId_${indice}`} required className={campo} />
-            </label>
+            </CampoBase>
+            <Field label="Documento (DNI)" name={`documentId_${indice}`} required />
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <p className={subtitulo}>Campos opcionales</p>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{etiquetaSubdivision}</span>
-              <input name={`stateProvince_${indice}`} className={campo} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Sexo</span>
-              <Selector
-                name={`gender_${indice}`}
-                defaultValue=""
-                className={selector}
-              >
-                <option value="">Sin especificar</option>
-                <option value="male">Masculino</option>
-                <option value="female">Femenino</option>
-                <option value="other">Otro</option>
-              </Selector>
-            </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={etiquetaSubdivision} name={`stateProvince_${indice}`} />
+            <Select
+              label="Sexo"
+              name={`gender_${indice}`}
+              defaultValue=""
+              options={[
+                { value: "", label: "Sin especificar" },
+                { value: "male", label: "Masculino" },
+                { value: "female", label: "Femenino" },
+                { value: "other", label: "Otro" },
+              ]}
+            />
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Box</span>
-              <input name={`box_${indice}`} className={campo} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Teléfono</span>
-              <input
-                name={`phone_${indice}`}
-                type="tel"
-                placeholder="+57 300 1234567"
-                className={campo}
-              />
-            </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Box" name={`box_${indice}`} />
+            <Field
+              label="Teléfono"
+              name={`phone_${indice}`}
+              type="tel"
+              placeholder="+57 300 1234567"
+            />
           </div>
 
           {tallas.length > 0 && (
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Talla de ropa</span>
-              <Selector
-                name={`shirtSize_${indice}`}
-                defaultValue=""
-                className={selector}
-              >
-                <option value="">Sin elegir</option>
-                {tallas.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Selector>
-            </label>
+            <Select
+              label="Talla de ropa"
+              name={`shirtSize_${indice}`}
+              defaultValue=""
+              options={[
+                { value: "", label: "Sin elegir" },
+                ...tallas.map((t) => ({ value: t, label: t })),
+              ]}
+            />
           )}
         </div>
       </div>

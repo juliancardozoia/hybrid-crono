@@ -18,12 +18,21 @@ function refrescar(eventId: string) {
 }
 
 /**
- * Guarda TODA la categoria: datos basicos, cupo y puntuacion, en un solo
- * envio. Antes eran DOS formularios con DOS botones "Guardar" adentro del
- * mismo modal —uno para nombre/integrantes/sexo/edad/circuito
- * (`updateDivision`), otro para cupo y puntuacion (`guardarCupoYPuntuacion`)—
- * y esta funcion los reemplaza a los dos: un modal tiene un solo Guardar,
- * nunca mas de uno.
+ * Guarda TODA la categoria: datos basicos, cupo, puntuacion Y los pesos de
+ * sus movimientos, en un solo envio. Antes eran DOS formularios con DOS
+ * botones "Guardar" adentro del mismo modal —uno para nombre/integrantes/
+ * sexo/edad/circuito (`updateDivision`), otro para cupo y puntuacion
+ * (`guardarCupoYPuntuacion`)— y esta funcion los reemplaza a los dos: un
+ * modal tiene un solo Guardar, nunca mas de uno.
+ *
+ * LOS PESOS DE LOS MOVIMIENTOS ENTRAN CON EL MISMO ENVIO. Corregir "43" por
+ * "45" tenia su PROPIA accion y su PROPIO boton "Actualizar" por fila —una
+ * pared de guardados sueltos, cada uno con su propio viaje al servidor. Los
+ * campos `carga_<id>` de cada movimiento (y `unidadPeso`, la unidad de TODA
+ * la categoria) viven fuera de la etiqueta `<form>` pero apuntan a ella con
+ * el atributo HTML `form={id}` —el mismo truco que ya usa `BotonesDeModal`
+ * para vivir afuera del `<form>`— asi que el UNICO Guardar del modal los
+ * incluye sin que el organizador note la diferencia.
  *
  * EL CUPO VACIO SIGNIFICA ILIMITADO, y por eso se guarda como NULL y no como
  * cero: cero es un cupo real —una categoria cerrada— y confundirlos dejaria
@@ -44,6 +53,13 @@ export async function guardarCategoria(
   // guardar una categoria individual escribiria `false` sobre el permiso de
   // una de equipo si alguien reusara la accion.
   const esEquipo = formData.get("esEquipo") === "1";
+  // Una sola unidad para toda la categoria, elegida arriba de la lista de
+  // movimientos. Si el evento no es CrossFit el campo no existe y esto cae en
+  // "kg" sin que importe: no hay ningun `carga_*` que convertir con el.
+  const unidadPeso =
+    (String(formData.get("unidadPeso") ?? "kg") as LoadUnit) === "lb"
+      ? "lb"
+      : "kg";
 
   await requireManage(eventId);
 
@@ -117,6 +133,41 @@ export async function guardarCategoria(
   if (errorCupo)
     return { error: errorCupo.message || "No se pudo guardar el cupo." };
 
+  // --- Pesos de los movimientos --------------------------------------------
+  // No hay un `<input name="movimientoId[]">` con la lista: se recorre la
+  // FormData buscando `carga_<id>`, que es exactamente lo que cada fila
+  // manda via `form={divisionId del modal}`. Vacio borra el peso (vuelve a
+  // "sin carga"), nunca "cero kilos" — mismo criterio que el resto del
+  // esquema (ver `division_segment_specs`).
+  const actualizaciones: PromiseLike<{ error: unknown }>[] = [];
+  for (const [campo, valor] of formData.entries()) {
+    if (!campo.startsWith("carga_") || typeof valor !== "string") continue;
+    const movimientoId = campo.slice("carga_".length);
+    const bruto = valor.trim();
+
+    let loadKg: number | null = null;
+    if (bruto) {
+      const n = Number(bruto.replace(",", "."));
+      if (!Number.isFinite(n) || n < 0) {
+        return { error: "El peso no es válido." };
+      }
+      loadKg = aKilos(n, unidadPeso);
+    }
+
+    actualizaciones.push(
+      supabase
+        .from("division_movements")
+        .update({ load_kg: loadKg, load_unit: unidadPeso })
+        .eq("id", movimientoId),
+    );
+  }
+
+  if (actualizaciones.length > 0) {
+    const resultados = await Promise.all(actualizaciones);
+    if (resultados.some((r) => r.error))
+      return { error: "No se pudo guardar el peso de un movimiento." };
+  }
+
   refrescar(eventId);
   return OK;
 }
@@ -185,49 +236,6 @@ export async function agregarMovimientoDeCategoria(
       return { error: "Ese movimiento ya está en la categoría." };
     return { error: error.message || "No se pudo agregar el movimiento." };
   }
-
-  refrescar(eventId);
-  return OK;
-}
-
-/**
- * Corrige el peso, la unidad o el detalle de un movimiento ya cargado.
- *
- * Antes solo se podia agregar y quitar, asi que arreglar "43" por "45" era
- * borrar la fila y volver a elegir el movimiento del catalogo de 148. El
- * MOVIMIENTO en si no se cambia: cambiar Thruster por Snatch no es corregir un
- * dato, es otro estandar — para eso esta quitar y agregar.
- */
-export async function editarMovimientoDeCategoria(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const eventId = String(formData.get("eventId") ?? "");
-  const id = String(formData.get("movimientoId") ?? "");
-  const cargaBruta = String(formData.get("load") ?? "").trim();
-  const unidad =
-    (String(formData.get("loadUnit") ?? "kg") as LoadUnit) === "lb" ? "lb" : "kg";
-  const spec = String(formData.get("spec") ?? "").trim() || null;
-
-  await requireManage(eventId);
-
-  // Vacio BORRA el peso y vuelve a "este movimiento no lleva carga". Guardarlo
-  // como cero diria "cero kilos", que es otra cosa — el mismo criterio que ya
-  // usan los ajustes de segmento por categoria.
-  let loadKg: number | null = null;
-  if (cargaBruta) {
-    const n = Number(cargaBruta.replace(",", "."));
-    if (!Number.isFinite(n) || n < 0) return { error: "El peso no es válido." };
-    loadKg = aKilos(n, unidad);
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("division_movements")
-    .update({ load_kg: loadKg, load_unit: unidad, spec })
-    .eq("id", id);
-
-  if (error) return { error: error.message || "No se pudo guardar el movimiento." };
 
   refrescar(eventId);
   return OK;

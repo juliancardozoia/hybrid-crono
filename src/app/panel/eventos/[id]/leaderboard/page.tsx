@@ -41,9 +41,6 @@ export default async function LeaderboardPage({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Leaderboard</h2>
-          <p className="mt-1 text-sm text-neutral-400">
-            La clasificación, tal como la ve el público.
-          </p>
         </div>
 
         <Link

@@ -10,6 +10,8 @@ import type { EtapaDeCategoria, PuntuacionDeCategoria } from "../config/queries"
 import { puntosDinamicos } from "@/shared/scoring/points";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Modal } from "@/shared/components/Modal";
+import { Badge } from "@/shared/components/Badge";
+import { claseDeBoton } from "@/shared/components/Boton";
 
 /**
  * Como se reparten los puntos, por categoria.
@@ -128,7 +130,7 @@ function TarjetaDeCategoria({
           type="button"
           onClick={() => setVerTabla(true)}
           disabled={tabla.length === 0}
-          className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm transition-colors hover:bg-neutral-900 disabled:opacity-40"
+          className={claseDeBoton({ variante: "secondary", compacto: true })}
         >
           Ver tabla ({tabla.length} puestos)
         </button>
@@ -144,7 +146,7 @@ function TarjetaDeCategoria({
                   "Tabla generada.",
                 )
               }
-              className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm transition-colors hover:bg-neutral-900 disabled:opacity-40"
+              className={claseDeBoton({ variante: "secondary", compacto: true })}
             >
               {categoria.snapshot ? "Regenerar" : "Generar"}
             </button>
@@ -166,7 +168,7 @@ function TarjetaDeCategoria({
                   "Tabla bloqueada.",
                 )
               }
-              className="rounded-xl bg-lime-400 px-4 py-2.5 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-40"
+              className={claseDeBoton({ variante: "primary", compacto: true })}
             >
               Generar y bloquear
             </button>
@@ -210,19 +212,15 @@ function TarjetaDeCategoria({
 
 function Estado({ categoria }: { categoria: PuntuacionDeCategoria }) {
   if (categoria.bloqueada) {
-    return (
-      <span className="rounded-lg bg-lime-400/10 px-2.5 py-1 text-xs font-medium text-lime-300">
-        Bloqueada
-      </span>
-    );
+    return <Badge tono="activo">Bloqueada</Badge>;
   }
   if (categoria.snapshot) {
-    return (
-      <span className="rounded-lg bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-300">
-        Generada, sin bloquear
-      </span>
-    );
+    return <Badge tono="neutral">Generada, sin bloquear</Badge>;
   }
+  // No es un Badge: sin relleno, es el estado "todavia no hay nada que
+  // mostrar" — forzarlo al mismo molde que los otros dos inventaria una
+  // variante de Badge (sin fondo, solo borde) que no se usa en ningun otro
+  // lado de la app.
   return (
     <span className="rounded-lg border border-neutral-800 px-2.5 py-1 text-xs text-neutral-500">
       Se calcula al vuelo
@@ -346,7 +344,7 @@ function BloqueDeEtapa({
                 else exito("Corte confirmado.");
               })
             }
-            className="mt-3 rounded-xl bg-lime-400 px-4 py-2 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-40"
+            className={`mt-3 ${claseDeBoton({ variante: "primary", compacto: true })}`}
           >
             Confirmar corte ({seleccion.size})
           </button>

@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { BotonDeGoogle } from "./BotonDeGoogle";
 import { CampoDeClave } from "./CampoDeClave";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { AuthState } from "../actions";
 import { crearTraductor } from "@/shared/i18n/diccionario";
 import type { Idioma } from "@/shared/i18n/idiomas";
@@ -98,12 +99,7 @@ export function AuthForm({
         </div>
 
         {state.error && (
-          <p
-            role="alert"
-            className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300"
-          >
-            {state.error}
-          </p>
+          <MensajeDeError>{state.error}</MensajeDeError>
         )}
         {state.message && (
           <p

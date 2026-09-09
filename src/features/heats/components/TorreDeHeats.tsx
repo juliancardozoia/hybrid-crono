@@ -6,6 +6,7 @@ import type { EventFormat } from "@/lib/supabase/types";
 import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
 import { Modal } from "@/shared/components/Modal";
 import { RelojDeHeat } from "./RelojDeHeat";
@@ -463,19 +464,15 @@ function ConfirmarDnf({
             se puede deshacer.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmar(false)}
-              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-            >
+            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
-            </button>
+            </Boton>
             <FormularioDeEstado
               accion={marcarDnfAccion.bind(null, eventId, lane.laneId)}
               estadoInicial={{ error: null }}
               etiqueta="Confirmar DNF"
               mensajeDeCarga="Marcando DNF…"
-              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+              className={claseDeBoton({ variante: "destructive", compacto: true })}
             />
           </div>
         </div>
@@ -509,13 +506,18 @@ function DeshacerInicio({
 
   return (
     <>
-      <button
-        type="button"
+      {/* variante secondary normaliza el texto a `text-neutral-100` (antes
+          era `text-neutral-400`, mas apagado) — no se fuerza el color por
+          className, que competiria con el que ya trae la variante. Es la
+          misma normalizacion que ya se acepto en el resto del lote. */}
+      <Boton
+        variante="secondary"
+        compacto
+        className="w-full sm:w-auto"
         onClick={() => setConfirmar(true)}
-        className="w-full rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 sm:w-auto"
       >
         Deshacer Inicio
-      </button>
+      </Boton>
 
       <Modal
         abierto={confirmar}
@@ -529,19 +531,15 @@ function DeshacerInicio({
             a quedar sin iniciar y se puede largar de nuevo cuando corresponda.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmar(false)}
-              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-            >
+            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
-            </button>
+            </Boton>
             <FormularioDeEstado
               accion={deshacer.bind(null, eventId, heat.id)}
               estadoInicial={{ error: null }}
               etiqueta="Deshacer Inicio"
               mensajeDeCarga="Deshaciendo el inicio del heat…"
-              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+              className={claseDeBoton({ variante: "destructive", compacto: true })}
             />
           </div>
         </div>
@@ -581,14 +579,9 @@ function LargarHeat({
     // En celular ocupa el ancho completo y el texto va alineado a la izquierda,
     // como el resto de la tarjeta. Recien en pantalla ancha se va a la derecha.
     <div className="shrink-0 sm:max-w-[17rem] sm:text-right">
-      <button
-        type="button"
-        onClick={() => setConfirmar(true)}
-        disabled={!listo}
-        className="w-full rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:py-2.5"
-      >
+      <Boton className="w-full sm:w-auto" onClick={() => setConfirmar(true)} disabled={!listo}>
         INICIAR HEAT
-      </button>
+      </Boton>
       {!listo && (
         <p className="mt-2 text-xs text-amber-400">
           {heat.conAtletaCount === 0
@@ -610,19 +603,15 @@ function LargarHeat({
             un tiempo.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmar(false)}
-              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-            >
+            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
-            </button>
+            </Boton>
             <FormularioDeEstado
               accion={largar.bind(null, eventId, heat.id)}
               estadoInicial={{ error: null }}
               etiqueta="Confirmar largada"
               mensajeDeCarga="Largando el heat…"
-              className="rounded-xl bg-lime-400 px-4 py-2 text-sm font-bold text-lime-950 hover:bg-lime-300"
+              className={claseDeBoton({ variante: "primary", compacto: true })}
             />
           </div>
         </div>

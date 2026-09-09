@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Boton } from "./Boton";
 import { useCargaMientras } from "./Carga";
 
 /**
@@ -126,21 +127,20 @@ export function BotonesDeModal({
 
   return (
     <div className="mt-6 flex justify-end gap-2 border-t border-neutral-800 pt-5">
-      <button
-        type="button"
-        onClick={cancelar}
-        className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm hover:bg-neutral-900"
-      >
+      <Boton variante="secondary" compacto onClick={cancelar}>
         Cancelar
-      </button>
-      <button
+      </Boton>
+      <Boton
+        variante="primary"
+        compacto
         type="submit"
         form={guardarId}
         disabled={guardando}
-        className="rounded-xl bg-lime-400 px-5 py-2.5 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+        cargando={guardando}
+        textoCargando="Guardando…"
       >
-        {guardando ? "Guardando…" : etiqueta}
-      </button>
+        {etiqueta}
+      </Boton>
     </div>
   );
 }

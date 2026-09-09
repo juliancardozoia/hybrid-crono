@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { ClaimState } from "../actions";
 
 const inicial: ClaimState = { error: null };
@@ -33,9 +34,9 @@ export function ClaimButton({
       <input type="hidden" name="laneId" value={laneId} />
       <Boton />
       {state.error && (
-        <p className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">
+        <MensajeDeError compacto className="mt-2">
           {state.error}
-        </p>
+        </MensajeDeError>
       )}
     </form>
   );

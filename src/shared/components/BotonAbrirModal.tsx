@@ -1,5 +1,7 @@
 "use client";
 
+import { Boton } from "./Boton";
+
 /**
  * El botón que abre un modal de alta: "Crear categoría", "Crear circuito",
  * "Crear atleta", "Crear heat", "Crear penalización".
@@ -9,6 +11,9 @@
  * que se navegan una detrás de la otra (Divisiones, Circuito, Atletas, Heats,
  * Penalizaciones) un botón que cambia de tamaño y de color según en cuál
  * estés es lo que rompe la sensación de que es la misma aplicación.
+ *
+ * Por dentro es `Boton variante="primary"` — la API de este componente no
+ * cambia, solo de donde salen las clases.
  */
 export function BotonAbrirModal({
   onClick,
@@ -22,14 +27,8 @@ export function BotonAbrirModal({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="w-fit rounded-xl bg-lime-400 px-5 py-3 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:cursor-not-allowed disabled:opacity-40"
-    >
+    <Boton onClick={onClick} disabled={disabled} title={title} className="w-fit">
       {children}
-    </button>
+    </Boton>
   );
 }

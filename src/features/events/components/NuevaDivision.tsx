@@ -9,6 +9,7 @@ import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
 import { Interruptor } from "@/shared/components/Interruptor";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { CourseTemplate, EventFormat } from "@/lib/supabase/types";
 
 const inicial: FormState = { error: null };
@@ -111,28 +112,22 @@ export function NuevaDivision({
             <Field label="Edad máxima (opcional)" name="ageMax" type="number" />
           </FieldRow>
 
-          <FieldRow>
-            {/* Se pregunta AL CREAR y no solo al editar: es lo primero que decide
-                un organizador sobre una categoría, y dejarlo para después obliga
-                a volver a abrirla una por una. */}
-            <Field
-              label="Límite de registros"
-              name="capacity"
-              type="number"
-              placeholder="Sin límite"
-              ayuda="Vacío = ilimitado."
-            />
+          {/* Se pregunta AL CREAR y no solo al editar: es lo primero que decide
+              un organizador sobre una categoría, y dejarlo para después obliga
+              a volver a abrirla una por una.
 
-            {/* Un solo sistema, y se adapta solo al tamaño de la categoría:
-                no hay nada que elegir. Se muestra igual porque el organizador
-                necesita saber con qué se reparten los puntos. */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">Puntuación</span>
-              <p className="rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 text-sm text-neutral-400">
-                {esCrossfit ? "Games 2026 Dynamic" : "Por tiempo, menor gana"}
-              </p>
-            </div>
-          </FieldRow>
+              SIN "Puntuación" aca: es un dato de solo lectura (hay un unico
+              sistema, no se elige nada), y mostrarlo en el alta — antes de que
+              la categoria exista — no aporta nada que el organizador tenga que
+              decidir. Se sigue viendo en "Editar categoría", donde el modal
+              tiene mas contexto (cupo ya cargado, movimientos si aplica). */}
+          <Field
+            label="Límite de registros"
+            name="capacity"
+            type="number"
+            placeholder="Sin límite"
+            ayuda="Vacío = ilimitado."
+          />
 
           {pideCircuito && (
             <Select
@@ -148,16 +143,16 @@ export function NuevaDivision({
           {/* Siempre al final del formulario, y habilitado por defecto: es la
               categoria recien creada, todavia sin equipos, asi que no hay
               ningun riesgo en dejarlo prendido desde el arranque. */}
-          <Interruptor
-            name="permiteCambioCategoria"
-            titulo="Habilitar cambio de categoría"
-            defaultActivo
-          />
+          <div className="border-t border-neutral-800 pt-4">
+            <Interruptor
+              name="permiteCambioCategoria"
+              titulo="Habilitar cambio de categoría"
+              defaultActivo
+            />
+          </div>
 
           {state.error && (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-              {state.error}
-            </p>
+            <MensajeDeError>{state.error}</MensajeDeError>
           )}
         </form>
 

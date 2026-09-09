@@ -2,7 +2,9 @@
 
 import { useActionState, useState } from "react";
 import { empezarInscripcion, type FormState } from "../actions";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { CategoriaParaInscribirse } from "../queries";
 
 /**
@@ -117,9 +119,7 @@ export function ElegirCategoria({
       )}
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
 
       <div>
@@ -127,7 +127,7 @@ export function ElegirCategoria({
           pendienteTexto="Creando…"
           mensajeDeCarga="Empezando la inscripción…"
           disabled={!elegida}
-          className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary" })}
         >
           Continuar
         </BotonDeEnvio>

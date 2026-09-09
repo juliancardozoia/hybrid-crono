@@ -3,7 +3,9 @@
 import { useState, useTransition } from "react";
 import { guardarScore } from "../actions";
 import { formatElapsed } from "@/shared/timing/clock";
+import { Boton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { ScoreStatusDb, ScoreUnitDb } from "@/lib/supabase/types";
 
 /**
@@ -212,20 +214,19 @@ function Fila({
           <span />
         )}
 
-        <button
-          type="button"
+        <Boton
+          variante="secondary"
+          compacto
           onClick={guardar}
-          disabled={pendiente}
-          className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
+          cargando={pendiente}
+          textoCargando="…"
         >
-          {pendiente ? "…" : guardado ? "✓" : "Guardar"}
-        </button>
+          {guardado ? "✓" : "Guardar"}
+        </Boton>
       </div>
 
       {error && (
-        <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1 text-sm text-red-300">
-          {error}
-        </p>
+        <MensajeDeError compacto>{error}</MensajeDeError>
       )}
     </li>
   );

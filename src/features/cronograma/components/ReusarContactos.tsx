@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { reusarColaboradores, type FormState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { ContactoDeLaOrganizacion } from "@/features/events/config/queries";
 
 const inicial: FormState = { error: null };
@@ -123,12 +124,7 @@ export function ReusarContactos({
         </ul>
 
         {state.error && (
-          <p
-            role="alert"
-            className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300"
-          >
-            {state.error}
-          </p>
+          <MensajeDeError>{state.error}</MensajeDeError>
         )}
 
         <BotonDeEnvio

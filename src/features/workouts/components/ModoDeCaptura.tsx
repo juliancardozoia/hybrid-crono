@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { cambiarModoDeCapturaEvento } from "../actions";
 import { useCargaMientras } from "@/shared/components/Carga";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { CaptureMode } from "@/lib/supabase/types";
 
 /**
@@ -103,9 +104,7 @@ export function ModoDeCaptura({
       </div>
 
       {error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {error}
-        </p>
+        <MensajeDeError>{error}</MensajeDeError>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import {
   invitarIntegrante,
   type FormState,
 } from "../actions";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { CampoDelFormulario } from "../queries";
 import type {
   RegistrationMemberRow,
@@ -15,6 +16,7 @@ import type {
 } from "@/lib/supabase/types";
 import { BloqueDePago } from "@/features/pagos/components/BloqueDePago";
 import type { PagoDeInscripcion } from "@/features/pagos/queries";
+import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -187,9 +189,10 @@ export function PanelDeInscripcion({
 
       {soyCapitan && !cerrada && (
         <div className="flex flex-wrap items-center gap-3 border-t border-neutral-800 pt-6">
-          <button
-            type="button"
-            disabled={pendiente || !equipoCompleto}
+          <Boton
+            disabled={!equipoCompleto}
+            cargando={pendiente}
+            textoCargando="Enviando…"
             onClick={() =>
               startTransition(async () => {
                 activar("Enviando la inscripción…");
@@ -202,10 +205,9 @@ export function PanelDeInscripcion({
                 }
               })
             }
-            className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 hover:bg-lime-300 disabled:opacity-60"
           >
-            {pendiente ? "Enviando…" : "Enviar inscripción"}
-          </button>
+            Enviar inscripción
+          </Boton>
 
           {!equipoCompleto && (
             <span className="text-sm text-neutral-500">
@@ -278,16 +280,14 @@ function InvitarIntegrante({
         <BotonDeEnvio
           pendienteTexto="Guardando…"
           mensajeDeCarga="Invitando al integrante…"
-          className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary" })}
         >
           Invitar
         </BotonDeEnvio>
       </div>
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError compacto>{state.error}</MensajeDeError>
       )}
     </form>
   );
@@ -464,16 +464,14 @@ function MisDatos({
       </label>
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
 
       <div>
         <BotonDeEnvio
           pendienteTexto="Guardando…"
           mensajeDeCarga="Guardando tus datos…"
-          className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary" })}
         >
           Guardar mis datos
         </BotonDeEnvio>

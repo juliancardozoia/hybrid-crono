@@ -2,8 +2,10 @@
 
 import { useActionState } from "react";
 import { programarHeat, type FormState } from "../actions";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 /**
  * Arena y horario de un heat.
@@ -91,16 +93,16 @@ export function ProgramarHeat({
         <BotonDeEnvio
           pendienteTexto="…"
           mensajeDeCarga="Guardando el horario…"
-          className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
+          className={claseDeBoton({ variante: "secondary", compacto: true })}
         >
           Guardar
         </BotonDeEnvio>
       </div>
 
       {state.error && (
-        <p className="mt-2 rounded-xl border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">
+        <MensajeDeError compacto className="mt-2">
           {state.error}
-        </p>
+        </MensajeDeError>
       )}
     </form>
   );

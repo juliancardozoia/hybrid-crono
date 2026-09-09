@@ -5,6 +5,7 @@ import { guardarMonedaDelEvento, type FormState } from "../actions";
 import { MONEDAS } from "../lib/monedas";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 /**
  * La moneda de la competencia.
@@ -65,9 +66,7 @@ export function MonedaDelEvento({
       </p>
 
       {state.error && (
-        <p className="w-full rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError className="w-full">{state.error}</MensajeDeError>
       )}
     </form>
   );

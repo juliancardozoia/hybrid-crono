@@ -28,7 +28,6 @@ import type { CategoriaConfigurada } from "@/features/events/config/queries";
 vi.mock("@/features/events/config/categorias", () => ({
   guardarCategoria: vi.fn(async () => ({ error: null })),
   agregarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
-  editarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
   moverMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
   quitarMovimientoDeCategoria: vi.fn(async () => ({ error: null })),
 }));
@@ -150,7 +149,7 @@ describe("parámetros de categoría", () => {
     pintar("crossfit");
     abrir();
 
-    expect(screen.getByText("Movimientos y pesos")).toBeTruthy();
+    expect(screen.getByText("Parámetros")).toBeTruthy();
     // Hay UN sistema y se adapta solo: se informa, no se elige.
     expect(screen.getByText("Games 2026 Dynamic")).toBeTruthy();
     expect(screen.queryByLabelText(/Sistema de puntuación/)).toBeNull();
@@ -167,7 +166,7 @@ describe("parámetros de categoría", () => {
     // Una carrera se gana llegando antes: no hay nada que elegir.
     expect(screen.getByText(/Por tiempo, menor gana/)).toBeTruthy();
     expect(screen.queryByText("Games 2026 Dynamic")).toBeNull();
-    expect(screen.queryByText("Movimientos y pesos")).toBeNull();
+    expect(screen.queryByText("Parámetros")).toBeNull();
     expect(screen.queryByText("Parámetros del circuito")).toBeNull();
     expect(screen.queryByText("1km Run")).toBeNull();
   });
@@ -211,23 +210,23 @@ describe("parámetros de categoría", () => {
     elegirDelCatalogo("mov-2");
 
     expect(screen.queryByPlaceholderText("Peso")).toBeNull();
-    expect(screen.getByText("Sin peso")).toBeTruthy();
   });
 
-  it("un movimiento ya cargado se corrige en el lugar, sin borrarlo", () => {
+  it("un movimiento ya cargado se corrige en el lugar, sin borrarlo ni un guardado propio", () => {
     // Antes era un chip con una ✕: cambiar 43 por 45 obligaba a borrar la fila
-    // y volver a buscar el movimiento entre los 148 del catálogo.
+    // y volver a buscar el movimiento entre los 148 del catálogo. Y despues
+    // tuvo su propio botón "Actualizar" con su propio viaje al servidor — eso
+    // también se sacó: el peso se guarda con el Guardar general del modal.
     pintar("crossfit", CON_THRUSTER);
     abrir();
 
     const peso = screen.getByDisplayValue("95") as HTMLInputElement;
     expect(peso).toBeTruthy();
-
-    // Nada que guardar hasta que algo cambie: tres campos por movimiento con
-    // un botón siempre encendido al lado son una pared de botones iguales.
     expect(screen.queryByRole("button", { name: "Actualizar" })).toBeNull();
+
     fireEvent.change(peso, { target: { value: "100" } });
-    expect(screen.getByRole("button", { name: "Actualizar" })).toBeTruthy();
+    expect(peso.value).toBe("100");
+    expect(screen.queryByRole("button", { name: "Actualizar" })).toBeNull();
   });
 
   it("un peso cargado en libras se edita en libras, no en kilos", () => {
@@ -252,11 +251,10 @@ describe("un solo Guardar y un solo Cancelar por modal", () => {
     expect(screen.getAllByRole("button", { name: "Cancelar" })).toHaveLength(1);
   });
 
-  it("sigue siendo uno solo con movimientos ya cargados", () => {
-    // Cada movimiento tiene su propia acción para corregirlo en el lugar, y
-    // por eso se llama "Actualizar": si se llamara "Guardar", una categoría
-    // con cinco movimientos tendría seis botones con el mismo nombre y
-    // ninguno diría qué confirma.
+  it("sigue siendo uno solo incluso al tocar el peso de un movimiento", () => {
+    // El peso de cada movimiento ya no tiene su propio botón: entra con el
+    // mismo Guardar general, así que tocarlo no puede hacer aparecer un
+    // segundo botón en el modal.
     pintar("crossfit", CON_THRUSTER);
     abrir();
     fireEvent.change(screen.getByDisplayValue("95"), {
@@ -264,7 +262,7 @@ describe("un solo Guardar y un solo Cancelar por modal", () => {
     });
 
     expect(screen.getAllByRole("button", { name: "Guardar" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Actualizar" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Actualizar" })).toBeNull();
   });
 });
 

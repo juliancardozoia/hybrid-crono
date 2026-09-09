@@ -2,10 +2,12 @@
 
 import { useActionState, useTransition } from "react";
 import { borrarCodigo, crearCodigo, type FormState } from "../actions";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { DiscountCodeRow } from "@/lib/supabase/types";
 
 /**
@@ -152,16 +154,16 @@ export function CodigosDeDescuento({
           <BotonDeEnvio
             pendienteTexto="…"
             mensajeDeCarga="Creando el código…"
-            className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
+            className={claseDeBoton({ variante: "secondary", compacto: true })}
           >
             Crear código
           </BotonDeEnvio>
         </div>
 
         {state.error && (
-          <p className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-300">
+          <MensajeDeError compacto className="mt-3">
             {state.error}
-          </p>
+          </MensajeDeError>
         )}
       </form>
     </section>

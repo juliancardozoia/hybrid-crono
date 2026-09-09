@@ -34,13 +34,21 @@ import { Icono } from "./Icono";
 export function Selector({
   className = "",
   disabled,
+  error,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement> & {
+  /** El borde pasa a rojo. Prop propio en vez de pisar el color por
+   *  `className`: dos clases de `border-color` en el mismo string dependen
+   *  del orden en que Tailwind las genero, no del orden en que se escriben —
+   *  frágil para algo que necesita ganar siempre. */
+  error?: boolean;
+}) {
   return (
     <div className={`relative ${className}`}>
       <select
         disabled={disabled}
-        className={`w-full appearance-none rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 pr-9 text-sm outline-none transition-colors focus:border-lime-400 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        aria-invalid={error}
+        className={`w-full appearance-none rounded-xl border bg-neutral-900 px-3 py-2.5 pr-9 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-not-allowed disabled:opacity-50 ${error ? "border-red-500/60" : "border-neutral-700"} ${className}`}
         {...props}
       />
       <Icono

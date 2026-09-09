@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { recalcularGeneral } from "../actions";
+import { Boton } from "@/shared/components/Boton";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 
@@ -23,9 +24,11 @@ export function RecalcularGeneral({ eventId }: { eventId: string }) {
   const { exito, error: avisarError } = useNotificaciones();
 
   return (
-    <button
-      type="button"
-      disabled={pendiente}
+    <Boton
+      variante="secondary"
+      compacto
+      cargando={pendiente}
+      textoCargando="Recalculando…"
       onClick={() =>
         startTransition(async () => {
           activar("Recalculando la tabla general…");
@@ -38,9 +41,8 @@ export function RecalcularGeneral({ eventId }: { eventId: string }) {
           }
         })
       }
-      className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
     >
-      {pendiente ? "Recalculando…" : "Recalcular tabla general"}
-    </button>
+      Recalcular tabla general
+    </Boton>
   );
 }

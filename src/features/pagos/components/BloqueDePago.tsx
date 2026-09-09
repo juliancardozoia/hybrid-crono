@@ -3,7 +3,9 @@
 import { useState, useTransition } from "react";
 import { armarOrden } from "../actions";
 import { ADAPTADORES, montoLegible } from "../adapters";
+import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { MedioDePago } from "../queries";
 import type { OrderRow, PaymentProvider } from "@/lib/supabase/types";
 
@@ -44,18 +46,16 @@ export function BloqueDePago({
         <h2 className="text-sm font-semibold text-neutral-400 uppercase">
           Pago
         </h2>
-        <button
-          type="button"
-          disabled={pendiente}
+        <Boton
+          className="self-start"
           onClick={() => aplicar("")}
-          className="self-start rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 hover:bg-lime-300 disabled:opacity-60"
+          cargando={pendiente}
+          textoCargando="Preparando…"
         >
-          {pendiente ? "Preparando…" : "Ver cómo pagar"}
-        </button>
+          Ver cómo pagar
+        </Boton>
         {error && (
-          <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-            {error}
-          </p>
+          <MensajeDeError>{error}</MensajeDeError>
         )}
       </section>
     );
@@ -109,9 +109,7 @@ export function BloqueDePago({
           </div>
 
           {error && (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-              {error}
-            </p>
+            <MensajeDeError>{error}</MensajeDeError>
           )}
 
           {medios.length === 0 ? (

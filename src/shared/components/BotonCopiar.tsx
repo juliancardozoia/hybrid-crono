@@ -28,7 +28,7 @@ export function BotonCopiar({ valor, titulo }: { valor: string; titulo: string }
           // Sin permiso de portapapeles: no hay mucho mas que ofrecer aca.
         }
       }}
-      className={`rounded-lg p-1.5 transition-colors ${
+      className={`inline-flex items-center justify-center rounded-lg p-1.5 transition-colors ${
         copiado
           ? "text-lime-400"
           : "text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200"

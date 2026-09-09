@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { ImagenDelEvento } from "./ImagenDelEvento";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
 import { PAISES, husoSugerido } from "@/shared/utils/paises";
@@ -9,6 +10,7 @@ import { paraInputLocal } from "@/shared/utils/fecha";
 import type { EventRow } from "@/lib/supabase/types";
 import type { FormState } from "../actions";
 import { TALLAS } from "../lib/tallas";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 /**
  * La ficha de la competencia.
@@ -393,16 +395,14 @@ export function FichaDelEvento({
       </Seccion>
 
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
 
       <div>
         <BotonDeEnvio
           pendienteTexto="Guardando…"
           mensajeDeCarga="Guardando la competencia…"
-          className="rounded-xl bg-lime-400 px-5 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary" })}
         >
           {submitLabel}
         </BotonDeEnvio>

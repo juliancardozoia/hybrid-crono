@@ -18,6 +18,7 @@ import { useOnlineStatus } from "../lib/useOnlineStatus";
 import { useWakeLock } from "../lib/useWakeLock";
 import { LiveClock } from "./LiveClock";
 import { CuentaRegresiva } from "./CuentaRegresiva";
+import { Boton } from "@/shared/components/Boton";
 import { AvisoDeDrift, BarraDeEstadoJuez, RanuraDeDeshacer } from "./EstadoDeJuez";
 
 /**
@@ -549,17 +550,18 @@ function EsperandoLargada({
       </div>
 
       {online && (
-        <button
-          type="button"
+        <Boton
+          variante="secondary"
+          cargando={buscando}
+          textoCargando="Consultando…"
           onClick={async () => {
             setBuscando(true);
             await onCheck();
             setBuscando(false);
           }}
-          className="rounded-xl border border-neutral-700 px-5 py-3 text-sm"
         >
-          {buscando ? "Consultando…" : "Verificar ahora"}
-        </button>
+          Verificar ahora
+        </Boton>
       )}
 
       {ofrecerLocal && (

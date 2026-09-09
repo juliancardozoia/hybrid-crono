@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { FormState } from "../actions";
 
 /**
@@ -43,9 +44,7 @@ export function BotonDePlan({
         {etiqueta}
       </BotonDeEnvio>
       {state.error && (
-        <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError>{state.error}</MensajeDeError>
       )}
     </form>
   );

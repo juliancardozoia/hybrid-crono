@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
@@ -332,11 +333,15 @@ function QuitarEquipo({
 
   return (
     <>
+      {/* No es `Boton`: ninguna variante existente combina "neutral en reposo,
+          rojo solo al hover" — inventar una variante para un solo caso
+          concreto es la excepcion que el primitive deberia evitar, no
+          generar. El tamaño (44px) ya sigue el minimo tactil formalizado. */}
       <button
         type="button"
         onClick={() => setConfirmar(true)}
         title="Quitar equipo"
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
       >
         ✕
       </button>
@@ -353,19 +358,15 @@ function QuitarEquipo({
             su dorsal y su lugar en cualquier heat. Esta acción no se puede deshacer.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmar(false)}
-              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-            >
+            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
-            </button>
+            </Boton>
             <FormularioDeEstado
               accion={alQuitar.bind(null, equipo.id)}
               estadoInicial={{ error: null }}
               etiqueta="Quitar equipo"
               mensajeDeCarga="Quitando el equipo…"
-              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+              className={claseDeBoton({ variante: "destructive", compacto: true })}
             />
           </div>
         </div>

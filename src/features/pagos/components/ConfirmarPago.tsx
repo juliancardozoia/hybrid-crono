@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { confirmarPagoManual } from "../actions";
 import { confirmarInscripcion } from "@/features/inscripciones/actions";
+import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
 
 /**
@@ -41,9 +42,11 @@ export function ConfirmarPago({
             className="rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
           />
         )}
-        <button
-          type="button"
-          disabled={pendiente}
+        <Boton
+          variante="secondary"
+          compacto
+          cargando={pendiente}
+          textoCargando="Confirmando…"
           onClick={() =>
             startTransition(async () => {
               const r = orderId
@@ -52,10 +55,9 @@ export function ConfirmarPago({
               setError(r.error);
             })
           }
-          className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
         >
-          {pendiente ? "Confirmando…" : "Marcar como pagada"}
-        </button>
+          Marcar como pagada
+        </Boton>
         <span className="text-xs text-neutral-600">
           Le asigna dorsal y la suma al padrón.
         </span>

@@ -5,6 +5,7 @@ import { actualizarEquipo, type FormState } from "../actions";
 import { useCargaMientras } from "@/shared/components/Carga";
 import { useCerrarAlGuardar } from "@/shared/components/Modal";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { TeamWithMembers } from "@/features/events/config/queries";
 
 const selector = "w-full py-2.5 text-sm";
@@ -131,9 +132,7 @@ export function DetalleDeAtleta({
         </div>
 
         {state.error && (
-          <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-            {state.error}
-          </p>
+          <MensajeDeError>{state.error}</MensajeDeError>
         )}
       </form>
 

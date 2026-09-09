@@ -11,6 +11,7 @@ import {
 import { estaPendienteDeVerificar } from "../lib/estado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { QueueRow } from "../queries";
 
 const inicial: FormState = { error: null, mensaje: null };
@@ -42,9 +43,7 @@ function Boton({
 function Aviso({ state }: { state: FormState }) {
   if (state.error) {
     return (
-      <p className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-        {state.error}
-      </p>
+      <MensajeDeError className="mt-3">{state.error}</MensajeDeError>
     );
   }
   if (state.mensaje) {

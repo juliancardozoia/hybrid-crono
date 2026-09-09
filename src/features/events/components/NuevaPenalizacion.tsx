@@ -5,6 +5,7 @@ import { createPenaltyType, type FormState } from "../config/actions";
 import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 
 const inicial: FormState = { error: null };
 
@@ -58,9 +59,7 @@ export function NuevaPenalizacion({ eventId }: { eventId: string }) {
           </FieldRow>
 
           {state.error && (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-              {state.error}
-            </p>
+            <MensajeDeError>{state.error}</MensajeDeError>
           )}
         </form>
 

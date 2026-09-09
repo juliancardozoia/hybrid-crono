@@ -5,6 +5,7 @@ import { assignLanes, setLaneJudge, type FormState } from "../actions";
 import { fechaHoraEnEvento } from "@/shared/utils/fecha";
 import { useCargaMientras } from "@/shared/components/Carga";
 import { Selector } from "@/shared/components/Selector";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type {
   HeatWithLanes,
   JudgeOption,
@@ -202,9 +203,7 @@ export function HeatCard({
             </div>
 
             {lanesState.error && (
-              <p className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-                {lanesState.error}
-              </p>
+              <MensajeDeError>{lanesState.error}</MensajeDeError>
             )}
 
             <div>
@@ -278,9 +277,7 @@ export function HeatCard({
           </ul>
 
           {judgeState.error && (
-            <p className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-              {judgeState.error}
-            </p>
+            <MensajeDeError className="mt-3">{judgeState.error}</MensajeDeError>
           )}
 
           <p className="mt-3 text-xs text-neutral-600">

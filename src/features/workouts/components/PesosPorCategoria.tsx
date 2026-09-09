@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { guardarSpecs } from "../actions";
 import type { CeldaDeSpec } from "../lib/pesos";
+import { Boton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { desdeKilos } from "@/shared/unidades/carga";
@@ -281,14 +282,9 @@ export function PesosPorCategoria({
         </table>
       </div>
 
-      <button
-        type="button"
-        onClick={guardar}
-        disabled={pendiente}
-        className="w-fit rounded-xl bg-lime-400 px-5 py-2.5 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300 disabled:opacity-60"
-      >
-        {pendiente ? "Guardando…" : "Guardar pesos"}
-      </button>
+      <Boton compacto onClick={guardar} cargando={pendiente} textoCargando="Guardando…">
+        Guardar pesos
+      </Boton>
     </section>
   );
 }

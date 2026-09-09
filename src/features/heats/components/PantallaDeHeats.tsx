@@ -5,6 +5,7 @@ import { HeatCard, type TeamOption } from "./HeatCard";
 import { NuevoHeat } from "./NuevoHeat";
 import { DistribuirHeats } from "./DistribuirHeats";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { Modal } from "@/shared/components/Modal";
 import { Selector } from "@/shared/components/Selector";
 import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
@@ -257,7 +258,7 @@ function QuitarHeat({
         type="button"
         onClick={() => setConfirmar(true)}
         title="Quitar heat"
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-sm text-neutral-700 hover:bg-neutral-900 hover:text-red-400"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-sm text-neutral-700 hover:bg-neutral-900 hover:text-red-400"
       >
         ✕
       </button>
@@ -274,19 +275,15 @@ function QuitarHeat({
             equipos y jueces ya asignados a sus carriles. Esta acción no se puede deshacer.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirmar(false)}
-              className="rounded-xl border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-            >
+            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
-            </button>
+            </Boton>
             <FormularioDeEstado
               accion={quitarHeat.bind(null, eventId, heat.id)}
               estadoInicial={{ error: null }}
               etiqueta="Quitar heat"
               mensajeDeCarga="Quitando el heat…"
-              className="rounded-xl bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20"
+              className={claseDeBoton({ variante: "destructive", compacto: true })}
             />
           </div>
         </div>

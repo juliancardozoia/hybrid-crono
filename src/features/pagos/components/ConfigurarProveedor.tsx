@@ -3,7 +3,10 @@
 import { useActionState } from "react";
 import { guardarProveedor, type FormState } from "../actions";
 import { ADAPTADORES } from "../adapters";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { MensajeDeError } from "@/shared/components/MensajeDeError";
+import { Field } from "@/shared/components/SimpleForm";
 import type { PaymentProvider } from "@/lib/supabase/types";
 
 /**
@@ -20,9 +23,6 @@ import type { PaymentProvider } from "@/lib/supabase/types";
  * puede pasar valores serializables. Es el mismo patron que ya usaba
  * `BloqueDePago`, que importa `ADAPTADORES` y busca el suyo por `provider`.
  */
-
-const campo =
-  "w-full rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400";
 
 export function ConfigurarProveedor({
   orgId,
@@ -68,28 +68,22 @@ export function ConfigurarProveedor({
         </label>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
         {adaptador.camposPublicos.map((c) => (
-          <label key={c.key} className="flex flex-col gap-1">
-            <span className="text-xs text-neutral-400">{c.label}</span>
-            <input
-              name={`campo-${c.key}`}
-              defaultValue={actual?.publicConfig?.[c.key] ?? ""}
-              className={campo}
-            />
-            {c.ayuda && (
-              <span className="text-xs text-neutral-600">{c.ayuda}</span>
-            )}
-          </label>
+          <Field
+            key={c.key}
+            label={c.label}
+            name={`campo-${c.key}`}
+            defaultValue={actual?.publicConfig?.[c.key] ?? ""}
+            ayuda={c.ayuda}
+          />
         ))}
       </div>
 
       {adaptador.campoSecreto && (
-        <label className="mt-3 flex flex-col gap-1">
-          <span className="text-xs text-neutral-400">
-            {adaptador.campoSecreto.label}
-          </span>
-          <input
+        <div className="mt-3">
+          <Field
+            label={adaptador.campoSecreto.label}
             name="secreto"
             type="password"
             autoComplete="off"
@@ -98,26 +92,20 @@ export function ConfigurarProveedor({
                 ? "Ya hay una guardada — dejalo vacío para no tocarla"
                 : ""
             }
-            className={campo}
+            ayuda={`${adaptador.campoSecreto.ayuda} Se guarda cifrada y no se puede volver a leer.`}
           />
-          <span className="text-xs text-neutral-600">
-            {adaptador.campoSecreto.ayuda} Se guarda cifrada y no se puede
-            volver a leer.
-          </span>
-        </label>
+        </div>
       )}
 
       {state.error && (
-        <p className="mt-3 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
-          {state.error}
-        </p>
+        <MensajeDeError className="mt-3">{state.error}</MensajeDeError>
       )}
 
       <div className="mt-4">
         <BotonDeEnvio
           pendienteTexto="Guardando…"
           mensajeDeCarga="Guardando el medio de cobro…"
-          className="rounded-xl bg-lime-400 px-5 py-2.5 font-bold text-lime-950 hover:bg-lime-300 disabled:opacity-60"
+          className={claseDeBoton({ variante: "primary", compacto: true })}
         >
           Guardar
         </BotonDeEnvio>
