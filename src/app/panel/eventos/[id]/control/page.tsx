@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDivisions, getHeats, getJudges } from "@/features/events/config/queries";
-import { getPruebas } from "@/features/workouts/queries";
+import { getEtapasConCorteConfirmado, getPruebas } from "@/features/workouts/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import {
   cancelHeatStart,
@@ -25,12 +25,13 @@ export default async function ControlPage({
 
   if (!canVerify) redirect(`/panel/eventos/${id}`);
 
-  const [heats, cola, judges, divisiones, pruebas] = await Promise.all([
+  const [heats, cola, judges, divisiones, pruebas, etapasConfirmadas] = await Promise.all([
     getHeats(id),
     getVerificationQueue(id),
     getJudges(id),
     getDivisions(id),
     getPruebas(id),
+    getEtapasConCorteConfirmado(id),
   ]);
 
   const porCarril = new Map(cola.map((c) => [c.laneId, c]));
@@ -42,6 +43,7 @@ export default async function ControlPage({
   const nombresDePruebas = pruebas.map(({ workout }) => ({
     id: workout.id,
     name: workout.name,
+    stage: workout.stage,
   }));
 
   const sinJuez = heats.flatMap((h) =>
@@ -160,6 +162,7 @@ export default async function ControlPage({
         formato={event.format}
         divisiones={divisiones.map((d) => ({ id: d.id, name: d.name }))}
         pruebas={nombresDePruebas}
+        etapasConfirmadas={[...etapasConfirmadas]}
         heats={heatsVista}
         largar={largar}
         deshacer={deshacer}

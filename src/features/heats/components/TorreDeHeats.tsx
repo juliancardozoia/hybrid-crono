@@ -10,6 +10,7 @@ import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
 import { Modal } from "@/shared/components/Modal";
 import { RelojDeHeat } from "./RelojDeHeat";
+import { Pestanas } from "./PestanasDePrueba";
 
 export interface CarrilVista {
   laneId: string;
@@ -77,6 +78,7 @@ export function TorreDeHeats({
   formato,
   divisiones,
   pruebas,
+  etapasConfirmadas,
   heats,
   largar,
   deshacer,
@@ -90,15 +92,63 @@ export function TorreDeHeats({
   divisiones: Array<{ id: string; name: string }>;
   /** En el orden en que corren. Con una sola, la pantalla no la menciona —
    *  mismo criterio que ya usa /heats. */
-  pruebas: Array<{ id: string; name: string }>;
+  pruebas: Array<{ id: string; name: string; stage: number }>;
+  /** Etapas con corte YA confirmado (ver el mismo prop en /heats). */
+  etapasConfirmadas: number[];
   heats: HeatVista[];
   largar: AccionHeat;
   deshacer: AccionHeat;
   marcarDnfAccion: AccionCarril;
 }) {
+  const confirmadas = useMemo(() => new Set(etapasConfirmadas), [etapasConfirmadas]);
+
+  // Etapas: mismo criterio que /heats. La primera siempre esta disponible;
+  // una etapa posterior solo se habilita cuando ya se confirmo el corte que
+  // decide quien llega a ella — antes de eso no hay ningun heat de esa etapa
+  // que valga la pena mirar en la torre de control.
+  const primeraEtapa = useMemo(() => Math.min(...pruebas.map((p) => p.stage), 1), [pruebas]);
+
+  const etapas = useMemo(() => {
+    const todas = [...new Set(pruebas.map((p) => p.stage))].sort((a, b) => a - b);
+    return todas.filter((e) => e === primeraEtapa || confirmadas.has(e));
+  }, [pruebas, primeraEtapa, confirmadas]);
+  const variasEtapas = etapas.length > 1;
+  const [etapaActiva, setEtapaActiva] = useState(primeraEtapa);
+
+  // Ajuste durante el RENDER, no en un efecto — mismo patrón que
+  // `heatSembrado` en HeatCard.tsx y que /heats: React 19 rechaza un
+  // `setState` sincrono dentro de un `useEffect` (ver CLAUDE.md), y esto es
+  // corregir una seleccion que dejo de ser valida, no suscribirse a nada
+  // externo.
+  if (!etapas.includes(etapaActiva)) {
+    setEtapaActiva(etapas[0] ?? primeraEtapa);
+  }
+
+  // Filtra SIEMPRE por `etapaActiva`, mismo motivo que /heats: `pruebas`
+  // puede traer WODs de una etapa futura que ya existen pero cuyo corte
+  // todavia no se confirmo, y esos no tienen que aparecer en ningun lado.
+  const pruebasDeEtapa = useMemo(
+    () => pruebas.filter((p) => p.stage === etapaActiva),
+    [pruebas, etapaActiva],
+  );
+
   const [divisionId, setDivisionId] = useState("");
   const [workoutId, setWorkoutId] = useState("");
   const router = useRouter();
+
+  // Arranca en la primera prueba de la etapa activa, y se reacomoda cada vez
+  // que `workoutId` deja de pertenecer a `pruebasDeEtapa` — no solo con mas
+  // de una prueba. Tambien durante el render, mismo motivo de arriba.
+  //
+  // BUG REAL, mismo que en /heats: con `pruebasDeEtapa.length > 1`, una etapa
+  // de UNA sola prueba (una semifinal de un solo WOD) dejaba `workoutId`
+  // apuntando a la prueba de la etapa ANTERIOR, y como `visibles` exige
+  // ademas `h.workoutId === workoutId`, la torre de control mostraba "ningún
+  // heat coincide con el filtro" con los heats de esa fase bien armados en
+  // la base.
+  if (pruebasDeEtapa.length > 0 && !pruebasDeEtapa.some((p) => p.id === workoutId)) {
+    setWorkoutId(pruebasDeEtapa[0]!.id);
+  }
 
   // Sin esto, un DNF marcado desde el celular del juez -o cualquier otro
   // cambio de estado- no aparece acá hasta que alguien recarga la página a
@@ -117,18 +167,24 @@ export function TorreDeHeats({
     return divisiones.filter((d) => ids.has(d.id));
   }, [divisiones, heats]);
 
-  const variasPruebas = pruebas.length > 1;
+  const variasPruebas = pruebasDeEtapa.length > 1;
   const nombrePrueba = useMemo(() => new Map(pruebas.map((p) => [p.id, p.name])), [pruebas]);
   const ordenPrueba = useMemo(() => new Map(pruebas.map((p, i) => [p.id, i])), [pruebas]);
+
+  // `pruebasDeEtapa` ya filtra por `etapaActiva` siempre (ver arriba): este
+  // set alcanza para no mezclar heats de otra etapa aunque `workoutId` quede
+  // vacío por tener una sola prueba en la etapa.
+  const idsDeEtapa = useMemo(() => new Set(pruebasDeEtapa.map((p) => p.id)), [pruebasDeEtapa]);
 
   const visibles = useMemo(
     () =>
       heats.filter(
         (h) =>
           (!divisionId || h.divisionId === divisionId) &&
+          idsDeEtapa.has(h.workoutId) &&
           (!workoutId || h.workoutId === workoutId),
       ),
-    [heats, divisionId, workoutId],
+    [heats, divisionId, workoutId, idsDeEtapa],
   );
 
   // Agrupado por PRUEBA y CATEGORIA, mismo patron que /heats: en un CrossFit
@@ -160,43 +216,40 @@ export function TorreDeHeats({
 
   return (
     <div className="flex flex-col gap-4">
-      {(variasPruebas || divisionesConHeat.length > 1) && (
-        <div className="flex flex-wrap items-center gap-3">
-          {variasPruebas && (
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-neutral-500">Prueba</span>
-              <Selector
-                value={workoutId}
-                onChange={(e) => setWorkoutId(e.target.value)}
-                className="py-2 text-sm"
-              >
-                <option value="">Todas</option>
-                {pruebas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Selector>
-            </label>
-          )}
+      {variasEtapas && (
+        <Pestanas
+          items={etapas.map((e) => ({ id: String(e), label: `Etapa ${e}` }))}
+          activa={String(etapaActiva)}
+          onCambiar={(id) => setEtapaActiva(Number(id))}
+          variante="principal"
+        />
+      )}
 
-          {divisionesConHeat.length > 1 && (
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-neutral-500">Categoría</span>
-              <Selector
-                value={divisionId}
-                onChange={(e) => setDivisionId(e.target.value)}
-                className="py-2 text-sm"
-              >
-                <option value="">Todas</option>
-                {divisionesConHeat.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </Selector>
-            </label>
-          )}
+      {variasPruebas && (
+        <Pestanas
+          items={pruebasDeEtapa.map((p) => ({ id: p.id, label: p.name }))}
+          activa={workoutId}
+          onCambiar={setWorkoutId}
+        />
+      )}
+
+      {divisionesConHeat.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-neutral-500">Categoría</span>
+            <Selector
+              value={divisionId}
+              onChange={(e) => setDivisionId(e.target.value)}
+              className="py-2 text-sm"
+            >
+              <option value="">Todas</option>
+              {divisionesConHeat.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </Selector>
+          </label>
         </div>
       )}
 
@@ -205,7 +258,7 @@ export function TorreDeHeats({
           {heats.length === 0 ? "No hay heats armados todavía." : "Ningún heat coincide con el filtro."}
         </p>
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-3">
           {clavesOrdenadas.map((clave) => {
             const [claveWorkout, claveDivision] = clave.split("|");
             const categoria = claveDivision
@@ -217,11 +270,43 @@ export function TorreDeHeats({
             // decia todo lo que hacia falta y un encabezado repetido en cada
             // heat era ruido.
             const mostrarEncabezado = variasPruebas || divisionesConHeat.length > 1;
+            const heatsDelGrupo = grupos.get(clave) ?? [];
+            const conHeatEnCurso = heatsDelGrupo.some((h) => h.startedAt && !h.endedAt);
+
+            // Colapsado por defecto SOLO si no hay nada corriendo ahí adentro:
+            // en la torre de control lo que está en curso es justo lo que no
+            // se puede perder de vista. Sin filtro de categoría y con varias
+            // categorías (muchos atletas -> muchos heats cada una), el resto
+            // arranca cerrado para no repetir la lista larguísima de antes.
+            const abiertoPorDefecto =
+              !mostrarEncabezado || Boolean(divisionId) || conHeatEnCurso;
+
+            if (!mostrarEncabezado) {
+              return (
+                <section key={clave} className="flex flex-col gap-4">
+                  {heatsDelGrupo.map((heat) => (
+                    <TarjetaDeHeat
+                      key={heat.id}
+                      eventId={eventId}
+                      timezone={timezone}
+                      formato={formato}
+                      heat={heat}
+                      largar={largar}
+                      deshacer={deshacer}
+                      marcarDnfAccion={marcarDnfAccion}
+                    />
+                  ))}
+                </section>
+              );
+            }
 
             return (
-              <section key={clave} className="flex flex-col gap-4">
-                {mostrarEncabezado && (
-                  <h2 className="text-sm font-semibold tracking-wide text-neutral-400 uppercase">
+              <details key={clave} className="group" open={abiertoPorDefecto}>
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-neutral-800 px-4 py-3 select-none hover:border-neutral-700">
+                  <span className="text-neutral-600 transition-transform group-open:rotate-90">
+                    ▶
+                  </span>
+                  <h2 className="flex-1 text-sm font-semibold tracking-wide text-neutral-300">
                     {variasPruebas && (
                       <>
                         <span className="text-lime-400">
@@ -232,21 +317,32 @@ export function TorreDeHeats({
                     )}
                     {categoria}
                   </h2>
-                )}
+                  {conHeatEnCurso && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-lime-500/40 bg-lime-500/10 px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-lime-400 uppercase">
+                      <span className="h-1.5 w-1.5 rounded-full bg-lime-400" />
+                      En curso
+                    </span>
+                  )}
+                  <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-xs text-neutral-500">
+                    {heatsDelGrupo.length} heat{heatsDelGrupo.length === 1 ? "" : "s"}
+                  </span>
+                </summary>
 
-                {(grupos.get(clave) ?? []).map((heat) => (
-                  <TarjetaDeHeat
-                    key={heat.id}
-                    eventId={eventId}
-                    timezone={timezone}
-                    formato={formato}
-                    heat={heat}
-                    largar={largar}
-                    deshacer={deshacer}
-                    marcarDnfAccion={marcarDnfAccion}
-                  />
-                ))}
-              </section>
+                <div className="mt-4 flex flex-col gap-4 pl-1">
+                  {heatsDelGrupo.map((heat) => (
+                    <TarjetaDeHeat
+                      key={heat.id}
+                      eventId={eventId}
+                      timezone={timezone}
+                      formato={formato}
+                      heat={heat}
+                      largar={largar}
+                      deshacer={deshacer}
+                      marcarDnfAccion={marcarDnfAccion}
+                    />
+                  ))}
+                </div>
+              </details>
             );
           })}
         </div>

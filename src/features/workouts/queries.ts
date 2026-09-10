@@ -39,6 +39,30 @@ export async function getPruebas(eventId: string): Promise<PruebaConPartes[]> {
 }
 
 /**
+ * Las etapas cuyo corte YA se confirmó, para al menos una categoría de este
+ * evento.
+ *
+ * `confirmar_corte_de_etapa` escribe en `stage_advancements` en el MISMO paso
+ * en que congela el corte (`etapas.ts`): no hay un estado intermedio de
+ * "registrado pero sin confirmar". Por eso alcanza con mirar si existe
+ * alguna fila para (evento, etapa) — no hace falta una columna de estado
+ * aparte.
+ *
+ * La etapa 1 nunca depende de esto: es el punto de partida de cualquier
+ * competencia, con o sin etapas, y no hay ningún corte que la habilite.
+ */
+export async function getEtapasConCorteConfirmado(eventId: string): Promise<Set<number>> {
+  const supabase = await createClient();
+
+  const { data } = await supabase
+    .from("stage_advancements")
+    .select("stage")
+    .eq("event_id", eventId);
+
+  return new Set((data ?? []).map((r) => r.stage));
+}
+
+/**
  * Una prueba ENTERA: sus partes, y de cada una su estructura y sus ajustes.
  *
  * Reemplaza a `getEstructura(partId)`, que traia una parte suelta. La pantalla

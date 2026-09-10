@@ -330,9 +330,16 @@ function crecioSobreElSnapshot(c: PuntuacionDeCategoria): boolean {
   return c.fieldSize !== null && c.atletasActivos > c.fieldSize;
 }
 
-/** Dos decimales para leer, tres para calcular. */
+/**
+ * Tres decimales, los mismos con los que se calcula y se guarda
+ * (`numeric(9,3)`). Con dos, un margen real de una milesima -- el minimo que
+ * la curva puede expresar -- se ve identico entre dos puestos consecutivos
+ * (67.667 y 67.666 redondean los dos a 67.67), y en la pantalla de corte eso
+ * se lee como un empate que no existe: el puesto de arriba SI tiene mas
+ * puntos, solo que la diferencia es chica.
+ */
 function formatear(puntos: number): string {
-  return Number.isInteger(puntos) ? String(puntos) : puntos.toFixed(2);
+  return Number.isInteger(puntos) ? String(puntos) : puntos.toFixed(3);
 }
 
 /**

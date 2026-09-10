@@ -2,7 +2,7 @@ import { deleteHeat, type FormState } from "@/features/heats/actions";
 import { type TeamOption } from "@/features/heats/components/HeatCard";
 import { PantallaDeHeats } from "@/features/heats/components/PantallaDeHeats";
 import { getDivisions, getHeats, getJudges, getTeams } from "@/features/events/config/queries";
-import { getPruebas } from "@/features/workouts/queries";
+import { getEtapasConCorteConfirmado, getPruebas } from "@/features/workouts/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 
 export default async function HeatsPage({
@@ -13,12 +13,13 @@ export default async function HeatsPage({
   const { id } = await params;
   const { event, canManage, canVerify } = await requireEventAccess(id);
 
-  const [heats, teams, divisions, judges, pruebas] = await Promise.all([
+  const [heats, teams, divisions, judges, pruebas, etapasConfirmadas] = await Promise.all([
     getHeats(id),
     getTeams(id),
     getDivisions(id),
     getJudges(id),
     getPruebas(id),
+    getEtapasConCorteConfirmado(id),
   ]);
 
   // Un equipo corre una sola vez POR PRUEBA (`lanes_team_once_per_workout`),
@@ -71,6 +72,7 @@ export default async function HeatsPage({
   const nombresDePruebas = pruebas.map(({ workout }) => ({
     id: workout.id,
     name: workout.name,
+    stage: workout.stage,
   }));
 
   return (
@@ -92,6 +94,7 @@ export default async function HeatsPage({
         timezone={event.timezone}
         divisiones={divisions.map((d) => ({ id: d.id, name: d.name }))}
         pruebas={nombresDePruebas}
+        etapasConfirmadas={[...etapasConfirmadas]}
         heats={heats}
         opciones={opciones}
         judges={judges}

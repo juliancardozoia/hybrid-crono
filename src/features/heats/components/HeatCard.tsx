@@ -226,64 +226,92 @@ export function HeatCard({
             Jueces
           </h4>
 
-          <ul className="flex flex-col gap-2">
-            {heat.lanes.map((lane) => (
-              <li
-                key={lane.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-2"
-              >
-                <span className="w-6 text-sm text-neutral-500">
-                  {lane.lane_number}
-                </span>
-                <span className="flex min-w-0 basis-full items-baseline gap-2 sm:basis-auto">
-                  <span className="font-mono text-sm text-neutral-300">
+          {largado ? (
+            // El heat ya largó: reasignar el juez desde acá dejaría al
+            // celular del juez viejo cronometrando un carril que ya no es
+            // suyo, sin que nadie se entere hasta que se compare el log. Una
+            // vez largado, transferir un carril es una decisión que pasa por
+            // Control (torre de heats / transfer_lane), no por esta pantalla
+            // de armado previo — esta lista queda de solo lectura.
+            <ul className="flex flex-col gap-2">
+              {heat.lanes.map((lane) => (
+                <li
+                  key={lane.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+                >
+                  <span className="w-6 text-neutral-500">{lane.lane_number}</span>
+                  <span className="font-mono text-neutral-300">
                     {lane.bib !== null ? `#${lane.bib}` : "—"}
                   </span>
-                  <span className="truncate text-sm">
-                    {lane.athletes ?? lane.teamLabel ?? ""}
+                  <span className="truncate">{lane.athletes ?? lane.teamLabel ?? ""}</span>
+                  <span className="ml-auto text-neutral-500">
+                    {judges.find((j) => j.userId === lane.judge_id)?.label ?? "— sin juez —"}
                   </span>
-                </span>
-
-                <div className="flex min-w-[14rem] flex-1 items-center gap-2">
-                  <Selector
-                    name="judgeId"
-                    value={juezPorCarril[lane.id] ?? ""}
-                    onChange={(e) =>
-                      setJuezPorCarril((prev) => ({
-                        ...prev,
-                        [lane.id]: e.target.value,
-                      }))
-                    }
-                    className="flex-1 py-1.5 text-sm"
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <>
+              <ul className="flex flex-col gap-2">
+                {heat.lanes.map((lane) => (
+                  <li
+                    key={lane.id}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2"
                   >
-                    <option value="">— sin juez —</option>
-                    {judges.map((j) => (
-                      <option key={j.userId} value={j.userId}>
-                        {j.label}
-                      </option>
-                    ))}
-                  </Selector>
-                  <button
-                    type="button"
-                    onClick={() => asignarJuez(lane.id)}
-                    disabled={asignandoJuez}
-                    className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800 disabled:opacity-60"
-                  >
-                    Asignar
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                    <span className="w-6 text-sm text-neutral-500">
+                      {lane.lane_number}
+                    </span>
+                    <span className="flex min-w-0 basis-full items-baseline gap-2 sm:basis-auto">
+                      <span className="font-mono text-sm text-neutral-300">
+                        {lane.bib !== null ? `#${lane.bib}` : "—"}
+                      </span>
+                      <span className="truncate text-sm">
+                        {lane.athletes ?? lane.teamLabel ?? ""}
+                      </span>
+                    </span>
 
-          {judgeState.error && (
-            <MensajeDeError className="mt-3">{judgeState.error}</MensajeDeError>
+                    <div className="flex min-w-[14rem] flex-1 items-center gap-2">
+                      <Selector
+                        name="judgeId"
+                        value={juezPorCarril[lane.id] ?? ""}
+                        onChange={(e) =>
+                          setJuezPorCarril((prev) => ({
+                            ...prev,
+                            [lane.id]: e.target.value,
+                          }))
+                        }
+                        className="flex-1 py-1.5 text-sm"
+                      >
+                        <option value="">— sin juez —</option>
+                        {judges.map((j) => (
+                          <option key={j.userId} value={j.userId}>
+                            {j.label}
+                          </option>
+                        ))}
+                      </Selector>
+                      <button
+                        type="button"
+                        onClick={() => asignarJuez(lane.id)}
+                        disabled={asignandoJuez}
+                        className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs hover:bg-neutral-800 disabled:opacity-60"
+                      >
+                        Asignar
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {judgeState.error && (
+                <MensajeDeError className="mt-3">{judgeState.error}</MensajeDeError>
+              )}
+
+              <p className="mt-3 text-xs text-neutral-600">
+                Asignar aquí es opcional: el juez también puede tomar su carril
+                desde su celular. Lo que no puede es tomar uno que ya tomó otro.
+              </p>
+            </>
           )}
-
-          <p className="mt-3 text-xs text-neutral-600">
-            Asignar aquí es opcional: el juez también puede tomar su carril
-            desde su celular. Lo que no puede es tomar uno que ya tomó otro.
-          </p>
         </div>
       )}
     </section>

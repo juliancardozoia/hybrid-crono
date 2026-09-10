@@ -12,6 +12,26 @@ import { getTablaGeneral, type TablaGeneral as Datos } from "../queries";
 /** 🥇🥈🥉 para el podio, y nada para el resto -- no hay medalla de cuarto puesto. */
 const MEDALLAS = ["🥇", "🥈", "🥉"];
 
+type EntradaConEquipo = Datos["divisiones"][number]["entries"][number];
+type Estado = "activo" | "eliminado";
+
+/**
+ * Una fila FUSIONADA de la tabla general: la categoria puede tener varias
+ * entradas en `data.divisiones` (una por etapa, cuando hubo un corte), pero
+ * en pantalla es SIEMPRE una sola tabla. `entry` es la del equipo en su
+ * etapa VIGENTE -- la final si sigue adentro, la ultima que corrio si quedo
+ * eliminado en el camino -- y `porEtapa` guarda todas sus entradas para
+ * poder buscar el resultado de un WOD de una etapa anterior (un finalista
+ * sigue mostrando lo que hizo en el WOD 1 de la clasificatoria).
+ */
+type FilaTabla = {
+  teamId: string;
+  entry: EntradaConEquipo;
+  estado: Estado;
+  etapaVigente: number;
+  porEtapa: Map<number, EntradaConEquipo>;
+};
+
 /**
  * El resultado CRUDO de una prueba, tal como se cronometro o se cargo --
  * "08:21", "184 reps", "142 kg" -- en vez del puesto. Usa `puesto.value` (sin
@@ -137,18 +157,76 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
   if (data.divisiones.length === 0) return null;
   if (data.cantidadDePruebas <= 1 && data.soloCircuito) return null;
 
-  // La clave combina division + etapa: una categoria con un corte confirmado
-  // tiene dos filas en `divisiones` (Stage 1 y Stage 2), con el mismo nombre.
-  const clave = (d: Datos["divisiones"][number]) => `${d.division.id}|${d.stage}`;
-  const elegida = data.divisiones.find((d) => clave(d) === division) ?? data.divisiones[0];
+  // Una categoria con un corte confirmado tiene una fila en `divisiones` POR
+  // ETAPA (Stage 1, Stage 2...), pero para quien mira la pantalla es SIEMPRE
+  // una sola categoria y una sola tabla -- separarla en una pestaña por etapa
+  // hacia que los eliminados desaparecieran de la vista apenas se confirmaba
+  // el corte, en vez de quedar marcados como tales en el mismo lugar.
+  const gruposPorDivision = new Map<string, Datos["divisiones"]>();
+  for (const d of data.divisiones) {
+    const lista = gruposPorDivision.get(d.division.id) ?? [];
+    lista.push(d);
+    gruposPorDivision.set(d.division.id, lista);
+  }
+  const divisionesUnicas = [...gruposPorDivision.values()].map((lista) => lista[0].division);
+
+  const divisionElegidaId =
+    divisionesUnicas.find((d) => d.id === division)?.id ?? divisionesUnicas[0]?.id ?? "";
+  const gruposOrdenados = [...(gruposPorDivision.get(divisionElegidaId) ?? [])].sort(
+    (a, b) => a.stage - b.stage,
+  );
+  const etapaFinal = gruposOrdenados[gruposOrdenados.length - 1];
+  const divisionElegida = etapaFinal.division;
+
+  // `etapaFinal.parts` YA es la union acumulada de las partes de todas las
+  // etapas hasta la final inclusive (`partesAcumuladas` en scoreboard.ts): el
+  // WOD 1 de la clasificatoria no deja de existir cuando arranca la final.
+  // Juntar `parts` de cada grupo a mano duplicaria las de las etapas
+  // anteriores, que la etapa final ya arrastra.
+  const todasLasPartes = etapaFinal.parts;
 
   // Numera por WORKOUT, no por parte: dos partes del mismo WOD (A/B) comparten
   // numero y se distinguen por su `label`, en vez de contar "WOD 3" y "WOD 4"
   // para lo que en la pizarra es un solo WOD.
   const numeroDeWorkout = new Map<string, number>();
-  for (const p of elegida.parts) {
+  for (const p of todasLasPartes) {
     if (!numeroDeWorkout.has(p.workoutId)) numeroDeWorkout.set(p.workoutId, numeroDeWorkout.size + 1);
   }
+
+  // Quien sigue compitiendo: los que tienen entrada en la etapa mas reciente.
+  const idsActivos = new Set(etapaFinal.entries.map((e) => e.teamId));
+
+  // La entrada de cada equipo en cada etapa en la que participo, para poder
+  // buscar el resultado de un WOD de una etapa anterior sin recalcular nada.
+  const entradasPorEquipo = new Map<string, Map<number, EntradaConEquipo>>();
+  for (const grupo of gruposOrdenados) {
+    for (const entry of grupo.entries) {
+      const porEtapa = entradasPorEquipo.get(entry.teamId) ?? new Map<number, EntradaConEquipo>();
+      porEtapa.set(grupo.stage, entry);
+      entradasPorEquipo.set(entry.teamId, porEtapa);
+    }
+  }
+
+  const filas: FilaTabla[] = [...entradasPorEquipo.entries()].map(([teamId, porEtapa]) => {
+    const etapaVigente = Math.max(...porEtapa.keys());
+    return {
+      teamId,
+      // El `!` es seguro: etapaVigente sale de las claves del mismo mapa.
+      entry: porEtapa.get(etapaVigente)!,
+      estado: idsActivos.has(teamId) ? "activo" : ("eliminado" as Estado),
+      etapaVigente,
+      porEtapa,
+    };
+  });
+
+  // Activos primero (por su posicion vigente); los eliminados despues,
+  // agrupados por en que etapa quedaron afuera -- el que llego mas lejos
+  // antes de caer se ve primero dentro de ese grupo.
+  filas.sort((a, b) => {
+    if (a.estado !== b.estado) return a.estado === "activo" ? -1 : 1;
+    if (a.etapaVigente !== b.etapaVigente) return b.etapaVigente - a.etapaVigente;
+    return a.entry.position - b.entry.position;
+  });
 
   return (
     <section className="mt-10">
@@ -167,27 +245,25 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
         </span>
       </div>
 
-      {data.divisiones.length > 1 && (
+      {/* Un solo boton de pestana por CATEGORIA, nunca por etapa: el filtro
+          tiene que aparecer apenas hay mas de una categoria, sin importar
+          cuantas etapas tenga cada una. */}
+      {divisionesUnicas.length > 1 && (
         <nav className="tabs-scroll mt-4 flex gap-1 border-b border-neutral-800">
-          {data.divisiones.map((d) => {
-            const activa = clave(d) === clave(elegida);
+          {divisionesUnicas.map((d) => {
+            const activa = d.id === divisionElegida.id;
             return (
               <button
-                key={clave(d)}
+                key={d.id}
                 type="button"
-                onClick={() => setDivision(clave(d))}
+                onClick={() => setDivision(d.id)}
                 className={`-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors ${
                   activa
                     ? "border-lime-400 font-medium text-neutral-100"
                     : "border-transparent text-neutral-500 hover:text-neutral-300"
                 }`}
               >
-                {d.division.name}
-                {/* Solo se aclara la etapa si esta categoria tiene mas de una:
-                    la mayoria de las competencias no tienen cortes y repetirlo
-                    ahi seria ruido. */}
-                {data.divisiones.filter((x) => x.division.id === d.division.id).length > 1 &&
-                  ` · Etapa ${d.stage}`}
+                {d.name}
               </button>
             );
           })}
@@ -200,7 +276,8 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
             <tr className="border-b border-neutral-800 text-left text-neutral-500">
               <th className="w-10 py-2 pr-3 font-medium">#</th>
               <th className="py-2 pr-3 font-medium">Atleta</th>
-              {elegida.parts.map((p) => (
+              <th className="py-2 pr-3 font-medium">Estado</th>
+              {todasLasPartes.map((p) => (
                 <th
                   key={p.id}
                   title={`${p.workoutName}${p.label ? ` ${p.label}` : ""}`}
@@ -214,36 +291,47 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
             </tr>
           </thead>
           <tbody>
-            {elegida.entries.map((fila, i) => {
+            {filas.map((fila, i) => {
               const abierto = expandido === fila.teamId;
+              const eliminado = fila.estado === "eliminado";
+              const equipo = fila.entry.team;
               return (
                 <Fragment key={fila.teamId}>
                   <tr
                     className={`border-b border-neutral-900 ${
-                      // Rayado calido y tenue para distinguir filas: solo en
-                      // las impares, y por debajo de cualquier otro color
-                      // (empate, seleccion) que ya use la fila.
-                      i % 2 === 1 ? "bg-amber-500/[0.035]" : ""
+                      // Un eliminado se distingue con su propio color, por
+                      // encima del rayado tenue que ya usan las filas impares
+                      // -- no se puede confundir con un simple cambio de
+                      // rayado, tiene que leerse como "esto ya no compite".
+                      eliminado
+                        ? "bg-red-500/[0.05]"
+                        : i % 2 === 1
+                          ? "bg-amber-500/[0.035]"
+                          : ""
                     }`}
                   >
-                    <td className="w-10 py-2 pr-3 font-mono tabular-nums text-neutral-400">
-                      {fila.position}
+                    <td
+                      className={`w-10 py-2 pr-3 font-mono tabular-nums ${
+                        eliminado ? "text-neutral-600" : "text-neutral-400"
+                      }`}
+                    >
+                      {fila.entry.position}
                       {/* Compartir posicion no es un error: el reglamento no rompe
                           los empates de la tabla general si los puestos por prueba
                           tambien empatan. Antes era un "=" gris casi invisible;
                           ahora es un color de apoyo (ambar) mas un titulo, para
                           que el organizador o el locutor sepan que no es un
                           error de la pantalla. */}
-                      {fila.tiedWith > 1 && (
+                      {fila.entry.tiedWith > 1 && (
                         <span
                           className="ml-0.5 font-semibold text-amber-400"
-                          title={`Empatado con ${fila.tiedWith - 1} equipo${fila.tiedWith - 1 === 1 ? "" : "s"} mas`}
+                          title={`Empatado con ${fila.entry.tiedWith - 1} equipo${fila.entry.tiedWith - 1 === 1 ? "" : "s"} mas`}
                         >
                           =
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className={`py-2 pr-3 ${eliminado ? "text-neutral-500" : ""}`}>
                       <button
                         type="button"
                         onClick={() =>
@@ -264,17 +352,32 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
                             una sola bandera para los dos. Si no hay pais
                             cargado, no se rompe: Bandera no pinta nada. */}
                         <span className="flex shrink-0 items-center gap-1">
-                          {fila.team.countries.map((pais, idx) => (
+                          {equipo.countries.map((pais, idx) => (
                             <Bandera key={idx} codigo={pais} className="h-3 w-4 shrink-0" />
                           ))}
                         </span>
-                        <span className="truncate">
-                          {fila.team.name ?? fila.team.athletes ?? ""}
-                        </span>
+                        <span className="truncate">{equipo.name ?? equipo.athletes ?? ""}</span>
                       </button>
                     </td>
-                    {elegida.parts.map((p) => {
-                      const puesto = fila.placements.find((x) => x.partId === p.id);
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
+                          eliminado
+                            ? "bg-red-500/15 text-red-300"
+                            : "bg-lime-400/15 text-lime-300"
+                        }`}
+                      >
+                        {eliminado ? "Eliminado" : "Activo"}
+                      </span>
+                    </td>
+                    {todasLasPartes.map((p) => {
+                      // El resultado de un WOD sale de la entrada de la etapa
+                      // A LA QUE PERTENECE ESE WOD, no de la etapa vigente del
+                      // equipo: un finalista sigue mostrando lo que hizo en el
+                      // WOD 1 de la clasificatoria, aunque su entrada vigente
+                      // ya sea la de la final.
+                      const entryDeEsaEtapa = fila.porEtapa.get(p.stage);
+                      const puesto = entryDeEsaEtapa?.placements.find((x) => x.partId === p.id);
                       // "pendiente" es un equipo del padron que todavia no corrio
                       // esta prueba (ver rankPart en place.ts): mostrarle una
                       // posicion -- aunque sea la 1, empatado con todos los demas
@@ -295,8 +398,10 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
                     })}
                     <td className="py-2 pr-3 text-right font-mono tabular-nums font-semibold">
                       {/* Redondeado SOLO para mostrar: `totalPoints` (3 decimales)
-                          sigue siendo lo que ordena y desempata. */}
-                      {fila.displayPoints}
+                          sigue siendo lo que ordena y desempata. Para un
+                          eliminado es el total de la etapa en la que quedo
+                          afuera -- su ultimo resultado oficial. */}
+                      {fila.entry.displayPoints}
                     </td>
                   </tr>
 
@@ -304,13 +409,15 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
                       mismo patron que GrillaDeAtletas en /atletas. */}
                   {abierto && (
                     <tr className="border-b border-neutral-900">
-                      <td colSpan={3 + elegida.parts.length} className="bg-neutral-900/40 p-4">
+                      <td colSpan={4 + todasLasPartes.length} className="bg-neutral-900/40 p-4">
                         <DetalleDelAtleta
                           fila={fila}
-                          parts={elegida.parts}
-                          numeroDeWorkout={numeroDeWorkout}
-                          fieldSize={elegida.entries.length}
-                          division={elegida.division}
+                          parts={todasLasPartes}
+                          fieldSize={
+                            gruposOrdenados.find((g) => g.stage === fila.etapaVigente)?.entries
+                              .length ?? filas.length
+                          }
+                          division={divisionElegida}
                         />
                       </td>
                     </tr>
@@ -333,84 +440,143 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
 function DetalleDelAtleta({
   fila,
   parts,
-  numeroDeWorkout,
   fieldSize,
   division,
 }: {
-  fila: Datos["divisiones"][number]["entries"][number];
+  fila: FilaTabla;
   parts: ScoreboardPart[];
-  numeroDeWorkout: Map<string, number>;
   fieldSize: number;
   division: Datos["divisiones"][number]["division"];
 }) {
-  const medalla = MEDALLAS[fila.position - 1] ?? null;
+  const eliminado = fila.estado === "eliminado";
+  const equipo = fila.entry.team;
+  // Sin medalla para un eliminado: la posicion que quedo congelada es la de
+  // la etapa en la que salio, no un podio de la competencia completa.
+  const medalla = !eliminado ? (MEDALLAS[fila.entry.position - 1] ?? null) : null;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-base font-semibold text-neutral-100">
-            {fila.team.name ?? fila.team.athletes ?? ""}
+            {equipo.name ?? equipo.athletes ?? ""}
           </p>
           <p className="text-sm text-neutral-500">
-            #{fila.team.bib} · {division.name}
+            #{equipo.bib} · {division.name}
+            {equipo.box && ` · ${equipo.box}`}
           </p>
+          {eliminado && (
+            <p className="mt-1 text-xs font-semibold text-red-400">
+              Eliminado en la Etapa {fila.etapaVigente}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <EstadisticaResumen
-            etiqueta="Overall"
-            valor={`${medalla ?? ""} ${fila.position} / ${fieldSize}`}
+            etiqueta={eliminado ? `Etapa ${fila.etapaVigente}` : "Overall"}
+            valor={`${medalla ?? ""} ${fila.entry.position} / ${fieldSize}`}
           />
-          <EstadisticaResumen etiqueta="Total" valor={`${fila.displayPoints} pts`} destacado />
+          <EstadisticaResumen
+            etiqueta="Total"
+            valor={`${fila.entry.displayPoints} pts`}
+            destacado={!eliminado}
+          />
           {/* El empate deportivo se COMPARTE: misma posicion, misma medalla si
               corresponde. Que los puntos sean iguales o no depende de la
               politica de la categoria (same_position_points reparte integro,
               average_occupied_positions promedia las posiciones ocupadas) --
               este aviso es solo sobre la POSICION, no asume nada de los
               puntos. */}
-          {fila.tiedWith > 1 && (
+          {fila.entry.tiedWith > 1 && (
             <Badge tono="warning">
-              Empate ({fila.tiedWith} equipos en el puesto {fila.position})
+              Empate ({fila.entry.tiedWith} equipos en el puesto {fila.entry.position})
             </Badge>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {parts.map((p) => {
-          const puesto = fila.placements.find((x) => x.partId === p.id);
-          const sinCorrer = !puesto || puesto.status === "pendiente" || puesto.status === "en_curso";
+          // El resultado de un WOD sale de la entrada de la etapa a la que
+          // pertenece ESE wod, no de la etapa vigente del equipo -- mismo
+          // criterio que la tabla principal.
+          const entryDeEsaEtapa = fila.porEtapa.get(p.stage);
+          const puesto = entryDeEsaEtapa?.placements.find((x) => x.partId === p.id);
+          const pendiente = !puesto || puesto.status === "pendiente";
+          const enCurso = puesto?.status === "en_curso";
+          const terminado = !pendiente && !enCurso;
           const resultado = puesto ? formatearResultado(p, puesto) : null;
+
+          // Wods que YA PASARON (terminado o corriendo ahora) se distinguen
+          // visualmente de los que siguen (pendiente): borde y fondo propios
+          // en vez del mismo gris neutro para los tres estados -- es lo que
+          // pide "resaltar los wods que ya pasaron y los que siguen".
+          const estiloCaja = terminado
+            ? "border-lime-500/30 bg-lime-500/[0.04]"
+            : enCurso
+              ? "border-amber-500/40 bg-amber-500/[0.06]"
+              : "border-neutral-800/60 bg-neutral-950/20 opacity-70";
 
           return (
             <div
               key={p.id}
-              className="rounded-xl border border-neutral-800 bg-neutral-950/40 p-3"
+              className={`flex flex-col gap-2 rounded-xl border p-4 ${estiloCaja}`}
             >
-              <p
-                className="truncate text-xs font-medium text-neutral-500"
-                title={`${p.workoutName}${p.label ? ` ${p.label}` : ""}`}
-              >
-                {`WOD ${numeroDeWorkout.get(p.workoutId)}`}
-                {p.label && ` ${p.label}`}
-              </p>
-              {sinCorrer ? (
-                <p className="mt-1.5 text-sm text-neutral-600">Sin resultado aun</p>
-              ) : (
-                <>
-                  <p className="mt-1.5 text-sm font-semibold text-neutral-200">
-                    {puesto.position}º
-                  </p>
-                  {puesto.roundBreakdown && puesto.roundBreakdown.length > 0 ? (
-                    <DesgloseDeRonda rondaActual={(puesto.value ?? 0) + 1} pasos={puesto.roundBreakdown} />
-                  ) : (
-                    resultado && <p className="text-xs text-neutral-400">{resultado}</p>
-                  )}
-                  <p className="mt-1 font-mono text-xs font-semibold text-lime-400">
-                    {Math.round(puesto.points)} pts
-                  </p>
-                </>
+              <div className="flex items-start justify-between gap-2">
+                {/* En la TARJETA va el nombre real del WOD (el que se
+                    configuro en /pruebas) -- la tabla principal de arriba
+                    conserva "WOD 1", "WOD 2"... a proposito, ver
+                    numeroDeWorkout en el thead. */}
+                <p
+                  className="truncate text-xs font-medium text-neutral-400"
+                  title={`${p.workoutName}${p.label ? ` ${p.label}` : ""}`}
+                >
+                  {p.workoutName}
+                  {p.label && ` ${p.label}`}
+                </p>
+                {terminado && (
+                  <Icono nombre="tilde" className="h-3.5 w-3.5 shrink-0 text-lime-400" />
+                )}
+                {enCurso && (
+                  <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-amber-300 uppercase">
+                    En curso
+                  </span>
+                )}
+              </div>
+
+              {/* Cuerpo con `flex-1`: absorbe el espacio sobrante para que
+                  "N pts" quede siempre pegado abajo, sea cual sea el largo
+                  del contenido de arriba (una tarjeta con desglose de ronda
+                  no puede dejar un hueco enorme en la de al lado que solo
+                  muestra tiempo). */}
+              <div className="flex-1">
+                {pendiente ? (
+                  <p className="text-sm text-neutral-600">Aun no corre</p>
+                ) : enCurso ? (
+                  <p className="text-sm text-amber-300">Corriendo ahora</p>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold text-neutral-100">
+                      {puesto.position}
+                      <span className="text-sm text-neutral-500">º</span>
+                    </p>
+                    {puesto.roundBreakdown && puesto.roundBreakdown.length > 0 ? (
+                      <DesgloseDeRonda
+                        rondaActual={(puesto.value ?? 0) + 1}
+                        pasos={puesto.roundBreakdown}
+                      />
+                    ) : (
+                      resultado && <p className="text-sm text-neutral-400">{resultado}</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {terminado && (
+                <p className="font-mono text-sm font-semibold text-lime-400">
+                  {Math.round(puesto.points)} pts
+                </p>
               )}
             </div>
           );

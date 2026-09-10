@@ -112,6 +112,15 @@ export function scoreFromWodResult(params: {
     }
   }
 
+  // El desglose es "en que ronda quedo, movimiento por movimiento": solo
+  // tiene sentido para una prueba que se puntua por rondas. Una carga maxima
+  // (`carga`) no tiene rondas, tiene INTENTOS -- `contarRondas` igual devuelve
+  // un desglose (arrastra el conteo de intentos como si fueran rondas, por
+  // eso se veia "Ronda 121" con un intento de un WOD de peso), y mostrarlo ahi
+  // es puro ruido: lo que importa de una carga maxima es `value` (el mejor
+  // intento valido), no un desglose de "rondas".
+  const rankeaPorRondas = scoreUnit === "rondas_reps" || scoreUnit === "rondas";
+
   return {
     partId,
     teamId,
@@ -122,6 +131,7 @@ export function scoreFromWodResult(params: {
     tiebreak: wod.tiebreakMs,
     // Vacio cuando el bloque cerro entero sin nada a medias -ahi "completedRounds"
     // ya describe el resultado sin ambiguedad-, o cuando la prueba no tiene rondas.
-    roundBreakdown: wod.currentRoundBreakdown.length > 0 ? wod.currentRoundBreakdown : null,
+    roundBreakdown:
+      rankeaPorRondas && wod.currentRoundBreakdown.length > 0 ? wod.currentRoundBreakdown : null,
   };
 }

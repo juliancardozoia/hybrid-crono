@@ -87,6 +87,11 @@ export type ScoreboardTeam = {
    * que `athletes` (por apellido) -- la bandera N corresponde al nombre N.
    */
   countries: (string | null)[];
+  /**
+   * Box(es) de los integrantes, sin repetir. Opcional para no romper los
+   * documentos armados a mano en los tests (ver scoreboard.test.ts).
+   */
+  box?: string | null;
 };
 
 export type ScoreboardScore = {
