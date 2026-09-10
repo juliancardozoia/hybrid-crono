@@ -410,6 +410,7 @@ function SeccionDeParte({
                                   eventId={eventId}
                                   movimiento={m}
                                   nombre={nombreDe(m)}
+                                  esCargaMaxima={part.time_scheme === "sin_reloj"}
                                 />
                                 <FormularioDeEstado
                                   accion={quitarMovimiento.bind(null, m.id)}

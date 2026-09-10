@@ -109,20 +109,25 @@ function TarjetaDeCategoria({
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
+      {/* Todo en una sola fila: el label va AL LADO del input, no arriba, y el
+          texto de ayuda pasa a `title` (tooltip). Con el label arriba y la
+          ayuda abajo, ese bloque medía 3 lineas de alto contra 1 de los
+          botones, y alineados con `items-end` los botones quedaban pegados
+          al texto de ayuda en vez de al input -- de ahi el desalineado. */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         {!categoria.bloqueada && (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Tamaño de la categoría</span>
+          <label
+            className="flex items-center gap-2 text-sm font-medium"
+            title="Vacío = los atletas que haya al generar."
+          >
+            Tamaño
             <input
               value={manual}
               onChange={(e) => setManual(e.target.value.replace(/[^0-9]/g, ""))}
               inputMode="numeric"
               placeholder={`Automático (${categoria.atletasActivos})`}
-              className="w-48 rounded-xl border border-neutral-800 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400"
+              className="w-36 rounded-xl border border-neutral-800 bg-transparent px-3 py-2.5 text-sm outline-none transition-colors focus:border-lime-400"
             />
-            <span className="text-xs text-neutral-600">
-              Vacío = los atletas que haya al generar.
-            </span>
           </label>
         )}
 
@@ -311,6 +316,14 @@ function BloqueDeEtapa({
         <p className="mt-2 text-xs text-neutral-500">
           Todavía no hay equipos elegibles: confirmá primero el corte de la etapa anterior.
         </p>
+      ) : !etapa.etapaAnteriorTerminada ? (
+        // Mismo criterio que exige el servidor al guardar
+        // (`confirmar_corte_de_etapa`): sin esto, la pantalla dejaba armar
+        // toda la seleccion para recien enterarse del rechazo al confirmar.
+        <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-200/90">
+          Todavía no se puede confirmar este corte: falta que todos los atletas o equipos activos terminen
+          la etapa anterior.
+        </p>
       ) : (
         <>
           {etapa.pool.every((t) => t.position === null) && (
@@ -338,7 +351,10 @@ function BloqueDeEtapa({
                     }`}
                   >
                     <span className="flex items-baseline gap-2">
-                      <span className="font-mono tabular-nums text-neutral-600">
+                      {/* Ancho fijo: sin esto, un equipo en el puesto 1 y otro
+                          en el 12 arrancaban el nombre en columnas distintas
+                          -- "1.º" y "12.º" no pesan lo mismo. */}
+                      <span className="inline-block w-8 shrink-0 font-mono tabular-nums text-neutral-600">
                         {t.position !== null ? `${t.position}.º` : "—"}
                       </span>
                       {activo ? "✓ " : ""}#{t.bib} {t.nombre ?? ""}

@@ -10,7 +10,7 @@
 
 import { computeOverall, compareTiebreakVectors, resolverTiebreaksDeOtraPrueba } from "./overall";
 import { assignPhysicalPositions } from "./place";
-import { escalarTabla, tablaDeCategoria } from "./points";
+import { escalarTabla, redondear, tablaDeCategoria } from "./points";
 import type {
   OverallEntry,
   PartPlacement,
@@ -78,6 +78,11 @@ export type ScoreboardTeam = {
   bib: number;
   name: string | null;
   athletes: string | null;
+  /**
+   * Pais (ISO de dos letras, o null) de cada integrante, EN EL MISMO ORDEN
+   * que `athletes` (por apellido) -- la bandera N corresponde al nombre N.
+   */
+  countries: (string | null)[];
 };
 
 export type ScoreboardScore = {
@@ -295,7 +300,9 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
         );
         return {
           teamId,
-          totalPoints,
+          // Misma limpieza de ruido de punto flotante que en computeOverall:
+          // aca se suman totales de VARIAS etapas, cada uno ya redondeado.
+          totalPoints: redondear(totalPoints),
           placements: ordenados,
           tiebreakVector: ordenados.map((p) => p.position).sort((a, b) => a - b),
         };
@@ -312,6 +319,7 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
         const entrada: OverallEntry & { team: ScoreboardTeam } = {
           teamId: item.teamId,
           totalPoints: item.totalPoints,
+          displayPoints: Math.round(item.totalPoints),
           placements: item.placements,
           tiebreakVector: item.tiebreakVector,
           position,

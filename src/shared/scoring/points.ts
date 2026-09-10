@@ -53,7 +53,14 @@ export const PUNTOS_MAXIMOS_POR_DEFECTO = 100;
  */
 export const DECIMALES = 3;
 
-function redondear(valor: number): number {
+/**
+ * Redondea a `DECIMALES` (3). Se exporta para que cualquier lugar que SUME
+ * puntos ya calculados (un total, un acumulado entre etapas) pueda limpiar el
+ * ruido de punto flotante de la suma -- 0.1 + 0.2 no da 0.3 en JS -- con la
+ * MISMA precision que ya usan las columnas de Postgres (`numeric(9,3)`), en
+ * vez de que cada sumador redondee a su manera.
+ */
+export function redondear(valor: number): number {
   const factor = 10 ** DECIMALES;
   return Math.round(valor * factor) / factor;
 }

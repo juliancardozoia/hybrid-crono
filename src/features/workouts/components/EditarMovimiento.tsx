@@ -128,10 +128,13 @@ export function EditarMovimiento({
   eventId,
   movimiento,
   nombre,
+  esCargaMaxima = false,
 }: {
   eventId: string;
   movimiento: PartMovementRow;
   nombre: string;
+  /** Solo la prueba de "Carga máxima" usa el tope de intentos. */
+  esCargaMaxima?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(editarMovimiento, inicial);
@@ -152,6 +155,7 @@ export function EditarMovimiento({
       maxReps: movimiento.max_reps,
       isTiebreak: movimiento.es_tiebreak,
       captureStyle: null,
+      maxAttempts: movimiento.max_attempts,
     },
     movimiento.max_reps ? 0 : (movimiento.target_per_round[0] ?? 0),
   );
@@ -229,6 +233,22 @@ export function EditarMovimiento({
             Automático pide un solo toque al terminar. Lo que no son repeticiones se
             escribe siempre, y &ldquo;las que pueda&rdquo; siempre se tapean.
           </p>
+
+          {/* Solo "Carga máxima" tiene intentos que agotar: en cualquier otro
+              esquema el carril cierra solo -por tiempo o por objetivo- y este
+              campo no significa nada. El valor viaja igual (oculto) para no
+              perder lo que ya estaba cargado. */}
+          {esCargaMaxima ? (
+            <Field
+              label="Intentos máximos"
+              name="maxAttempts"
+              type="number"
+              defaultValue={String(movimiento.max_attempts)}
+              ayuda="Estándar de halterofilia: 3. El carril cierra solo al agotarlos."
+            />
+          ) : (
+            <input type="hidden" name="maxAttempts" value={movimiento.max_attempts} />
+          )}
 
           <Field
             label="Notas para el juez"

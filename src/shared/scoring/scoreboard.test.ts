@@ -54,8 +54,8 @@ function documento(parcial: Partial<ScoreboardInput> = {}): ScoreboardInput {
       { partId: "p2", divisionId: "d1" },
     ],
     teams: [
-      { id: "t1", divisionId: "d1", bib: 101, name: null, athletes: "Ana Perez" },
-      { id: "t2", divisionId: "d1", bib: 102, name: null, athletes: "Beto Gomez" },
+      { id: "t1", divisionId: "d1", bib: 101, name: null, athletes: "Ana Perez", countries: [] },
+      { id: "t2", divisionId: "d1", bib: 102, name: null, athletes: "Beto Gomez", countries: [] },
     ],
     scores: [
       { partId: "p1", teamId: "t1", status: "valido", value: 150, reps: null, capValue: null, tiebreak: null },
@@ -380,10 +380,10 @@ describe("buildScoreboard", () => {
         event: { name: "Copa Test", venue: null, status: "live", format: "crossfit", official: false },
         divisions: [{ id: "d1", name: "RX Masculino" }],
         teams: [
-          { id: "t1", divisionId: "d1", bib: 1, name: null, athletes: "T1" },
-          { id: "t2", divisionId: "d1", bib: 2, name: null, athletes: "T2" },
-          { id: "t3", divisionId: "d1", bib: 3, name: null, athletes: "T3" },
-          { id: "t4", divisionId: "d1", bib: 4, name: null, athletes: "T4" },
+          { id: "t1", divisionId: "d1", bib: 1, name: null, athletes: "T1", countries: [] },
+          { id: "t2", divisionId: "d1", bib: 2, name: null, athletes: "T2", countries: [] },
+          { id: "t3", divisionId: "d1", bib: 3, name: null, athletes: "T3", countries: [] },
+          { id: "t4", divisionId: "d1", bib: 4, name: null, athletes: "T4", countries: [] },
         ],
         parts: [
           {

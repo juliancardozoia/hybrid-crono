@@ -300,6 +300,43 @@ describe("verification_queue", () => {
       });
     });
 
+    it("event_count cuenta los timing_events crudos, no source_event_count (que solo escribe el circuito)", async () => {
+      await asignarJueces(s);
+      await asUser(s.db, s.users.owner, () => s.db.query("select start_heat($1)", [s.heatId]));
+      await asUser(s.db, s.users.judgeA, async () => {
+        await s.db.query("select ingest_timing_events($1::jsonb)", [
+          JSON.stringify([
+            {
+              id: "22222222-2222-4222-8222-222222222222",
+              laneId: s.laneIds[1],
+              seq: 1,
+              type: "rep",
+              elapsedMs: 1000,
+              payload: { partId: partId },
+              deviceId: "d",
+            },
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              laneId: s.laneIds[1],
+              seq: 2,
+              type: "rep",
+              elapsedMs: 2000,
+              payload: { partId: partId },
+              deviceId: "d",
+            },
+          ]),
+        ]);
+      });
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ event_count: number }>(
+          "select event_count from verification_queue($1) where lane_id = $2",
+          [s.eventId, s.laneIds[1]],
+        );
+        expect(res.rows[0].event_count).toBe(2);
+      });
+    });
+
     it("DQ manda sobre un score valido de otra parte del mismo carril", async () => {
       const parte2 = (
         await asAdmin(s.db, () =>

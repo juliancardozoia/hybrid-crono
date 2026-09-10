@@ -356,9 +356,12 @@ export function WodJudgeScreen({
                 es la pieza que faltaba: sin esto el reloj solo cuenta para
                 arriba y el juez tiene que restar de memoria cuánto queda,
                 que es justo lo que hace que alguien siga marcando después de
-                la bocina sin darse cuenta. Se apaga solo al capear: la
-                etiqueta "CAPEADO" de arriba ya lo dice. */}
-            {esquema === "cap" && parte.structure.timeCapMs !== null && !resultado.capped && (
+                la bocina sin darse cuenta. Se apaga al terminar, capee o no:
+                un atleta que cerró ANTES del cap no necesita ver una cuenta
+                regresiva siguiendo corriendo en pantalla — es lo que se
+                reportó como confuso, tanto para el juez como para el atleta
+                que la mira de reojo. */}
+            {esquema === "cap" && parte.structure.timeCapMs !== null && !terminado && (
               <p className="mt-1 font-mono text-lg font-semibold text-neutral-500">
                 <CuentaRegresiva
                   anchor={anchor}
@@ -378,7 +381,9 @@ export function WodJudgeScreen({
               kilos={kilos}
               setKilos={setKilos}
               intentos={resultado.attempts}
+              maxAttempts={resultado.maxAttempts}
               mejor={resultado.bestLiftKg}
+              terminado={terminado}
               onRegistrar={(valido) => {
                 const loadKg = Number(kilos);
                 if (!Number.isFinite(loadKg) || loadKg <= 0) return;
@@ -400,7 +405,7 @@ export function WodJudgeScreen({
               }
             />
           ) : terminado || !paso ? (
-            <Cerrado resultado={resultado} esquema={esquema} />
+            <Cerrado resultado={resultado} esquema={esquema} plan={plan} />
           ) : (
             <Marcador
               /* Remonta al cambiar de paso: sin esto, "CONTAR A MANO" o el
@@ -449,6 +454,7 @@ export function WodJudgeScreen({
             resultado={resultado}
             esquema={esquema}
             plan={plan}
+            terminado={terminado}
             siguiente={
               resultado.currentStepIndex != null
                 ? (plan[resultado.currentStepIndex + 1] ?? null)
@@ -638,9 +644,17 @@ function Marcador({
   const estilo: CaptureStyle = contandoAMano ? "tap" : paso.captureStyle;
   const escribiendo = confirmando || estilo === "numero";
 
+  // El objetivo del paso, como tope de lo que se puede escribir a mano. Un
+  // `maxReps` no tiene objetivo que respetar -ahi contar ES el resultado- y
+  // sin tope el juez podria tipear de mas y darle al atleta reps (y puntos)
+  // que no hizo. El reductor tambien lo recorta (defensa en profundidad): acá
+  // es para que el juez lo vea ANTES de mandarlo.
+  const topeMax = !paso.maxReps && paso.target > 0 ? paso.target : null;
+
   const registrar = (valor: string) => {
     const n = Number(valor);
-    onCerrarMovimiento(Number.isFinite(n) && valor !== "" ? n : undefined);
+    const acotado = topeMax !== null && n > topeMax ? topeMax : n;
+    onCerrarMovimiento(Number.isFinite(acotado) && valor !== "" ? acotado : undefined);
     setCantidad("");
     setConfirmando(false);
   };
@@ -682,10 +696,23 @@ function Marcador({
               inputMode="numeric"
               autoFocus
               value={cantidad}
-              onChange={(e) => setCantidad(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={(e) => {
+                const limpio = e.target.value.replace(/[^0-9]/g, "");
+                // Clampeado AL TIPEAR, no solo al registrar: el juez ve el
+                // tope antes de mandarlo, no despues de una correccion.
+                if (topeMax !== null && limpio !== "" && Number(limpio) > topeMax) {
+                  setCantidad(String(topeMax));
+                  return;
+                }
+                setCantidad(limpio);
+              }}
               placeholder={String(confirmando ? progreso : paso.target || 0)}
+              max={topeMax ?? undefined}
               className="w-full flex-1 rounded-3xl border border-neutral-700 bg-transparent px-4 text-center font-mono text-5xl outline-none focus:border-lime-400"
             />
+            {topeMax !== null && (
+              <p className="text-center text-xs text-neutral-600">Objetivo: {topeMax}</p>
+            )}
             <button
               type="button"
               onClick={() => registrar(cantidad)}
@@ -801,24 +828,74 @@ function Marcador({
   );
 }
 
+/**
+ * Carga máxima: N intentos, se queda con el mejor válido.
+ *
+ * Antes esto no tenia tope: el reductor nunca marcaba el carril como
+ * terminado (ver `WodMovement.maxAttempts` en wod.ts), asi que la pantalla
+ * seguia ofreciendo VALIDO/NULO para siempre y el WOD tampoco llegaba a
+ * puntuar -el motor de scoring solo le pone marca a un carril "finished".
+ * Con el tope resuelto en el reductor, acá solo queda mostrarlo: "Intento X
+ * de N" mientras corre, y una pantalla de cierre igual de clara que la de
+ * cualquier otro esquema en cuanto se agotan.
+ */
 function Intentos({
   kilos,
   setKilos,
   intentos,
+  maxAttempts,
   mejor,
+  terminado,
   onRegistrar,
 }: {
   kilos: string;
   setKilos: (v: string) => void;
   intentos: Array<{ loadKg: number; valido: boolean }>;
+  maxAttempts: number | null;
   mejor: number | null;
+  terminado: boolean;
   onRegistrar: (valido: boolean) => void;
 }) {
+  const listaDeIntentos = intentos.length > 0 && (
+    <p className="text-center text-sm text-neutral-400">
+      {intentos.map((a, i) => (
+        <span key={i} className={a.valido ? "text-lime-400" : "text-red-400"}>
+          {a.valido ? "✓" : "✗"} {a.loadKg}
+          {i < intentos.length - 1 && <span className="text-neutral-700"> · </span>}
+        </span>
+      ))}
+    </p>
+  );
+
+  if (terminado) {
+    return (
+      <section className="flex h-[clamp(13rem,40dvh,20rem)] flex-col items-center justify-center gap-2 px-4">
+        <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+          Carga máxima
+        </span>
+        <p className="text-3xl font-black">INTENTOS COMPLETOS</p>
+        {mejor !== null ? (
+          <p className="font-mono text-2xl">
+            {mejor}
+            <span className="ml-2 text-base font-sans font-normal text-neutral-500">kg</span>
+          </p>
+        ) : (
+          <p className="text-lg text-neutral-500">Ningún intento válido</p>
+        )}
+        {listaDeIntentos}
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-col gap-3 px-4 pt-4">
-      <p className="text-center text-neutral-400">Intento {intentos.length + 1}</p>
+      <p className="text-center text-neutral-400">
+        Intento {intentos.length + 1}
+        {maxAttempts !== null && ` de ${maxAttempts}`}
+      </p>
       <input
         inputMode="decimal"
+        autoFocus
         value={kilos}
         onChange={(e) => setKilos(e.target.value.replace(/[^0-9.]/g, ""))}
         placeholder="kg"
@@ -841,16 +918,7 @@ function Intentos({
         </button>
       </div>
 
-      {intentos.length > 0 && (
-        <p className="text-center text-sm text-neutral-400">
-          {intentos.map((a, i) => (
-            <span key={i} className={a.valido ? "text-lime-400" : "text-red-400"}>
-              {a.valido ? "✓" : "✗"} {a.loadKg}
-              {i < intentos.length - 1 && <span className="text-neutral-700"> · </span>}
-            </span>
-          ))}
-        </p>
-      )}
+      {listaDeIntentos}
       {mejor !== null && (
         <p className="text-center text-lg font-bold">Mejor: {mejor} kg</p>
       )}
@@ -879,9 +947,15 @@ function CierreDelTiempo({
 }) {
   const [cantidad, setCantidad] = useState(String(progreso));
 
+  // Mismo tope que en `Marcador`: el atleta no puede haber hecho mas que el
+  // objetivo del paso que quedo a medias, y sin esto el juez podria tipear de
+  // mas al cerrar en caliente, justo el momento con mas apuro.
+  const topeMax = !paso.maxReps && paso.target > 0 ? paso.target : null;
+
   const confirmar = () => {
     const n = Number(cantidad);
-    onConfirmar(Number.isFinite(n) && cantidad !== "" ? n : progreso);
+    const acotado = topeMax !== null && n > topeMax ? topeMax : n;
+    onConfirmar(Number.isFinite(acotado) && cantidad !== "" ? acotado : progreso);
   };
 
   return (
@@ -898,9 +972,20 @@ function CierreDelTiempo({
           inputMode="numeric"
           autoFocus
           value={cantidad}
-          onChange={(e) => setCantidad(e.target.value.replace(/[^0-9]/g, ""))}
+          onChange={(e) => {
+            const limpio = e.target.value.replace(/[^0-9]/g, "");
+            if (topeMax !== null && limpio !== "" && Number(limpio) > topeMax) {
+              setCantidad(String(topeMax));
+              return;
+            }
+            setCantidad(limpio);
+          }}
+          max={topeMax ?? undefined}
           className="w-full flex-1 rounded-3xl border border-amber-500/50 bg-transparent px-4 text-center font-mono text-5xl outline-none focus:border-amber-400"
         />
+        {topeMax !== null && (
+          <p className="text-center text-xs text-amber-200/60">Objetivo: {topeMax}</p>
+        )}
         <button
           type="button"
           onClick={confirmar}
@@ -913,12 +998,38 @@ function CierreDelTiempo({
   );
 }
 
+/** Como se llama el esquema en la pizarra, para que el titulo diga QUE TIPO de WOD cerro. */
+const ETIQUETA_ESQUEMA: Record<string, string> = {
+  ventana: "AMRAP",
+  cap: "FOR TIME",
+  libre: "FOR TIME",
+  intervalos: "INTERVALOS",
+};
+
+/**
+ * La pantalla de cierre, y por que el dato principal cambia con el esquema.
+ *
+ * "TERMINÓ · 8:42" no dice nada de un AMRAP capeado a medio chipper, y
+ * "CAPEADO · 63 reps" no dice nada de un For Time que en realidad completo 3
+ * rondas y media -el juez tiene que poder leer el resultado SIN hacer la
+ * cuenta el mismo. La regla:
+ *
+ *   - AMRAP: siempre rondas + reps, nunca un tiempo (no lo tiene).
+ *   - Cerro con tiempo (completo antes del cap): el tiempo, que es el dato
+ *     que define un For Time.
+ *   - Cualquier otro cierre (capeado, DNF, DQ) en un WOD de mas de una
+ *     ronda: rondas + reps, igual que un AMRAP -es la misma pregunta
+ *     ("¿hasta donde llego?") aunque el esquema no sea ventana.
+ *   - Una sola ronda sin tiempo: reps a secas.
+ */
 function Cerrado({
   resultado,
   esquema,
+  plan,
 }: {
   resultado: NonNullable<ReturnType<typeof reduceWodEvents>>;
   esquema: string;
+  plan: WodStep[];
 }) {
   const titulo =
     resultado.status === "dq"
@@ -929,17 +1040,35 @@ function Cerrado({
           ? "CAPEADO"
           : "TERMINÓ";
 
+  const etiqueta = ETIQUETA_ESQUEMA[esquema];
+  const multiRonda = plan.some((p) => p.totalRounds > 1);
+
   return (
     <section className="flex h-[clamp(13rem,40dvh,20rem)] flex-col items-center justify-center gap-2 px-4">
+      {etiqueta && (
+        <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+          {etiqueta}
+        </span>
+      )}
       <p className="text-3xl font-black">{titulo}</p>
-      {esquema === "ventana" ? (
+      {esquema === "ventana" || (multiRonda && resultado.finishedMs === null) ? (
         <p className="font-mono text-2xl">
           {resultado.completedRounds} rondas + {resultado.repsInRound}
+          <span className="ml-2 text-base font-sans font-normal text-neutral-500">reps</span>
         </p>
       ) : resultado.finishedMs !== null ? (
         <p className="font-mono text-2xl">{formatElapsed(resultado.finishedMs)}</p>
       ) : (
-        <p className="font-mono text-2xl">{resultado.completedReps} reps</p>
+        <p className="font-mono text-2xl">
+          {resultado.completedReps}
+          <span className="ml-2 text-base font-sans font-normal text-neutral-500">reps</span>
+        </p>
+      )}
+      {resultado.noRepCount > 0 && (
+        <p className="text-sm text-red-400">{resultado.noRepCount} no reps</p>
+      )}
+      {resultado.tiebreakMs !== null && (
+        <p className="text-sm text-neutral-500">desempate {formatElapsed(resultado.tiebreakMs)}</p>
       )}
     </section>
   );
@@ -950,12 +1079,16 @@ function Progreso({
   esquema,
   plan,
   siguiente,
+  terminado,
 }: {
   resultado: NonNullable<ReturnType<typeof reduceWodEvents>>;
   esquema: string;
   plan: WodStep[];
   /** El paso que viene, o null si este es el ultimo. */
   siguiente: WodStep | null;
+  /** Con el WOD cerrado, `Cerrado` ya muestra ronda/reps y no-reps: repetirlo
+   *  aca abajo es la misma informacion dos veces en la misma pantalla. */
+  terminado: boolean;
 }) {
   // El resumen habla en RONDAS Y MOVIMIENTO, no en el indice plano del plan:
   // un juez piensa "ronda 3 de 3, thruster", no "paso 5 de 6" — y ese numero
@@ -967,40 +1100,49 @@ function Progreso({
 
   return (
     <>
-    {/* LO QUE VIENE. El juez necesita saber que sigue para acomodar el
-        material —cambiar el disco, acercar el cajon— sin abrir nada ni
-        preguntarle a nadie. Va en gris y en una linea: es contexto, no una
-        accion. */}
+    {/* LO QUE VIENE, EN UNA CAJA PROPIA Y GRANDE: es lo que el juez tiene que
+        poder leer de reojo y decirle al atleta o al corredor de material sin
+        entrecerrar los ojos -antes era una linea gris chica, facil de perder
+        justo debajo del marcador. */}
     {siguiente && (
-      <p className="px-4 text-center text-sm text-neutral-600">
-        Después:{" "}
-        <span className="text-neutral-400">
-          {siguiente.maxReps ? "máx" : siguiente.target} {siguiente.name}
+      <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 px-4 py-2.5">
+        <span className="shrink-0 text-[11px] font-bold tracking-widest text-neutral-500 uppercase">
+          Sigue
         </span>
-      </p>
+        <p className="min-w-0 flex-1 truncate text-right text-lg font-bold text-neutral-100">
+          {siguiente.maxReps ? "Máx" : siguiente.target} {siguiente.name}
+          {siguiente.loadKg !== null && (
+            <span className="ml-2 font-mono text-base font-normal text-neutral-400">
+              {formatearCarga(siguiente.loadKg, siguiente.loadUnit)}
+            </span>
+          )}
+        </p>
+      </div>
     )}
 
-    <section className="flex flex-wrap justify-center gap-x-5 gap-y-1 px-4 text-sm text-neutral-400">
-      {esquema === "ventana" ? (
-        <span>
-          Ronda {resultado.completedRounds + 1} · {resultado.completedReps} reps
-        </span>
-      ) : pasoDeReferencia ? (
-        <span>
-          {pasoDeReferencia.totalRounds > 1
-            ? `Ronda ${pasoDeReferencia.round} de ${pasoDeReferencia.totalRounds}`
-            : "Única ronda"}
-          {" · "}
-          {pasoDeReferencia.name}
-        </span>
-      ) : null}
-      {resultado.noRepCount > 0 && (
-        <span className="text-red-400">{resultado.noRepCount} no reps</span>
-      )}
-      {resultado.tiebreakMs !== null && (
-        <span>desempate {formatElapsed(resultado.tiebreakMs)}</span>
-      )}
-    </section>
+    {!terminado && (
+      <section className="flex flex-wrap justify-center gap-x-5 gap-y-1 px-4 text-sm text-neutral-400">
+        {esquema === "ventana" ? (
+          <span>
+            Ronda {resultado.completedRounds + 1} · {resultado.completedReps} reps
+          </span>
+        ) : pasoDeReferencia ? (
+          <span>
+            {pasoDeReferencia.totalRounds > 1
+              ? `Ronda ${pasoDeReferencia.round} de ${pasoDeReferencia.totalRounds}`
+              : "Única ronda"}
+            {" · "}
+            {pasoDeReferencia.name}
+          </span>
+        ) : null}
+        {resultado.noRepCount > 0 && (
+          <span className="text-red-400">{resultado.noRepCount} no reps</span>
+        )}
+        {resultado.tiebreakMs !== null && (
+          <span>desempate {formatElapsed(resultado.tiebreakMs)}</span>
+        )}
+      </section>
+    )}
     </>
   );
 }

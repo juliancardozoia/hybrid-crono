@@ -54,6 +54,8 @@ export interface FilaDeMovimiento {
   max_reps: boolean;
   es_tiebreak: boolean;
   capture_style?: string | null;
+  /** Solo importa en `sin_reloj` (carga maxima): tope de intentos de `lift`. */
+  max_attempts: number;
 }
 
 export interface EspecificacionDeCategoria {
@@ -117,6 +119,7 @@ export function armarEstructuraDeWod(params: {
             maxReps: m.max_reps,
             isTiebreak: m.es_tiebreak,
             captureStyle: (m.capture_style as CaptureStyle | null) ?? null,
+            maxAttempts: m.max_attempts,
           };
         }),
     }));

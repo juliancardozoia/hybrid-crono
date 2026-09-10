@@ -57,6 +57,13 @@ export type WodMovement = {
   isTiebreak: boolean;
   /** Null = el derivado. Ver `estiloDelPaso`. */
   captureStyle: CaptureStyle | null;
+  /**
+   * Solo importa en `scheme === "sin_reloj"` (carga maxima): cuantos intentos
+   * de `lift` se aceptan antes de cerrar el carril solo. Estandar de
+   * halterofilia: 3, configurable por si el reglamento de la competencia pide
+   * otro numero. Se ignora en cualquier otro esquema.
+   */
+  maxAttempts: number;
 };
 
 export type WodBlock = {
@@ -130,6 +137,12 @@ export type WodResult = {
   tiebreakMs: number | null;
   bestLiftKg: number | null;
   attempts: LiftAttempt[];
+  /**
+   * El tope de intentos de `scheme === "sin_reloj"` (ver `WodMovement.maxAttempts`),
+   * o null en cualquier otro esquema. Es lo que la pantalla usa para mostrar
+   * "Intento 2 de 3" y para saber cuando dejar de ofrecer VALIDO/NULO.
+   */
+  maxAttempts: number | null;
   noRepCount: number;
   /** Se acabo el tiempo sin terminar la tarea. */
   capped: boolean;
@@ -395,7 +408,19 @@ export function reduceWodEvents(
           break;
         }
         const cantidad = numeroDelPayload(evento.payload, "cantidad");
-        const unidades = cantidad !== null ? cantidad : Math.max(paso.target, progress);
+        let unidades = cantidad !== null ? cantidad : Math.max(paso.target, progress);
+        // El juez puede escribir cualquier numero en el teclado: sin este
+        // tope, tipear de mas (a proposito o por error) le da al atleta mas
+        // reps -y por lo tanto mas puntos- de las que el WOD pide. `maxReps`
+        // no tiene objetivo que respetar: ahi contar ES el resultado.
+        if (!paso.maxReps && paso.target > 0 && unidades > paso.target) {
+          anomalies.push({
+            code: "cantidad_excede_objetivo",
+            message: `Se registraron ${unidades} en ${paso.name} pero el objetivo era ${paso.target}: se ajusta a ${paso.target}.`,
+            eventId: evento.id,
+          });
+          unidades = paso.target;
+        }
         cerrarPaso(unidades, evento.elapsedMs);
         break;
       }
@@ -472,11 +497,23 @@ export function reduceWodEvents(
   const awaitingFinalTally =
     seAcaboElTiempo && !cierreFinalUsado && plan.length > 0 && stepIndex < plan.length;
 
+  // Carga maxima (`sin_reloj`) no tiene plan de pasos que avanzar: un intento
+  // se registra con `lift`, que nunca toca `stepIndex`, asi que `completo`
+  // nunca es true para este esquema. Sin este tope, `status` se quedaba en
+  // "running" para siempre -la pantalla del juez seguia ofreciendo intentos
+  // sin limite, y como el motor de puntuacion solo le pone marca a un carril
+  // "finished", el WOD tampoco puntuaba nunca-.
+  const maxAttempts =
+    structure.scheme === "sin_reloj"
+      ? (structure.blocks.flatMap((b) => b.movements)[0]?.maxAttempts ?? null)
+      : null;
+  const intentosAgotados = maxAttempts !== null && attempts.length >= maxAttempts;
+
   let status: LaneStatus;
   if (dqEvent) status = "dq";
   else if (dnfEvent) status = "dnf";
   else if (!hasStart) status = "not_started";
-  else if (completo || ventanaAgotada) status = "finished";
+  else if (completo || ventanaAgotada || intentosAgotados) status = "finished";
   else status = "running";
 
   const { completedRounds, repsInRound } = contarRondas(plan, stepIndex, progress);
@@ -511,6 +548,7 @@ export function reduceWodEvents(
     tiebreakMs,
     bestLiftKg: validos.length > 0 ? Math.max(...validos) : null,
     attempts,
+    maxAttempts,
     noRepCount,
     capped,
     awaitingFinalTally,

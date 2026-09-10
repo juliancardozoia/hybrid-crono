@@ -8,6 +8,13 @@ export const metadata = { title: "Carriles — Scora" };
 export default async function JuezPage() {
   const { mios, libres, motivo } = await getJudgeLanes();
 
+  // Separados en DOS secciones, no una: un juez que se sale de la app o la
+  // cierra por error tiene que encontrar el heat QUE YA ESTA CORRIENDO de un
+  // vistazo, sin leer la lista entera buscando cual de sus carriles asignados
+  // es el que esta en vivo. "En vivo" va primero porque es lo urgente.
+  const enVivo = mios.filter((l) => l.heatStartedAt !== null);
+  const asignados = mios.filter((l) => l.heatStartedAt === null);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col gap-6 p-5">
       <header>
@@ -18,13 +25,13 @@ export default async function JuezPage() {
         </p>
       </header>
 
-      {mios.length > 0 && (
+      {enVivo.length > 0 && (
         <section>
-          <h2 className="mb-2 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
-            Asignados a ti
+          <h2 className="mb-2 text-xs font-semibold tracking-widest text-lime-400 uppercase">
+            En vivo
           </h2>
           <ul className="flex flex-col gap-2">
-            {mios.map((lane) => (
+            {enVivo.map((lane) => (
               <li
                 key={lane.laneId}
                 className="rounded-2xl border border-lime-500/40 bg-lime-500/5 p-4"
@@ -32,8 +39,26 @@ export default async function JuezPage() {
                 <Link href={`/juez/carril?id=${lane.laneId}`} className="block">
                   <LaneInfo lane={lane} />
                   <p className="mt-2 text-sm font-semibold text-lime-400">
-                    {lane.heatStartedAt ? "Heat en curso — abrir cronómetro" : "Abrir cronómetro"}
+                    Heat en curso — abrir cronómetro
                   </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {asignados.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
+            Asignados a ti
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {asignados.map((lane) => (
+              <li key={lane.laneId} className="rounded-2xl border border-neutral-800 p-4">
+                <Link href={`/juez/carril?id=${lane.laneId}`} className="block">
+                  <LaneInfo lane={lane} />
+                  <p className="mt-2 text-sm font-semibold text-neutral-400">Abrir cronómetro</p>
                 </Link>
               </li>
             ))}

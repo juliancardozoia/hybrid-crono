@@ -53,6 +53,7 @@ const THRUSTER: FilaDeMovimiento = {
   max_reps: false,
   es_tiebreak: false,
   capture_style: null,
+  max_attempts: 3,
 };
 
 const NOMBRES = new Map([["cat-thruster", "Thruster"]]);

@@ -773,6 +773,13 @@ export async function editarMovimiento(
   // lo mismo que elegir "tap".
   const captura = String(formData.get("captureStyle") ?? "").trim();
 
+  // Solo importa en "Carga máxima", pero el campo viaja siempre (oculto en
+  // cualquier otro esquema) para no perder lo que ya estaba cargado. Menor a
+  // 1 no tiene sentido -nadie compite sin ningún intento- asi que se cae al
+  // default de la columna.
+  const intentosRaw = Number(String(formData.get("maxAttempts") ?? ""));
+  const maxAttempts = Number.isFinite(intentosRaw) && intentosRaw >= 1 ? Math.trunc(intentosRaw) : 3;
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("part_movements")
@@ -784,6 +791,7 @@ export async function editarMovimiento(
       max_reps: maxReps,
       es_tiebreak: formData.get("esTiebreak") === "on",
       capture_style: captura ? (captura as CaptureStyle) : null,
+      max_attempts: maxAttempts,
       notes: String(formData.get("notes") ?? "").trim() || null,
     })
     .eq("id", movementId);

@@ -78,6 +78,7 @@ function movimiento(
     max_reps: false,
     es_tiebreak: false,
     capture_style: null,
+    max_attempts: 3,
     ...overrides,
   };
 }

@@ -466,6 +466,13 @@ export interface EtapaDeCategoria {
   pool: EquipoDeEtapa[];
   /** Quien avanzo, si el corte ya se confirmo. Null = todavia no se decidio. */
   avanzan: string[] | null;
+  /**
+   * Si la etapa ANTERIOR ya termino para todos los equipos activos -- misma
+   * regla que exige `confirmar_corte_de_etapa()` al guardar. Mientras sea
+   * false, la pantalla no deja elegir: dejar armar la seleccion para que el
+   * servidor la rechace al final es peor experiencia que no ofrecerla.
+   */
+  etapaAnteriorTerminada: boolean;
 }
 
 export interface PuntuacionDeCategoria {
@@ -595,6 +602,29 @@ export async function getPuntuacionDelEvento(
     avanzanPorDivisionYEtapa.set(clave, lista);
   }
 
+  // (division, etapa) -> si la etapa ANTERIOR ya termino, con la misma regla
+  // que usa `confirmar_corte_de_etapa()` en la base -- ver
+  // `etapa_previa_completa()`. La pantalla no puede tener su propio criterio
+  // de "termino": si difiere del que usa el guardado, dejaria elegir un corte
+  // que el servidor va a rechazar igual.
+  const pedidosDeEtapa: { divisionId: string; stage: number }[] = [];
+  for (const d of divisiones ?? []) {
+    const maxStage = Math.max(1, ...(etapasPorDivision.get(d.id) ?? [1]));
+    for (let stage = 2; stage <= maxStage; stage++) {
+      pedidosDeEtapa.push({ divisionId: d.id, stage });
+    }
+  }
+  const terminadaPorDivisionYEtapa = new Map<string, boolean>();
+  await Promise.all(
+    pedidosDeEtapa.map(async ({ divisionId, stage }) => {
+      const { data } = await supabase.rpc("etapa_previa_completa", {
+        p_division_id: divisionId,
+        p_stage: stage,
+      });
+      terminadaPorDivisionYEtapa.set(`${divisionId}|${stage}`, Boolean(data));
+    }),
+  );
+
   return (divisiones ?? []).map((d) => {
     const sn = snapshotPorDivision.get(d.id);
 
@@ -627,6 +657,7 @@ export async function getPuntuacionDelEvento(
         stage,
         pool,
         avanzan: avanzanPorDivisionYEtapa.get(`${d.id}|${stage}`) ?? null,
+        etapaAnteriorTerminada: terminadaPorDivisionYEtapa.get(`${d.id}|${stage}`) ?? false,
       });
     }
 

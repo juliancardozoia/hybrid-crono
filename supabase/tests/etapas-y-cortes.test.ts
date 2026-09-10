@@ -50,7 +50,30 @@ async function crearPruebaDeEtapa(nombre: string, orden: number, stage: number):
   return workoutId;
 }
 
+/**
+ * Marca terminado el circuito de la etapa 1 del fixture para todos sus
+ * carriles. `confirmar_corte_de_etapa` ahora exige que la etapa anterior haya
+ * terminado (ver 20260909240000): estos tests confirman cortes de etapa 2 sin
+ * que les importe el detalle de la etapa 1, asi que la dan por corrida antes
+ * de pedir el corte -- igual que en una competencia real, donde el corte se
+ * confirma DESPUES de que el circuito termino.
+ */
+async function terminarEtapaUno(): Promise<void> {
+  await asUser(s.db, s.users.owner, async () => {
+    for (const laneId of s.laneIds) {
+      await s.db.query(
+        `insert into results (lane_id, event_id, heat_id, team_id, division_id, status, total_ms)
+         select l.id, l.event_id, l.heat_id, l.team_id, $2, 'finished', 60000
+         from lanes l where l.id = $1
+         on conflict (lane_id) do update set status = 'finished', total_ms = 60000`,
+        [laneId, s.divisionId],
+      );
+    }
+  });
+}
+
 async function confirmarCorte(stage: number, teamIds: string[]): Promise<void> {
+  await terminarEtapaUno();
   await asUser(s.db, s.users.owner, () =>
     s.db.query("select confirmar_corte_de_etapa($1, $2, $3, $4)", [
       s.divisionId,
@@ -102,6 +125,56 @@ describe("confirmar_corte_de_etapa", () => {
       );
       expect(msg).toContain("no se puede rehacer");
     });
+  });
+
+  it("rechaza el corte si la etapa anterior todavia no termino para todos", async () => {
+    const p1 = await crearPruebaDeEtapa("WOD 1", 1, 1);
+    let parteId = "";
+    await asUser(s.db, s.users.owner, async () => {
+      const r = await s.db.query<{ id: string }>(
+        "select id from workout_parts where workout_id = $1",
+        [p1],
+      );
+      parteId = r.rows[0].id;
+      // Solo un equipo termino el WOD 1; los otros dos siguen sin resultado.
+      await s.db.query("select * from upsert_workout_score($1, $2, $3::jsonb)", [
+        parteId,
+        s.teamIds[0],
+        JSON.stringify({ value: 60_000 }),
+      ]);
+    });
+
+    await asUser(s.db, s.users.owner, async () => {
+      const msg = await expectDenied(() =>
+        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3)", [
+          s.divisionId,
+          [s.teamIds[0]],
+          [100],
+        ]),
+      );
+      expect(msg).toContain("La etapa anterior todavía no terminó");
+    });
+  });
+
+  it("permite el corte apenas todos los equipos activos terminan la etapa anterior", async () => {
+    const p1 = await crearPruebaDeEtapa("WOD 1", 1, 1);
+    await asUser(s.db, s.users.owner, async () => {
+      const r = await s.db.query<{ id: string }>(
+        "select id from workout_parts where workout_id = $1",
+        [p1],
+      );
+      const parteId = r.rows[0].id;
+      for (const teamId of s.teamIds) {
+        await s.db.query("select * from upsert_workout_score($1, $2, $3::jsonb)", [
+          parteId,
+          teamId,
+          JSON.stringify({ value: 60_000 }),
+        ]);
+      }
+    });
+
+    // No revienta: la etapa anterior ya termino para todos.
+    await confirmarCorte(2, [s.teamIds[0]]);
   });
 });
 

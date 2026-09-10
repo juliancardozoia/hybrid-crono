@@ -1275,6 +1275,7 @@ export type Database = {
           id: string
           load_kg: number | null
           load_unit: Database["public"]["Enums"]["load_unit"]
+          max_attempts: number
           max_reps: boolean
           movement_id: string | null
           notes: string | null
@@ -1293,6 +1294,7 @@ export type Database = {
           id?: string
           load_kg?: number | null
           load_unit?: Database["public"]["Enums"]["load_unit"]
+          max_attempts?: number
           max_reps?: boolean
           movement_id?: string | null
           notes?: string | null
@@ -1311,6 +1313,7 @@ export type Database = {
           id?: string
           load_kg?: number | null
           load_unit?: Database["public"]["Enums"]["load_unit"]
+          max_attempts?: number
           max_reps?: boolean
           movement_id?: string | null
           notes?: string | null
@@ -2817,6 +2820,10 @@ export type Database = {
       }
       es_integrante_de: {
         Args: { p_registration_id: string }
+        Returns: boolean
+      }
+      etapa_previa_completa: {
+        Args: { p_division_id: string; p_stage: number }
         Returns: boolean
       }
       evaluar_descuento: {

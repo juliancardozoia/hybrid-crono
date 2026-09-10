@@ -93,6 +93,35 @@ export interface LanesResult {
     | "todos-tomados";
 }
 
+/**
+ * El numero de heat, para ordenar numericamente y no alfabeticamente.
+ *
+ * `heats.name` es texto libre ("Heat 1", "Heat 2", ..., "Heat 10"): ordenado
+ * como string, "Heat 10" cae entre "Heat 1" y "Heat 2". Sin numero se manda al
+ * final, no al principio -- un heat sin numero en el nombre no es "el
+ * primero".
+ */
+function numeroDeHeat(nombre: string): number {
+  const m = nombre.match(/(\d+)/);
+  return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Por evento y despues por heat. Es lo que hace que un juez que se sale de la
+ * app y vuelve se ubique de un vistazo: el orden en el que se lista es el
+ * orden en el que corre la competencia, no el orden en el que
+ * `judge_visible_lanes()` los devolvio (por `lane_number` dentro de cada
+ * heat, sin agrupar por heat ni por evento).
+ */
+function ordenarPorEventoYHeat(lanes: JudgeLane[]): JudgeLane[] {
+  return [...lanes].sort(
+    (a, b) =>
+      a.eventName.localeCompare(b.eventName) ||
+      numeroDeHeat(a.heatName) - numeroDeHeat(b.heatName) ||
+      a.laneNumber - b.laneNumber,
+  );
+}
+
 export async function getJudgeLanes(): Promise<LanesResult> {
   const supabase = await createClient();
   const {
@@ -124,8 +153,8 @@ export async function getJudgeLanes(): Promise<LanesResult> {
   const conAtleta = enJuego.filter((r) => r.team_id !== null);
   const todos = conAtleta.map((r) => mapear(r, user.id));
 
-  const mios = todos.filter((l) => l.judgeId === user.id);
-  const libres = todos.filter((l) => l.judgeId === null);
+  const mios = ordenarPorEventoYHeat(todos.filter((l) => l.judgeId === user.id));
+  const libres = ordenarPorEventoYHeat(todos.filter((l) => l.judgeId === null));
 
   let motivo: LanesResult["motivo"] = null;
   if (mios.length === 0 && libres.length === 0) {

@@ -255,6 +255,17 @@ export function TorreDeHeats({
   );
 }
 
+// "Deshacer Inicio" es para el error de apretar "Largar" por accidente, no
+// para reabrir un heat que ya lleva un rato corriendo: pasado este margen, la
+// salida en falso ya no es la explicacion mas probable y un click ahi es mas
+// riesgo (reiniciar un heat que si arranco de verdad) que beneficio.
+const VENTANA_DESHACER_MS = 60_000;
+
+function puedeDeshacerInicio(heat: HeatVista): boolean {
+  if (!heat.startedAt || heat.endedAt || heat.marcajesTotales > 0) return false;
+  return Date.now() - new Date(heat.startedAt).getTime() <= VENTANA_DESHACER_MS;
+}
+
 function TarjetaDeHeat({
   eventId,
   timezone,
@@ -329,9 +340,10 @@ function TarjetaDeHeat({
         {!heat.startedAt ? (
           <LargarHeat eventId={eventId} heat={heat} largar={largar} />
         ) : (
-          heat.marcajesTotales === 0 && (
-            // Todavia no llego ningun marcaje: se puede deshacer sin
-            // destruir tiempos de nadie.
+          puedeDeshacerInicio(heat) && (
+            // Todavia no llego ningun marcaje, el heat no termino, y no paso
+            // mucho desde la largada: se puede deshacer sin destruir tiempos
+            // de nadie ni reabrir un heat que ya cerro.
             <div className="shrink-0">
               <DeshacerInicio eventId={eventId} heat={heat} deshacer={deshacer} />
             </div>

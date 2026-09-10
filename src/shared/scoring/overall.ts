@@ -3,7 +3,7 @@
  */
 
 import { assignPhysicalPositions, rankPart } from "./place";
-import { pointsDirection } from "./points";
+import { pointsDirection, redondear } from "./points";
 import type {
   OverallEntry,
   PartPlacement,
@@ -120,9 +120,15 @@ export function computeOverall(params: {
       return ia - ib;
     });
 
+    // Sumar varios `points` de 3 decimales en JS arrastra ruido de punto
+    // flotante (174.222 sale 174.22199999999998). Se redondea la SUMA a la
+    // misma precision de sus partes -- no se pierde nada real, solo el error
+    // de representacion -- para que ordenar y mostrar partan del mismo numero.
+    const totalPoints = redondear(placements.reduce((suma, p) => suma + p.points, 0));
+
     return {
       teamId,
-      totalPoints: placements.reduce((suma, p) => suma + p.points, 0),
+      totalPoints,
       placements,
       tiebreakVector: placements.map((p) => p.position).sort((a, b) => a - b),
     };
@@ -136,6 +142,8 @@ export function computeOverall(params: {
   return ubicados.map(({ item, position, tiedWith }): OverallEntry => ({
     teamId: item.teamId,
     totalPoints: item.totalPoints,
+    // Solo para mostrar: nunca se usa arriba para ordenar ni desempatar.
+    displayPoints: Math.round(item.totalPoints),
     placements: item.placements,
     tiebreakVector: item.tiebreakVector,
     position,

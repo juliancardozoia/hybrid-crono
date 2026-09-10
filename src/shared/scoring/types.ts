@@ -137,12 +137,29 @@ export type PartPlacement = {
   tiedWith: number;
   points: number;
   comparable: ComparableScore;
+  /**
+   * El valor CRUDO, sin normalizar (en la unidad de la parte). Sirve solo
+   * para que una pantalla muestre "08:21" o "184 reps" en vez del puesto --
+   * el ranking sale siempre de `comparable`, nunca de esto.
+   */
+  value: number | null;
+  /** Reps de la ronda parcial. Solo tiene sentido si `scoreUnit` es "rondas_reps". */
+  reps: number | null;
+  /** Valor en `capUnit`. Solo si el status es "capeado". */
+  capValue: number | null;
 };
 
 /** Una fila de la tabla general de una categoria. */
 export type OverallEntry = {
   teamId: string;
+  /** Precision completa (3 decimales). Es lo unico que se usa para ordenar y desempatar. */
   totalPoints: number;
+  /**
+   * `totalPoints` redondeado a entero, SOLO para mostrar. Nunca se usa para
+   * comparar ni para sumar: la pantalla no puede mostrar "80.666 pts" pero el
+   * motor tampoco puede perder precision por eso.
+   */
+  displayPoints: number;
   /** Una entrada por parte, en el orden del evento. */
   placements: PartPlacement[];
   /**

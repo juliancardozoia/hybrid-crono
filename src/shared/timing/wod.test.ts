@@ -59,7 +59,7 @@ function fran(): WodStructure {
             captureStyle: null,
             loadKg: 43,
             maxReps: false,
-            isTiebreak: false,
+            isTiebreak: false, maxAttempts: 3,
           },
           {
             id: "m2",
@@ -71,7 +71,7 @@ function fran(): WodStructure {
             captureStyle: null,
             loadKg: null,
             maxReps: false,
-            isTiebreak: false,
+            isTiebreak: false, maxAttempts: 3,
           },
         ],
       },
@@ -95,9 +95,9 @@ function cindy(): WodStructure {
         durationMs: null,
         restMs: null,
         movements: [
-          { id: "m1", orderIndex: 0, name: "Pull-up", unit: "reps", targetPerRound: [5], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
-          { id: "m2", orderIndex: 1, name: "Push-up", unit: "reps", targetPerRound: [10], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
-          { id: "m3", orderIndex: 2, name: "Air Squat", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
+          { id: "m1", orderIndex: 0, name: "Pull-up", unit: "reps", targetPerRound: [5], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null },
+          { id: "m2", orderIndex: 1, name: "Push-up", unit: "reps", targetPerRound: [10], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null },
+          { id: "m3", orderIndex: 2, name: "Air Squat", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null },
         ],
       },
     ],
@@ -147,7 +147,7 @@ describe("el estilo de captura de cada paso", () => {
               loadKg: null,
               loadUnit: "kg",
               maxReps: false,
-              isTiebreak: false,
+              isTiebreak: false, maxAttempts: 3,
               captureStyle: null,
               ...over,
             },
@@ -249,7 +249,7 @@ describe("planDelWod", () => {
             captureStyle: null,
             loadKg: null,
             maxReps: false,
-            isTiebreak: false,
+            isTiebreak: false, maxAttempts: 3,
           })),
         },
       ],
@@ -273,7 +273,7 @@ describe("planDelWod", () => {
           rounds: 1,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m3", orderIndex: 0, name: "Double-under", unit: "reps", targetPerRound: [50], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
+          movements: [{ id: "m3", orderIndex: 0, name: "Double-under", unit: "reps", targetPerRound: [50], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null }],
         },
         {
           id: "buy",
@@ -282,7 +282,7 @@ describe("planDelWod", () => {
           rounds: 1,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m1", orderIndex: 0, name: "Row", unit: "calorias", targetPerRound: [20], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
+          movements: [{ id: "m1", orderIndex: 0, name: "Row", unit: "calorias", targetPerRound: [20], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null }],
         },
         {
           id: "work",
@@ -291,7 +291,7 @@ describe("planDelWod", () => {
           rounds: 2,
           durationMs: null,
           restMs: null,
-          movements: [{ id: "m2", orderIndex: 0, name: "Burpee", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null }],
+          movements: [{ id: "m2", orderIndex: 0, name: "Burpee", unit: "reps", targetPerRound: [15], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null }],
         },
       ],
     };
@@ -343,7 +343,7 @@ describe("planDelWod", () => {
               captureStyle: null,
               loadKg: null,
               maxReps: false,
-              isTiebreak: false,
+              isTiebreak: false, maxAttempts: 3,
             },
           ],
         },
@@ -418,6 +418,35 @@ describe("contar repeticiones", () => {
     ];
     const r = reduceWodEvents("c1", eventos, fran());
     expect(r.completedReps).toBe(14);
+  });
+
+  it("cerrar el movimiento con MAS de lo pedido se recorta al objetivo, y queda la anomalia", () => {
+    // Un juez que tipea de mas -a proposito o por error- no puede darle al
+    // atleta mas reps (y por lo tanto mas puntos) de las que el WOD pide.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 60_000, { partMovementId: "m1", cantidad: 30 }),
+    ];
+    const r = reduceWodEvents("c1", eventos, fran());
+    expect(r.completedReps).toBe(21);
+    expect(r.anomalies.some((a) => a.code === "cantidad_excede_objetivo")).toBe(true);
+  });
+
+  it("un movimiento max_reps no tiene tope: contar ES el resultado", () => {
+    reset();
+    const estructura = fran();
+    estructura.blocks[0].rounds = 1;
+    estructura.blocks[0].movements = [
+      { ...estructura.blocks[0].movements[0], maxReps: true, targetPerRound: [] },
+    ];
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 60_000, { partMovementId: "m1", cantidad: 250 }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura);
+    expect(r.completedReps).toBe(250);
+    expect(r.anomalies).toEqual([]);
   });
 
   it("cerrar la ronda saltea lo que quedó sin marcar", () => {
@@ -672,7 +701,7 @@ describe("el cap", () => {
               loadKg: 24,
               loadUnit: "kg",
               maxReps: false,
-              isTiebreak: false,
+              isTiebreak: false, maxAttempts: 3,
               captureStyle: null,
             },
           ],
@@ -712,7 +741,7 @@ describe("carga máxima", () => {
         durationMs: null,
         restMs: null,
         movements: [
-          { id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "kg", targetPerRound: [1], loadKg: null, maxReps: false, isTiebreak: false, loadUnit: "kg", captureStyle: null },
+          { id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "kg", targetPerRound: [1], loadKg: null, maxReps: false, isTiebreak: false, maxAttempts: 3, loadUnit: "kg", captureStyle: null },
         ],
       },
     ],
@@ -746,6 +775,56 @@ describe("carga máxima", () => {
     reset();
     const eventos = [marcaje("lane_start", 0), marcaje("lift", 60_000, { loadKg: 100, valido: false })];
     expect(reduceWodEvents("c1", eventos, cargaMaxima).bestLiftKg).toBeNull();
+  });
+
+  it("sigue 'running' con intentos de sobra: la pantalla no puede cerrar sola todavía", () => {
+    reset();
+    const eventos = [marcaje("lane_start", 0), marcaje("lift", 60_000, { loadKg: 75, valido: true })];
+    const r = reduceWodEvents("c1", eventos, cargaMaxima);
+    expect(r.status).toBe("running");
+    expect(r.maxAttempts).toBe(3);
+  });
+
+  it("cierra solo al agotar los intentos, con o sin importar el reloj", () => {
+    // Reportado en produccion: el juez marco 6 intentos y la pantalla nunca
+    // cerro. Sin `status === "finished"`, el motor de puntuacion tampoco le
+    // pone marca al carril (scoreFromWodResult exige "valido" == "finished"),
+    // asi que ademas de confuso el WOD nunca puntuaba.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("lift", 60_000, { loadKg: 75, valido: true }),
+      marcaje("lift", 180_000, { loadKg: 80, valido: true }),
+      marcaje("lift", 300_000, { loadKg: 82.5, valido: false }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cargaMaxima);
+    expect(r.status).toBe("finished");
+    expect(r.bestLiftKg).toBe(80);
+  });
+
+  it("un cuarto intento no se descarta: queda en el log aunque ya haya cerrado", () => {
+    // El reductor nunca borra nada (append-only): un intento que llega
+    // despues del cierre sigue contando para bestLiftKg si es mejor, aunque
+    // el carril ya este "finished". Cerrar la pantalla es responsabilidad de
+    // la UI (WodJudgeScreen), no del reductor descartando datos.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("lift", 60_000, { loadKg: 75, valido: true }),
+      marcaje("lift", 180_000, { loadKg: 80, valido: true }),
+      marcaje("lift", 300_000, { loadKg: 82.5, valido: false }),
+      marcaje("lift", 400_000, { loadKg: 85, valido: true }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cargaMaxima);
+    expect(r.status).toBe("finished");
+    expect(r.attempts).toHaveLength(4);
+    expect(r.bestLiftKg).toBe(85);
+  });
+
+  it("un movimiento sin tope configurado (esquema distinto) no reporta maxAttempts", () => {
+    reset();
+    const eventos = [marcaje("lane_start", 0), ...reps(21, 1000)];
+    expect(reduceWodEvents("c1", eventos, fran()).maxAttempts).toBeNull();
   });
 });
 

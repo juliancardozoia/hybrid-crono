@@ -73,12 +73,20 @@ export default async function LeaderboardPage({
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <LeaderboardLive
-            slug={event.public_slug}
-            inicial={leaderboard}
-            eventName={event.name}
-            compacto
-          />
+          {/* `LeaderboardLive` lee `results`, que solo llenan las pruebas de
+              CIRCUITO (Hyrox). Un evento sin ninguna -- todo CrossFit -- deja
+              `leaderboard.rows` vacio PARA SIEMPRE, y el componente pinta su
+              propio cartel de "todavia no hay resultados" que nunca se va:
+              no aporta nada y le roba el lugar a la tabla general, que es la
+              unica que si tiene datos. Se omite entero en ese caso. */}
+          {leaderboard.rows.length > 0 && (
+            <LeaderboardLive
+              slug={event.public_slug}
+              inicial={leaderboard}
+              eventName={event.name}
+              compacto
+            />
+          )}
           {/* Se esconde sola solo cuando es redundante con el leaderboard de
               tiempos de arriba: una sola prueba y ademas de circuito. */}
           <TablaGeneral slug={event.public_slug} inicial={general} />

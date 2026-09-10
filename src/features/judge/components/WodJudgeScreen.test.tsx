@@ -90,7 +90,7 @@ function estructura(
             loadKg: 43.09,
             loadUnit: "lb",
             maxReps: false,
-            isTiebreak: false,
+            isTiebreak: false, maxAttempts: 3,
             captureStyle: null,
             ...movimiento,
           },
@@ -242,6 +242,71 @@ describe("el no-rep", () => {
     fireEvent.click(screen.getByRole("button", { name: "omitir" }));
     expect(screen.queryByText("Motivo:")).toBeNull();
     expect(tipos()).toEqual(["no_rep"]);
+  });
+});
+
+describe("carga máxima", () => {
+  it("cierra sola al agotar los intentos, en vez de seguir pidiendo para siempre", async () => {
+    // Reportado en producción: el juez marcó 6 intentos en un WOD de carga
+    // máxima y la pantalla nunca dejó de ofrecer VÁLIDO/NULO.
+    await pintar({ maxAttempts: 2 }, { scheme: "sin_reloj", timeCapMs: null });
+
+    expect(screen.getByText("Intento 1 de 2")).toBeTruthy();
+
+    const kilos = screen.getByPlaceholderText("kg") as HTMLInputElement;
+    fireEvent.change(kilos, { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: "VÁLIDO" }));
+    await waitFor(() => expect(tipos()).toEqual(["lift"]));
+
+    // Segundo y último intento.
+    await waitFor(() => expect(screen.getByText("Intento 2 de 2")).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText("kg"), { target: { value: "110" } });
+    fireEvent.click(screen.getByRole("button", { name: "VÁLIDO" }));
+    await waitFor(() => expect(tipos()).toEqual(["lift", "lift"]));
+
+    // Se acabaron los intentos: cierra sola, sin más VÁLIDO/NULO que tocar.
+    await waitFor(() => expect(screen.getByText("INTENTOS COMPLETOS")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "VÁLIDO" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "NULO" })).toBeNull();
+    // El mejor de los dos (100 y 110 válidos): queda como marca.
+    expect(screen.getByText((_, node) => node?.textContent === "110kg")).toBeTruthy();
+  });
+});
+
+describe("terminar antes del cap oculta la cuenta regresiva", () => {
+  it("deja de mostrar cuánto falta para el cap una vez que el atleta termina", async () => {
+    // Reportado como confuso: el atleta ya terminó y el reloj de "cuánto
+    // falta para el cap" seguía corriendo en pantalla, tanto para el juez
+    // como para el atleta que lo mira de reojo.
+    await pintar({ targetPerRound: [1], captureStyle: "tap" });
+
+    expect(screen.getByText("para el cap")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ REP/ }));
+    await waitFor(() => expect(tipos()).toContain("rep"));
+
+    await waitFor(() => expect(screen.getByText("TERMINÓ")).toBeTruthy());
+    expect(screen.queryByText("para el cap")).toBeNull();
+  });
+});
+
+describe("el tope de reps", () => {
+  it("MOVIMIENTO ✓ no deja escribir más que el objetivo del paso", async () => {
+    // Grave: si el juez tipea de más, el atleta se lleva reps -y puntos- que
+    // no hizo. El campo se acota al escribir, no solo al registrar.
+    await pintar({ targetPerRound: [21], captureStyle: "tap" });
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ REP/ }));
+    await waitFor(() => expect(tipos()).toContain("rep"));
+    fireEvent.click(screen.getByRole("button", { name: "MOVIMIENTO ✓" }));
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "30" } });
+    expect(input.value).toBe("21");
+
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+    await waitFor(() => expect(tipos()).toEqual(["rep", "movement_done"]));
+    expect(guardados.at(-1)?.payload?.cantidad).toBe(21);
   });
 });
 

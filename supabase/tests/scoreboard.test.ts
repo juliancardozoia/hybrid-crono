@@ -181,6 +181,26 @@ describe("scoreboard_document", () => {
 });
 
 describe("etapas y cortes", () => {
+  /**
+   * `confirmar_corte_de_etapa` exige que la etapa anterior haya terminado
+   * (20260909240000): el circuito del fixture es la etapa 1 de esta
+   * categoria, asi que hay que darlo por corrido antes de poder confirmar el
+   * corte a la etapa 2 -- ver el mismo helper en etapas-y-cortes.test.ts.
+   */
+  async function terminarEtapaUno(): Promise<void> {
+    await asAdmin(s.db, async () => {
+      for (const laneId of s.laneIds) {
+        await s.db.query(
+          `insert into results (lane_id, event_id, heat_id, team_id, division_id, status, total_ms)
+           select l.id, l.event_id, l.heat_id, l.team_id, $2, 'finished', 60000
+           from lanes l where l.id = $1
+           on conflict (lane_id) do update set status = 'finished', total_ms = 60000`,
+          [laneId, s.divisionId],
+        );
+      }
+    });
+  }
+
   /** Un segundo workout, en la etapa 2, asignado a la categoria del fixture. */
   async function crearPruebaDeEtapa2(): Promise<{ workoutId: string; partId: string }> {
     let workoutId = "";
@@ -226,6 +246,7 @@ describe("etapas y cortes", () => {
 
   it("confirmar_corte_de_etapa avanza a los equipos elegidos y congela su tabla", async () => {
     await crearPruebaDeEtapa2();
+    await terminarEtapaUno();
     const avanzan = [s.teamIds[0], s.teamIds[1]];
 
     await asUser(s.db, s.users.owner, () =>
@@ -248,6 +269,7 @@ describe("etapas y cortes", () => {
 
   it("un corte confirmado no se puede rehacer", async () => {
     await crearPruebaDeEtapa2();
+    await terminarEtapaUno();
     await asUser(s.db, s.users.owner, () =>
       s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
         s.divisionId,

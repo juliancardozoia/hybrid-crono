@@ -80,7 +80,7 @@ export function rankPart(params: {
 
   const entradas = teamIds.map((teamId) => {
     const raw = porEquipo.get(teamId) ?? scorePendiente(part.id, teamId);
-    return { teamId, status: raw.status, comparable: normalizeScore(part, raw) };
+    return { teamId, status: raw.status, comparable: normalizeScore(part, raw), raw };
   });
 
   const ubicados = assignPhysicalPositions(entradas, (a, b) =>
@@ -106,5 +106,11 @@ export function rankPart(params: {
         ? pointsForPosition(table, position)
         : 0,
     comparable: item.comparable satisfies ComparableScore,
+    // El valor CRUDO (en `scoreUnit`/`capUnit`, sin normalizar ni escalar):
+    // lo que el motor usa para ordenar es `comparable`, esto es solo para
+    // que una pantalla pueda mostrar "08:21" o "184 reps" en vez del puesto.
+    value: item.raw.value,
+    reps: item.raw.reps,
+    capValue: item.raw.capValue,
   }));
 }

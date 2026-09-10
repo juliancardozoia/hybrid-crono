@@ -148,6 +148,25 @@ describe("rankPart", () => {
     expect(placements.find((p) => p.teamId === "ganador")?.points).toBe(100);
   });
 
+  it("conserva el valor crudo (sin normalizar) para que una pantalla lo muestre", () => {
+    // El ranking sale siempre de `comparable`; `value`/`reps`/`capValue` son
+    // solo para pintar "184 reps" o "08:21" en el detalle del atleta.
+    const placements = rankPart({
+      part: POR_REPS,
+      table: TABLA_TIEMPO_TOTAL,
+      teamIds: ["a", "sin-marca"],
+      scores: [reps("a", 184)],
+    });
+
+    const a = placements.find((p) => p.teamId === "a");
+    expect(a?.value).toBe(184);
+    expect(a?.reps).toBeNull();
+    expect(a?.capValue).toBeNull();
+
+    const sinMarca = placements.find((p) => p.teamId === "sin-marca");
+    expect(sinMarca?.value).toBeNull();
+  });
+
   it("ignora scores de otra prueba", () => {
     const ajeno: RawScore = { ...reps("b", 999), partId: "otra" };
     const placements = rankPart({

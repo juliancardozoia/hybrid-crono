@@ -276,7 +276,7 @@ async function armarPartesDeWod(
     supabase
       .from("part_movements")
       .select(
-        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style",
+        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style, max_attempts",
       )
       .in("part_id", partIds)
       .order("order_index"),

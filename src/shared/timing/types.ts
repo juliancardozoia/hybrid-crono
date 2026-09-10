@@ -120,7 +120,11 @@ export type AnomalyCode =
   | "movimiento_desconocido"
   // Llegó con elapsed >= el cap o la ventana: no cuenta para el resultado,
   // pero queda en el log para que se pueda auditar un reclamo.
-  | "marca_despues_del_limite";
+  | "marca_despues_del_limite"
+  // El juez escribió más unidades que el objetivo del paso (p. ej. 30 en un
+  // movimiento de 21): se recorta al objetivo para no inflar el resultado, y
+  // queda la anomalía para que se pueda auditar.
+  | "cantidad_excede_objetivo";
 
 export type Anomaly = {
   code: AnomalyCode;

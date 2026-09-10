@@ -177,6 +177,7 @@ describe("scoreFromWodResult", () => {
       tiebreakMs: null,
       bestLiftKg: null,
       attempts: [],
+      maxAttempts: null,
       noRepCount: 0,
       capped: false,
       awaitingFinalTally: false,
