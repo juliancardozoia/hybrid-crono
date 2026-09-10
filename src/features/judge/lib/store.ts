@@ -133,46 +133,72 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     return anchor ? Math.round(elapsedFromAnchor(anchor, performance.now())) : 0;
   },
 
-  init: async ({ laneId, segments, heatStartEpochMs, startOffsetMs = 0, recordedBy = "" }) => {
-    const persisted = await requestPersistentStorage();
-    const [storedAnchor, events] = await Promise.all([loadAnchor(laneId), loadEvents(laneId)]);
+  // Encolado ENTERO, no solo el ensureLaneStart() final -- bug real,
+  // reportado como "duplicate key value violates unique constraint
+  // timing_events_lane_seq_unique" y sin datos perdidos (los marcajes
+  // seguian intactos en IndexedDB, era la sincronizacion la que quedaba
+  // atascada para siempre detras del duplicado).
+  //
+  // `init()` puede llamarse dos veces casi juntas para el MISMO carril (dos
+  // montajes seguidos de la pantalla del juez -React StrictMode en
+  // desarrollo lo hace SIEMPRE, una vez por montaje real; en produccion,
+  // cualquier remount rapido). Las dos leen `loadEvents()` -todavia sin
+  // lane_start- y las dos terminan escribiendo `set({ events, ... })` con esa
+  // foto vieja. Si esto no pasa por `encolar()`, el `set()` de la SEGUNDA
+  // puede ejecutarse DESPUES de que la PRIMERA ya escribio su lane_start via
+  // `ensureLaneStart()` -esa escritura si estaba encolada, pero nada impedia
+  // que el propio `set()` de `init()` la pisara desde afuera de la cola- y
+  // deja el store otra vez sin lane_start. La segunda `ensureLaneStart()` lo
+  // ve vacio y agrega un SEGUNDO lane_start con el mismo seq: exactamente lo
+  // que el indice unico `(lane_id, device_id, seq)` rechaza, y como
+  // `ingest_timing_events` es una sola transaccion, tira TODO el lote y dejaS
+  // el duplicado atascado para siempre.
+  //
+  // Encolar el cuerpo COMPLETO (no solo el final) hace que la lectura de
+  // `loadEvents()` de la segunda llamada ocurra DESPUES de que la primera ya
+  // termino de punta a punta -incluida su propia escritura- asi que ve el
+  // lane_start real y no lo pisa.
+  init: ({ laneId, segments, heatStartEpochMs, startOffsetMs = 0, recordedBy = "" }) =>
+    encolar(async () => {
+      const persisted = await requestPersistentStorage();
+      const [storedAnchor, events] = await Promise.all([loadAnchor(laneId), loadEvents(laneId)]);
 
-    // Re-anclar es lo que hace que refresh, reapertura y reboot devuelvan el
-    // tiempo correcto: performance.now() arranco de cero en este documento.
-    let anchor = storedAnchor ? rehydrateAnchor(storedAnchor) : null;
-    let driftMs: number | null = null;
+      // Re-anclar es lo que hace que refresh, reapertura y reboot devuelvan el
+      // tiempo correcto: performance.now() arranco de cero en este documento.
+      let anchor = storedAnchor ? rehydrateAnchor(storedAnchor) : null;
+      let driftMs: number | null = null;
 
-    if (heatStartEpochMs !== null) {
-      if (!anchor) {
-        anchor = createAnchor({ laneId, heatStartEpochMs, startOffsetMs, source: "server" });
-      } else if (anchor.heatStartEpochMs !== heatStartEpochMs) {
-        // El heat habia arrancado en el dispositivo y ahora llego la largada
-        // oficial. Los parciales no se tocan: son relativos al ancla, asi que
-        // corregir el punto de partida los corrige a todos de una.
-        const reconciliado = reconcileAnchor(anchor, heatStartEpochMs);
-        anchor = reconciliado.anchor;
-        driftMs = reconciliado.driftMs;
+      if (heatStartEpochMs !== null) {
+        if (!anchor) {
+          anchor = createAnchor({ laneId, heatStartEpochMs, startOffsetMs, source: "server" });
+        } else if (anchor.heatStartEpochMs !== heatStartEpochMs) {
+          // El heat habia arrancado en el dispositivo y ahora llego la largada
+          // oficial. Los parciales no se tocan: son relativos al ancla, asi que
+          // corregir el punto de partida los corrige a todos de una.
+          const reconciliado = reconcileAnchor(anchor, heatStartEpochMs);
+          anchor = reconciliado.anchor;
+          driftMs = reconciliado.driftMs;
+        }
       }
-    }
 
-    if (anchor) await saveAnchor(anchor);
+      if (anchor) await saveAnchor(anchor);
 
-    set({
-      laneId,
-      segments,
-      anchor,
-      events,
-      result: reduceLaneEvents(laneId, events, segments),
-      pendingCount: events.filter((e) => e.syncState === "pending").length,
-      storagePersisted: persisted,
-      hydrated: true,
-      undoTarget: null,
-      recordedBy,
-      anchorDriftMs: driftMs,
-    });
+      set({
+        laneId,
+        segments,
+        anchor,
+        events,
+        result: reduceLaneEvents(laneId, events, segments),
+        pendingCount: events.filter((e) => e.syncState === "pending").length,
+        storagePersisted: persisted,
+        hydrated: true,
+        undoTarget: null,
+        recordedBy,
+        anchorDriftMs: driftMs,
+      });
 
-    await ensureLaneStart();
-  },
+      await ensureLaneStartSinEncolar();
+    }),
 
   applyServerStart: async (heatStartEpochMs) => {
     const { laneId, anchor } = get();
@@ -307,20 +333,32 @@ export const useRaceStore = create<RaceState>((set, get) => ({
  * Cuando la largada la estampa el servidor no hay ningun tap del juez que la
  * marque, pero el reductor necesita ese evento para pasar el carril a
  * "corriendo". Es idempotente: se agrega una sola vez por carril.
+ *
+ * SIN encolar -a proposito. Asume que quien la llama YA esta corriendo
+ * dentro de una tarea encolada (mismo patron que `appendUnaVez` vs
+ * `append()`). `init()` la llama asi, desde SU PROPIA tarea encolada: si esta
+ * funcion volviera a llamar a `encolar()`, esa nueva tarea quedaria esperando
+ * a que la cola avance -pero la cola no avanza hasta que la tarea de `init()`
+ * que la esta llamando termine de correr, y no puede terminar hasta que esto
+ * resuelva-. Encolar una tarea desde adentro de otra tarea ya encolada es un
+ * deadlock, no una serializacion de mas.
+ */
+async function ensureLaneStartSinEncolar(): Promise<void> {
+  const { anchor, events } = useRaceStore.getState();
+  if (!anchor) return;
+  if (events.some((e) => e.type === "lane_start")) return;
+  await appendUnaVez({ type: "lane_start", elapsedMs: 0 });
+}
+
+/**
+ * Version publica, para llamadores que NO estan ya dentro de la cola
+ * (`applyServerStart`, `startLocally`). El chequeo ("¿ya existe?") y la
+ * escritura van en la MISMA tarea encolada: si se chequeara afuera, dos
+ * llamadas concurrentes verian las dos "no existe" con el estado de ANTES de
+ * que la otra escriba, y las dos encolarian un lane_start.
  */
 async function ensureLaneStart(): Promise<void> {
-  const { anchor } = useRaceStore.getState();
-  if (!anchor) return;
-
-  // El chequeo ("¿ya existe?") y la escritura van en la MISMA tarea encolada:
-  // si se chequeara afuera, dos llamadas concurrentes verian las dos "no
-  // existe" con el estado de ANTES de que la otra escriba, y las dos
-  // encolarian un lane_start.
-  await encolar(async () => {
-    const { events } = useRaceStore.getState();
-    if (events.some((e) => e.type === "lane_start")) return;
-    await appendUnaVez({ type: "lane_start", elapsedMs: 0 });
-  });
+  await encolar(ensureLaneStartSinEncolar);
 }
 
 function armUndo(eventId: string, set: (partial: Partial<RaceState>) => void) {
