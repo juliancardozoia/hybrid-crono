@@ -119,7 +119,7 @@ export async function recomputeLanes(filtro: {
 
     const { data: segmentRows } = await service
       .from("segments")
-      .select("id, order_index, kind, name")
+      .select("id, order_index, kind, name, es_tiebreak")
       .eq("course_template_id", info.divisions.course_template_id)
       .order("order_index");
 
@@ -129,6 +129,12 @@ export async function recomputeLanes(filtro: {
       kind: s.kind,
       name: s.name,
     }));
+
+    // El segmento marcado como desempate de ESTA plantilla, si hay uno. Se
+    // resuelve por division (via course_template_id) y no por evento: dos
+    // circuitos independientes del mismo evento no se interfieren -- ver
+    // marcar_segmento_de_desempate en la migracion.
+    const tiebreakSegmentId = (segmentRows ?? []).find((s) => s.es_tiebreak)?.id ?? null;
 
     const log: TimingEvent[] = (eventos ?? []).map((e) => ({
       id: e.id,
@@ -182,6 +188,7 @@ export async function recomputeLanes(filtro: {
         partId: parteId,
         teamId: lane.team_id,
         lane: resultado,
+        tiebreakSegmentId,
       });
 
       await service.from("workout_scores").upsert(

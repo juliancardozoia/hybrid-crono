@@ -118,6 +118,11 @@ for (const fn of [
   "guardar_specs_de_parte",
   // Aprobacion de equipos: toggle "Estado" en /atletas.
   "set_team_approval",
+  // Etapas y cortes (no estaban en esta lista): quien avanza a un corte y si
+  // la etapa anterior ya termino.
+  "confirmar_corte_de_etapa", "etapa_previa_completa",
+  // El circuito puede declarar su segmento de desempate.
+  "marcar_segmento_de_desempate",
 ]) {
   const { error } = await anon.rpc(fn, {});
   error ? ok(`${fn} bloqueada`) : mal(`${fn} es INVOCABLE por anon`);

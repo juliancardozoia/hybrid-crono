@@ -9,6 +9,7 @@ import type {
   PartPlacement,
   PartSpec,
   RawScore,
+  ScoreDir,
   ScoringTable,
 } from "./types";
 
@@ -34,6 +35,32 @@ export function compareTiebreakVectors(
   // corrieron distinta cantidad de pruebas, que es un error de configuracion.
   // Se ordena de forma determinista en vez de dejarlo al azar del sort.
   return a.length - b.length;
+}
+
+/**
+ * El comparador COMPLETO de la tabla general: totalPoints, y si empatan,
+ * `compareTiebreakVectors`. Es el UNICO lugar donde vive el orden de la tabla
+ * general -- lo usan `computeOverall` (el cache del servidor) y
+ * `buildScoreboard` (el leaderboard en vivo). Antes cada uno reescribia el
+ * mismo cuerpo a mano; con eso, un cambio en uno no garantizaba nada del
+ * otro, y el panel y la vista publica podian llegar a diferir sin que nadie
+ * lo notara.
+ *
+ * NO agrega un tercer nivel. Si el vector es identico, el empate es real y
+ * se conserva -- no hay ningun criterio administrativo (id, orden de base,
+ * fecha de inscripcion) que rompa un empate deportivo.
+ */
+export function compararEntradasGenerales(
+  dir: ScoreDir,
+): (
+  a: { totalPoints: number; tiebreakVector: readonly number[] },
+  b: { totalPoints: number; tiebreakVector: readonly number[] },
+) => number {
+  const signo = dir === "menor_gana" ? 1 : -1;
+  return (a, b) => {
+    if (a.totalPoints !== b.totalPoints) return signo * (a.totalPoints - b.totalPoints);
+    return compareTiebreakVectors(a.tiebreakVector, b.tiebreakVector);
+  };
 }
 
 /**
@@ -109,7 +136,6 @@ export function computeOverall(params: {
   }
 
   const dir = ordenadas.length > 0 ? pointsDirection(tableFor(ordenadas[0])) : "menor_gana";
-  const signo = dir === "menor_gana" ? 1 : -1;
 
   const entradas = teamIds.map((teamId) => {
     // rankPart devuelve los placements en el orden en que rankeo, no en el del
@@ -134,10 +160,7 @@ export function computeOverall(params: {
     };
   });
 
-  const ubicados = assignPhysicalPositions(entradas, (a, b) => {
-    if (a.totalPoints !== b.totalPoints) return signo * (a.totalPoints - b.totalPoints);
-    return compareTiebreakVectors(a.tiebreakVector, b.tiebreakVector);
-  });
+  const ubicados = assignPhysicalPositions(entradas, compararEntradasGenerales(dir));
 
   return ubicados.map(({ item, position, tiedWith }): OverallEntry => ({
     teamId: item.teamId,

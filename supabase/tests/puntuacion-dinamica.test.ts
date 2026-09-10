@@ -177,6 +177,72 @@ describe("etapas", () => {
   });
 });
 
+describe("tie_point_policy: default oficial, y se congela con el snapshot", () => {
+  it("un evento nuevo nace en same_position_points, el reglamento oficial", async () => {
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ tie_point_policy: string }>("select tie_point_policy from events where id = $1", [
+        s.eventId,
+      ]),
+    );
+    expect(rows[0].tie_point_policy).toBe("same_position_points");
+  });
+
+  it("guardar_snapshot_de_puntuacion copia la politica del evento", async () => {
+    await asAdmin(s.db, () =>
+      s.db.query("update events set tie_point_policy = 'average_occupied_positions' where id = $1", [
+        s.eventId,
+      ]),
+    );
+    await generar(s.users.owner, { fieldSize: 4 });
+
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ tie_point_policy: string }>(
+        "select tie_point_policy from scoring_snapshots where division_id = $1 and stage = 1",
+        [s.divisionId],
+      ),
+    );
+    expect(rows[0].tie_point_policy).toBe("average_occupied_positions");
+  });
+
+  it("cambiar la politica del evento NO altera un snapshot ya bloqueado", async () => {
+    await generar(s.users.owner, { fieldSize: 4, bloquear: true });
+
+    await asAdmin(s.db, () =>
+      s.db.query("update events set tie_point_policy = 'average_occupied_positions' where id = $1", [
+        s.eventId,
+      ]),
+    );
+
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ tie_point_policy: string }>(
+        "select tie_point_policy from scoring_snapshots where division_id = $1 and stage = 1",
+        [s.divisionId],
+      ),
+    );
+    // El snapshot sigue con la que tenia al congelarse (el default oficial),
+    // aunque el evento haya cambiado de idea despues.
+    expect(rows[0].tie_point_policy).toBe("same_position_points");
+  });
+
+  it("mientras NO esta bloqueado, regenerar vuelve a copiar la politica vigente del evento", async () => {
+    await generar(s.users.owner, { fieldSize: 4 });
+    await asAdmin(s.db, () =>
+      s.db.query("update events set tie_point_policy = 'average_occupied_positions' where id = $1", [
+        s.eventId,
+      ]),
+    );
+    await generar(s.users.owner, { fieldSize: 4 });
+
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ tie_point_policy: string }>(
+        "select tie_point_policy from scoring_snapshots where division_id = $1 and stage = 1",
+        [s.divisionId],
+      ),
+    );
+    expect(rows[0].tie_point_policy).toBe("average_occupied_positions");
+  });
+});
+
 describe("el peso de cada prueba", () => {
   it("por defecto vale 100", async () => {
     const { rows } = await asAdmin(s.db, () =>

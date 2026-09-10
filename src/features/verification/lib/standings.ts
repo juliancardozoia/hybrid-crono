@@ -2,10 +2,12 @@ import "server-only";
 
 import { computeOverall, resolverTiebreaksDeOtraPrueba } from "@/shared/scoring/overall";
 import {
+  detectarFieldMismatch,
   escalarTabla,
   puntosDinamicos,
   tablaDeCategoria,
 } from "@/shared/scoring/points";
+import type { FieldMismatch } from "@/shared/scoring/points";
 import type { PartSpec, RawScore, ScoringTable } from "@/shared/scoring/types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
@@ -26,7 +28,7 @@ import type { Json } from "@/lib/supabase/types";
  */
 export async function recomputeStandings(
   eventId: string,
-): Promise<{ categorias: number; error?: string }> {
+): Promise<{ categorias: number; error?: string; mismatches?: FieldMismatch[] }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -38,7 +40,7 @@ export async function recomputeStandings(
   // puede verlo. Si no es de su organizacion no llega ninguna fila.
   const { data: evento } = await supabase
     .from("events")
-    .select("id, format, status")
+    .select("id, format, status, tie_point_policy")
     .eq("id", eventId)
     .maybeSingle();
 
@@ -109,12 +111,24 @@ export async function recomputeStandings(
   // generaron: ahi se calcula al vuelo con el field de hoy.
   const { data: snapshots } = await service
     .from("scoring_snapshots")
-    .select("division_id, points, locked_at")
+    .select("division_id, points, field_size, locked_at, tie_point_policy")
     .eq("event_id", eventId)
     .eq("stage", 1);
 
   const snapshotPorDivision = new Map(
     (snapshots ?? []).map((sn) => [sn.division_id, sn.points.map(Number)]),
+  );
+  const tiePolicyPorDivision = new Map(
+    (snapshots ?? []).map((sn) => [sn.division_id, sn.tie_point_policy]),
+  );
+  // Solo importa el field_size de un snapshot ya CONGELADO: uno sin bloquear
+  // se recalcula contra el field de hoy en tablaDeCategoria, asi que nunca
+  // puede quedar desfasado -- el mismatch es exclusivo del que ya es la
+  // autoridad y no puede seguir el field real.
+  const snapshotBloqueadoPorDivision = new Map(
+    (snapshots ?? [])
+      .filter((sn) => sn.locked_at !== null)
+      .map((sn) => [sn.division_id, sn.field_size]),
   );
 
   const pesoPorParte = new Map((partes ?? []).map((p) => [p.id, Number(p.max_points)]));
@@ -136,6 +150,7 @@ export async function recomputeStandings(
   // Categorias que ya calcularon con un field concreto y todavia no tienen la
   // curva congelada. Ver `congelarCurvasQueFaltan` al final.
   const congelar: Array<{ divisionId: string; fieldSize: number }> = [];
+  const mismatches: FieldMismatch[] = [];
 
   for (const division of divisiones) {
     // Los retirados no entran al padron: con posiciones fisicas, uno al fondo
@@ -146,6 +161,26 @@ export async function recomputeStandings(
 
     if (teamIds.length === 0) continue;
 
+    // Un snapshot CONGELADO que ya no describe al field real NO se puntua en
+    // silencio: el clamp de pointsForPosition daria 0 a los que sobran sin
+    // que nadie se entere. Se bloquea esta categoria (no se toca su cache de
+    // `standings`, que puede quedar desactualizado hasta que se resuelva) y
+    // se reporta el mismatch para que el organizador decida: o esos atletas
+    // no van en la categoria, o el snapshot se regenera.
+    const snapshotFieldSize = snapshotBloqueadoPorDivision.get(division.id);
+    if (snapshotFieldSize !== undefined) {
+      const mismatch = detectarFieldMismatch({
+        divisionId: division.id,
+        stage: 1,
+        snapshotFieldSize,
+        actualFieldSize: teamIds.length,
+      });
+      if (mismatch) {
+        mismatches.push(mismatch);
+        continue;
+      }
+    }
+
     const partesDeLaCategoria = (asignaciones ?? [])
       .filter((a) => a.division_id === division.id)
       .map((a) => specPorId.get(a.part_id))
@@ -153,10 +188,13 @@ export async function recomputeStandings(
 
     if (partesDeLaCategoria.length === 0) continue;
 
+    // La politica sale del snapshot si ya existe -- es la autoridad
+    // congelada -- y del evento mientras la curva se calcula al vuelo.
     const tabla: ScoringTable = tablaDeCategoria({
       formato: evento.format,
       snapshot: snapshotPorDivision.get(division.id) ?? null,
       fieldSize: teamIds.length,
+      tiePolicy: tiePolicyPorDivision.get(division.id) ?? evento.tie_point_policy,
     });
 
     const general = computeOverall({
@@ -218,6 +256,21 @@ export async function recomputeStandings(
     yaCongeladas: new Set(snapshotPorDivision.keys()),
     candidatas: congelar,
   });
+
+  if (mismatches.length > 0) {
+    const nombrePorDivision = new Map(divisiones.map((d) => [d.id, d.name]));
+    const detalle = mismatches
+      .map(
+        (m) =>
+          `'${nombrePorDivision.get(m.divisionId) ?? m.divisionId}' tiene ${m.actualFieldSize} atletas y su tabla se congelo con ${m.snapshotFieldSize}`,
+      )
+      .join("; ");
+    return {
+      categorias: divisiones.length - mismatches.length,
+      mismatches,
+      error: `No se actualizo la tabla general de ${mismatches.length} categoria${mismatches.length === 1 ? "" : "s"} porque su snapshot quedo desfasado: ${detalle}. Regenera el snapshot en Puntuacion antes de publicar.`,
+    };
+  }
 
   return { categorias: divisiones.length };
 }

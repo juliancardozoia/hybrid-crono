@@ -252,6 +252,34 @@ export async function moveSegment(
   return OK;
 }
 
+/**
+ * Marca (o desmarca) el segmento de DESEMPATE de un circuito.
+ *
+ * Un solo toggle por circuito: activar uno apaga cualquier otro de la MISMA
+ * plantilla (garantizado ademas por un indice unico parcial en la base). La
+ * funcion de Postgres (`marcar_segmento_de_desempate`) hace las dos escrituras
+ * -- el segmento y la sincronizacion de `workout_parts.tiebreak_*` -- en una
+ * sola transaccion, acotada a las partes que usan ESA plantilla: dos circuitos
+ * independientes del mismo evento no se interfieren.
+ */
+export async function marcarSegmentoDeDesempate(
+  eventId: string,
+  segmentId: string,
+  activo: boolean,
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("marcar_segmento_de_desempate", {
+    p_segment_id: segmentId,
+    p_activo: activo,
+  });
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return OK;
+}
+
 // --- Divisiones -------------------------------------------------------------
 
 export async function createDivision(

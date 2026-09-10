@@ -673,6 +673,7 @@ export type Database = {
           starts_at: string | null
           state: string | null
           status: Database["public"]["Enums"]["event_status"]
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
           timezone: string
           updated_at: string
           venue: string | null
@@ -709,6 +710,7 @@ export type Database = {
           starts_at?: string | null
           state?: string | null
           status?: Database["public"]["Enums"]["event_status"]
+          tie_point_policy?: Database["public"]["Enums"]["tie_point_policy"]
           timezone?: string
           updated_at?: string
           venue?: string | null
@@ -745,6 +747,7 @@ export type Database = {
           starts_at?: string | null
           state?: string | null
           status?: Database["public"]["Enums"]["event_status"]
+          tie_point_policy?: Database["public"]["Enums"]["tie_point_policy"]
           timezone?: string
           updated_at?: string
           venue?: string | null
@@ -1875,6 +1878,9 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          cut_position: number | null
+          cut_standings: Json | null
+          cut_standings_hash: string | null
           division_id: string
           event_id: string
           field_size: number
@@ -1882,10 +1888,14 @@ export type Database = {
           locked_at: string | null
           points: number[]
           stage: number
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
         }
         Insert: {
           created_at?: string
           created_by?: string | null
+          cut_position?: number | null
+          cut_standings?: Json | null
+          cut_standings_hash?: string | null
           division_id: string
           event_id: string
           field_size: number
@@ -1893,10 +1903,14 @@ export type Database = {
           locked_at?: string | null
           points: number[]
           stage?: number
+          tie_point_policy?: Database["public"]["Enums"]["tie_point_policy"]
         }
         Update: {
           created_at?: string
           created_by?: string | null
+          cut_position?: number | null
+          cut_standings?: Json | null
+          cut_standings_hash?: string | null
           division_id?: string
           event_id?: string
           field_size?: number
@@ -1904,6 +1918,7 @@ export type Database = {
           locked_at?: string | null
           points?: number[]
           stage?: number
+          tie_point_policy?: Database["public"]["Enums"]["tie_point_policy"]
         }
         Relationships: [
           {
@@ -1919,6 +1934,7 @@ export type Database = {
         Row: {
           course_template_id: string
           created_at: string
+          es_tiebreak: boolean
           event_id: string
           id: string
           kind: Database["public"]["Enums"]["segment_kind"]
@@ -1928,6 +1944,7 @@ export type Database = {
         Insert: {
           course_template_id: string
           created_at?: string
+          es_tiebreak?: boolean
           event_id: string
           id?: string
           kind: Database["public"]["Enums"]["segment_kind"]
@@ -1937,6 +1954,7 @@ export type Database = {
         Update: {
           course_template_id?: string
           created_at?: string
+          es_tiebreak?: boolean
           event_id?: string
           id?: string
           kind?: Database["public"]["Enums"]["segment_kind"]
@@ -2606,6 +2624,9 @@ export type Database = {
         Returns: {
           created_at: string
           created_by: string | null
+          cut_position: number | null
+          cut_standings: Json | null
+          cut_standings_hash: string | null
           division_id: string
           event_id: string
           field_size: number
@@ -2613,6 +2634,7 @@ export type Database = {
           locked_at: string | null
           points: number[]
           stage: number
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
         }
         SetofOptions: {
           from: "*"
@@ -2768,10 +2790,12 @@ export type Database = {
       }
       confirmar_corte_de_etapa: {
         Args: {
+          p_cut_hash: string
+          p_cut_position: number
+          p_cut_standings: Json
           p_division_id: string
-          p_points: number[]
+          p_scoring_points: number[]
           p_stage: number
-          p_team_ids: string[]
         }
         Returns: undefined
       }
@@ -2894,6 +2918,9 @@ export type Database = {
         Returns: {
           created_at: string
           created_by: string | null
+          cut_position: number | null
+          cut_standings: Json | null
+          cut_standings_hash: string | null
           division_id: string
           event_id: string
           field_size: number
@@ -2901,6 +2928,7 @@ export type Database = {
           locked_at: string | null
           points: number[]
           stage: number
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
         }
         SetofOptions: {
           from: "*"
@@ -3078,6 +3106,10 @@ export type Database = {
           workout_name: string
         }[]
       }
+      marcar_segmento_de_desempate: {
+        Args: { p_activo: boolean; p_segment_id: string }
+        Returns: undefined
+      }
       medios_de_pago: { Args: { p_registration_id: string }; Returns: Json }
       org_staff_directory: {
         Args: { p_event_id: string }
@@ -3199,6 +3231,7 @@ export type Database = {
           starts_at: string | null
           state: string | null
           status: Database["public"]["Enums"]["event_status"]
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
           timezone: string
           updated_at: string
           venue: string | null
@@ -3478,6 +3511,7 @@ export type Database = {
           starts_at: string | null
           state: string | null
           status: Database["public"]["Enums"]["event_status"]
+          tie_point_policy: Database["public"]["Enums"]["tie_point_policy"]
           timezone: string
           updated_at: string
           venue: string | null
@@ -3682,6 +3716,7 @@ export type Database = {
         | "relevo"
         | "reparto_libre"
       team_status: "registered" | "checked_in" | "withdrawn"
+      tie_point_policy: "same_position_points" | "average_occupied_positions"
       tiebreak_source: "hito" | "otra_prueba" | "manual"
       time_scheme:
         | "circuito"
@@ -3915,6 +3950,7 @@ export const Constants = {
         "reparto_libre",
       ],
       team_status: ["registered", "checked_in", "withdrawn"],
+      tie_point_policy: ["same_position_points", "average_occupied_positions"],
       tiebreak_source: ["hito", "otra_prueba", "manual"],
       time_scheme: [
         "circuito",

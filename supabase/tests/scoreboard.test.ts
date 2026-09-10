@@ -19,9 +19,15 @@ beforeEach(async () => {
 interface Documento {
   version: number;
   detalle: boolean;
-  event: { name: string; status: string; official: boolean };
+  event: { name: string; status: string; official: boolean; tiePointPolicy: string };
   divisions: Array<{ id: string; name: string }>;
-  snapshots: Array<{ divisionId: string; stage: number; points: number[]; locked: boolean }>;
+  snapshots: Array<{
+    divisionId: string;
+    stage: number;
+    points: number[];
+    locked: boolean;
+    tiePointPolicy: string;
+  }>;
   stageAdvancements: Array<{ divisionId: string; stage: number; teamId: string }>;
   parts: Array<{
     id: string;
@@ -120,6 +126,35 @@ describe("scoreboard_document", () => {
     const snap = doc.snapshots.find((sn) => sn.divisionId === s.divisionId && sn.stage === 1);
     expect(snap?.points).toEqual([100, 50, 0]);
     expect(snap?.locked).toBe(true);
+  });
+
+  it("expone tiePointPolicy del evento, sin snapshot", async () => {
+    // El default del evento nuevo: reglamento oficial. Es lo que buildScoreboard
+    // usa mientras no hay snapshot -- si esta funcion SQL dejara de mandarlo,
+    // ningun test de src/shared/scoring/ lo notaria: ahi se prueba solo el
+    // TypeScript, nunca la funcion de Postgres que arma el JSON de verdad.
+    const doc = await documento();
+    expect(doc.event.tiePointPolicy).toBe("same_position_points");
+    expect(doc.snapshots).toEqual([]);
+  });
+
+  it("expone tiePointPolicy del snapshot, no el del evento, una vez congelado", async () => {
+    await asAdmin(s.db, () =>
+      s.db.query("update events set tie_point_policy = 'average_occupied_positions' where id = $1", [
+        s.eventId,
+      ]),
+    );
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_snapshot_de_puntuacion($1, 3, $2::numeric[], 1, true)", [
+        s.divisionId,
+        "{100,50,0}",
+      ]),
+    );
+
+    const doc = await documento();
+    expect(doc.event.tiePointPolicy).toBe("average_occupied_positions");
+    const snap = doc.snapshots.find((sn) => sn.divisionId === s.divisionId && sn.stage === 1);
+    expect(snap?.tiePointPolicy).toBe("average_occupied_positions");
   });
 
   it("cada prueba lleva su peso", async () => {
@@ -248,11 +283,20 @@ describe("etapas y cortes", () => {
     await crearPruebaDeEtapa2();
     await terminarEtapaUno();
     const avanzan = [s.teamIds[0], s.teamIds[1]];
+    const standing = avanzan.map((teamId, i) => ({
+      team_id: teamId,
+      rank: i + 1,
+      points: 100 - i * 100,
+      tied_with: 1,
+      advanced: true,
+    }));
 
     await asUser(s.db, s.users.owner, () =>
-      s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+      s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5::numeric[])", [
         s.divisionId,
-        avanzan,
+        avanzan.length,
+        JSON.stringify(standing),
+        "hash-de-prueba",
         "{100,0}",
       ]),
     );
@@ -270,20 +314,26 @@ describe("etapas y cortes", () => {
   it("un corte confirmado no se puede rehacer", async () => {
     await crearPruebaDeEtapa2();
     await terminarEtapaUno();
+    const standingUno = [{ team_id: s.teamIds[0], rank: 1, points: 100, tied_with: 1, advanced: true }];
     await asUser(s.db, s.users.owner, () =>
-      s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+      s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5::numeric[])", [
         s.divisionId,
-        [s.teamIds[0]],
+        1,
+        JSON.stringify(standingUno),
+        "hash-de-prueba",
         "{100}",
       ]),
     );
 
     await asUser(s.db, s.users.owner, async () => {
       let fallo = false;
+      const standingDos = [{ team_id: s.teamIds[1], rank: 1, points: 100, tied_with: 1, advanced: true }];
       try {
-        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5::numeric[])", [
           s.divisionId,
-          [s.teamIds[1]],
+          1,
+          JSON.stringify(standingDos),
+          "hash-de-prueba",
           "{100}",
         ]);
       } catch {
@@ -297,10 +347,13 @@ describe("etapas y cortes", () => {
     await crearPruebaDeEtapa2();
     await asUser(s.db, s.users.forastero, async () => {
       let fallo = false;
+      const standing = [{ team_id: s.teamIds[0], rank: 1, points: 100, tied_with: 1, advanced: true }];
       try {
-        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2::uuid[], $3::numeric[])", [
+        await s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5::numeric[])", [
           s.divisionId,
-          [s.teamIds[0]],
+          1,
+          JSON.stringify(standing),
+          "hash-de-prueba",
           "{100}",
         ]);
       } catch {

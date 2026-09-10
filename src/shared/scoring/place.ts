@@ -8,7 +8,7 @@
  */
 
 import { compareComparable, normalizeScore, scorePendiente } from "./normalize";
-import { pointsForPosition } from "./points";
+import { pointsForTiedGroup } from "./points";
 import type {
   ComparableScore,
   PartPlacement,
@@ -60,9 +60,14 @@ export function assignPhysicalPositions<T>(
  * no se puede responder "a quien le falta cargar", que es justo la pantalla que
  * necesita la carga manual.
  *
- * Los empatados reciben todos los puntos de la posicion compartida, sin
- * promediar. Es lo que dice el reglamento de los Games: "more than one athlete
- * can share a workout rank, and each will earn the original point value".
+ * Como cobra un GRUPO empatado depende de `table.tiePolicy` (ver
+ * `TiePointPolicy` en types.ts): con `same_position_points` -- el reglamento
+ * oficial de los Games, "more than one athlete can share a workout rank, and
+ * each will earn the original point value" -- todos cobran integros los
+ * puntos de la posicion compartida. Con `average_occupied_positions` -- una
+ * convencion de Scora, no del reglamento -- el grupo reparte equitativamente
+ * los puntos de TODAS las posiciones que ocupa, para que un empate no infle
+ * el total que reparte la curva. `pointsForTiedGroup` resuelve las dos.
  */
 export function rankPart(params: {
   part: PartSpec;
@@ -103,7 +108,7 @@ export function rankPart(params: {
     // nadie, asi que sigue igual.
     points:
       item.comparable.value !== null || table.points.length === 0
-        ? pointsForPosition(table, position)
+        ? pointsForTiedGroup(table, position, tiedWith)
         : 0,
     comparable: item.comparable satisfies ComparableScore,
     // El valor CRUDO (en `scoreUnit`/`capUnit`, sin normalizar ni escalar):

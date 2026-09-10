@@ -2233,11 +2233,30 @@ navegador con las mismas funciones que usa `recomputeStandings()` en el servidor
 
 Verificadas contra el rulebook de los CrossFit Games, no inferidas:
 
-- **Los empates dentro de una prueba no se rompen** y los empatados cobran los mismos puntos, sin
-  promediar. Las posiciones son **fisicas**: con un triple empate en el tercero, el siguiente es
-  sexto (`assignPhysicalPositions`).
+- **Los empates dentro de una prueba no se rompen.** Las posiciones son **fisicas**: con un triple
+  empate en el tercero, el siguiente es sexto (`assignPhysicalPositions`). Cuanto cobra cada
+  empatado depende de `tiePointPolicy` — ver
+  [Como reparte puntos un grupo empatado](#como-reparte-puntos-un-grupo-empatado-tiepointpolicy)
+  mas abajo: por default cobran los mismos puntos, sin promediar (el reglamento oficial), pero una
+  competencia puede elegir la convencion Scora que reparte los puntos de las posiciones que ocupa
+  el grupo.
 - **El desempate general es el vector de puestos** ordenado ascendente, comparado elemento a
-  elemento (`compareTiebreakVectors`).
+  elemento (`compareTiebreakVectors`). **Sin tercer criterio**: si el vector es identico, el
+  empate es real y no se inventa nada — ni el `tiebreak_value` crudo de una prueba (eso resuelve
+  el rank DENTRO del WOD, comparar tiempos contra reps entre pruebas distintas no significa nada),
+  ni la ultima prueba corrida, ni el peso de una parte, ni ningun criterio administrativo (id,
+  orden de base, fecha de inscripcion). `compararEntradasGenerales(dir)`
+  (`src/shared/scoring/overall.ts`) es el UNICO comparador de la tabla general — `computeOverall` y
+  `buildScoreboard` lo comparten, en vez de cada uno reescribir el mismo cuerpo a mano.
+- **El podio se COMPARTE, nunca se rompe a mano.** Dos equipos empatados en 1º reciben ambos 🥇 y
+  el 🥈 queda sin dueño — consistente con que ocupan las posiciones 1 y 2. Sus PUNTOS dependen de
+  `tiePointPolicy` (arriba), no "se reparten" siempre: con el default cada uno cobra integro el
+  puesto compartido. El leaderboard marca el empate con un indicador visible (no un `=` gris
+  casi invisible), para que el organizador o el locutor sepan que no es un error de la pantalla.
+  Si algun dia hace falta deshacer un empate de podio, la forma correcta es un desempate
+  EXTRAORDINARIO que se disputa y entra al motor como una prueba mas (mueve `totalPoints` de
+  verdad) — nunca un orden manual decidido por el organizador, que es exactamente el criterio
+  administrativo que la regla de arriba prohibe.
 - **Quien capea va siempre detras de quien termino**, sin importar cuantas reps hizo. Lo resuelve
   `statusRank`, no una constante magica que reconcilie dos escalas.
 - **Los kilos y los metros se comparan como enteros escalados ×100.** Un empate mal detectado por
@@ -2571,6 +2590,113 @@ plataforma, no una regla oficial de CrossFit para fields distintos de 30.
   ahí y sale con `TABLA_TIEMPO_TOTAL`: se gana llegando antes, no hay puntos que repartir.
   `tiempo_total` sobrevive por eso, pero **ya no es elegible**.
 
+### Como reparte puntos un grupo empatado: `tiePointPolicy`
+
+Posiciones **fisicas** y reparto de puntos son dos decisiones DISTINTAS, y conviene no
+confundirlas — es la pregunta que motivo esta seccion entera. Un resultado real de 10 atletas con
+empates en el 3, el 5 y el 9 produce `1, 2, 3, 3, 5, 5, 7, 8, 9, 9` — los puestos 4, 6 y 10 quedan
+**consumidos**, nadie los tiene. Eso es correcto y **no se toca nunca**: es el criterio de los
+Games (`assignPhysicalPositions`), y pasar a ranking denso (`1,2,3,3,4,5,6,7,8,9`) infla los
+puntos de TODA la mitad inferior del field en ~19 puntos por puesto y le rompe al ganador la
+garantia de "el ultimo saca cero" — ya se evaluo numericamente y se descarto.
+
+Lo que SI es una decision de la competencia es **cuanto cobra ese grupo empatado**, y ahi hay dos
+convenciones legitimas, nunca una mezcla silenciosa (`TiePointPolicy` en
+`src/shared/scoring/types.ts`):
+
+| Politica | Regla | Origen |
+|---|---|---|
+| **`same_position_points`** · *default* | Cada empatado cobra los puntos INTEGROS de la posicion compartida. El puesto consumido (el 4 de un empate en el 3) no lo paga nadie: el total repartido queda por ENCIMA de lo que ofrece la curva. | **Reglamento oficial de los Games**: *"more than one athlete can share a workout rank, and each will earn the original point value"*. Es lo que el codigo siempre hizo. |
+| `average_occupied_positions` | El grupo reparte EQUITATIVAMENTE los puntos de TODAS las posiciones que ocupa — `(P3+P4)/2` para un empate en el 3. | **Convencion Scora**, no el reglamento tradicional. Conserva el total que reparte la curva: sobre el ejemplo de arriba, `same_position_points` reparte 500.11 puntos donde la curva solo ofrece 467.78; `average_occupied_positions` reparte los 467.78 exactos (hasta el redondeo a 3 decimales). |
+
+**El default es el reglamento oficial, a proposito.** Un organizador que viene de CrossFit espera
+que dos empatados en 3º cobren los puntos del 3º, y audita la tabla contra el rulebook. La UI
+ofrece la convencion Scora rotulada explicitamente como tal — nunca como default — con su efecto
+explicado: evita que empatar cerca del fondo *premie* (con el default, dos empatados en 9º de 10
+cobran 9.667 cada uno y el 0 del puesto 10 no lo paga nadie).
+
+- **`pointsForTiedGroup(table, position, tiedWith)`** (`points.ts`) es el UNICO lugar que decide
+  esto, y `rankPart` es su UNICO llamador en produccion. Con `tiedWith <= 1` o
+  `same_position_points`, es exactamente `pointsForPosition` — bit a bit, cero cambio de
+  comportamiento. `TABLA_TIEMPO_TOTAL` (la carrera hibrida) queda **fuera de esta regla siempre**,
+  incluso si alguien la etiqueta con la otra politica por error: el guard mira
+  `table.points.length === 0` ANTES de mirar la politica.
+- **Un grupo empatado es HOMOGENEO: o todos puntuan, o ninguno.** `compareComparable` separa por
+  `statusRank` antes de mirar el valor, asi que un `dnf` nunca empata con un `valido` — el promedio
+  no puede mezclar un puntaje real con un cero.
+- **VERSIONADA: ningun cambio de politica toca lo historico.** `events.tie_point_policy` es el
+  ruleset de la competencia (se usa mientras no hay snapshot); `scoring_snapshots.tie_point_policy`
+  es la AUTORIDAD una vez congelado — `guardar_snapshot_de_puntuacion` la copia del evento en cada
+  regeneracion, y deja de tocarse en cuanto el snapshot se bloquea. Las dos columnas nacen con
+  `default 'same_position_points'`: como coincide con el comportamiento vigente, alcanza un SOLO
+  `alter table ... add column ... default`, sin el patron de doble `ALTER` que hubiera hecho falta
+  si el default fuera el nuevo — ver la nota general de versionado mas abajo.
+- **`tablaDeCategoria()` la propaga**, no la decide: recibe `tiePolicy` (del snapshot si existe, del
+  evento si no) y la dos usan `standings.ts` y `buildScoreboard` — un solo lugar, misma razon que
+  siempre: si cada consumidor la resolviera a su manera, el podio del panel y el del atleta podrian
+  diferir.
+- **El patron de versionado, para la proxima convencion que se agregue**: la columna nueva nace con
+  `default <lo que el codigo ya hacia>`. Si alguna vez el default deseado para competencias NUEVAS
+  difiere del vigente, hacen falta DOS pasos — `add column ... default <vigente>` primero, `alter
+  column ... set default <nuevo>` despues — porque `add column ... default` escribe ESE valor en
+  TODAS las filas existentes. Un solo `default` con el valor nuevo reescribiria retroactivamente
+  competencias ya disputadas.
+
+### Un snapshot congelado no se adapta en silencio: `detectarFieldMismatch`
+
+`pointsForPosition` repite el ultimo valor de la tabla cuando la posicion excede su largo (el
+"clamp"). Eso **no es un comportamiento previsto**, es un ESTADO DEGRADADO: solo puede pasar si el
+field real crecio por encima de lo que describe un snapshot ya bloqueado (alguien se inscribio
+despues de congelar la curva), y ahi los que sobran puntuan CERO en silencio.
+
+`detectarFieldMismatch({ divisionId, stage, snapshotFieldSize, actualFieldSize })`
+(`src/shared/scoring/points.ts`) es pura y solo dispara en una direccion:
+`actualFieldSize > snapshotFieldSize`. Que el field sea MENOR es legitimo — alguien se retiro — y
+no dispara nada: un retirado sale del padron en los dos consumidores por igual (`status !==
+'withdrawn'`), asi que reduce el field sin romper la curva congelada.
+
+Donde bloquea y donde solo avisa, a proposito:
+
+- **`recomputeStandings`** (`standings.ts`) **bloquea**: no escribe `standings` para esa categoria.
+  No toca `results` ni `workout_scores` — el camino del cronometro es intocable.
+- **`confirmarCorteDeEtapa`** (`etapas.ts`) **bloquea**: un corte es TAN irreversible como el
+  snapshot que congela, asi que cortar sobre un field desfasado congelaria el error para siempre.
+- **`/panel/.../puntuacion`** (`PuntuacionDelEvento.tsx`) **avisa**, distinguiendo los dos casos que
+  antes se leian igual: un field MENOR es la nota ambar de siempre ("es lo esperado si alguien se
+  retiro"); un field MAYOR es una nota roja que dice que la tabla general de esa categoria dejo de
+  actualizarse hasta que se resuelva.
+
+El clamp de `pointsForPosition` se conserva como ultimo recurso — quitarlo daria `undefined` →
+`NaN`, que es peor — pero el comentario del codigo ya no lo presenta como comportamiento normal:
+es el estado que `detectarFieldMismatch` existe para que nunca se alcance en silencio.
+
+### El circuito puede declarar su segmento de desempate
+
+Hasta esta fase, un circuito de carrera hibrida NUNCA capturaba desempate:
+`scoreFromLaneResult` (`src/shared/scoring/fromTiming.ts`) acepta `tiebreakSegmentId`, pero el
+unico llamador de produccion (`recompute.ts`) no se lo pasaba — el parametro estaba vivo solo en
+tests, y `workout_scores.tiebreak_value` era siempre `null` para una parte de circuito.
+
+**`segments.es_tiebreak`** es el espejo de `part_movements.es_tiebreak`, que ya resuelve lo mismo
+para un WOD. El toggle vive en `/circuito`, junto a cada segmento.
+
+- **Un solo segmento de desempate por PLANTILLA**, garantizado por un indice unico parcial en la
+  base (`segments_un_solo_desempate`) y no solo por el RPC: el indice se comprueba POR STATEMENT,
+  asi que `marcar_segmento_de_desempate()` apaga el anterior ANTES de prender el nuevo (un indice
+  unico no se puede diferir al commit, a diferencia de un constraint).
+- **Vive en el SEGMENTO y no en la PARTE**, porque `part_divisions.course_template_id` existe
+  justamente para que "el circuito cuelgue de (parte, division) y no de la parte": Elite y Open
+  pueden correr circuitos DISTINTOS en la misma parte de circuito de un evento. La sincronizacion
+  de `workout_parts.tiebreak_*` se acota por PLANTILLA, resuelta via `part_divisions` — nunca "si
+  hay algun segmento marcado en el evento". Sin ese acotamiento, marcar el desempate de un
+  circuito T1 configuraria tambien la parte de un circuito T2 independiente que corre en el mismo
+  evento, y desmarcar T2 podria apagar el de T1.
+- **Se respeta un `tiebreak_source` que ya sea `'manual'` u `'otra_prueba'`**: eso solo puede
+  haberlo puesto una configuracion EXPLICITA desde "Editar parte", y este mecanismo no tiene por
+  que pisarla en silencio.
+- **`bundle.ts` NO cambia**, y es la excepcion a "bundle y recompute cambian en el mismo commit":
+  el juez no marca el desempate de un circuito, se deriva de los splits que ya envia.
+
 ### El snapshot: por qué la tabla se congela
 
 Si la curva se calculara siempre contra "los atletas que hay ahora", el día que uno se retira
@@ -2590,8 +2716,77 @@ corridas**. `scoring_snapshots` congela la curva por (categoría, etapa) y la de
   `/panel/eventos/[id]/puntuacion`, pero `recomputeStandings` lo congela por su cuenta en
   cuanto la competencia está `live` — misma jugada que `heats.ended_at`: derivarlo donde el
   recálculo ya corre, en vez de agregar un tercer camino de escritura.
-- **`stage` existe pero la app usa siempre la 1.** Es para los cuts (Stage 1 con 40 → cut →
-  Stage 2 con 20): el modelo lo soporta sin migrar nada el día que se construya la UI.
+- **`stage` soporta cuts de verdad** (Stage 1 con 40 → cut → Stage 2 con 20): ver la seccion del
+  corte mas abajo, que ya tiene su UI y su RPC.
+
+### El corte: por PUESTO, no por seleccion libre, y queda auditado
+
+Antes el organizador tildaba equipos uno por uno en `PuntuacionDelEvento.tsx` para decidir quien
+avanza a la etapa siguiente. Tres problemas reales con eso:
+
+1. **Se podia partir un grupo empatado.** Nada impedia marcar a uno de dos equipos empatados en el
+   puesto 19 y dejar afuera al otro, ni desmarcar el grupo entero de la frontera para achicar el
+   field a mano. Un empate deportivo no se resuelve clickeando.
+2. **No quedaba nada auditado.** Confirmado el corte, lo unico que sobrevivia era la lista de quien
+   avanzo (`stage_advancements`) y el tamano del field nuevo. Explicar despues "por que este equipo
+   quedo afuera" exigia recalcular el standing historico desde `workout_scores` — y una correccion
+   posterior de un score CAMBIA ese recalculo, asi que la explicacion podia terminar siendo
+   distinta de lo que en verdad paso el dia del corte.
+3. **Carrera contra el leaderboard.** Nada impedia confirmar un corte sobre un ranking que el
+   organizador vio hace un minuto y que un score cargado desde otra pestana ya cambio.
+
+**La solucion: el organizador elige un PUESTO, no equipos.** `position <= puesto` deriva quien
+avanza, y como los empatados COMPARTEN `position` (posicion fisica), un grupo en la frontera queda
+ENTERO adentro o ENTERO afuera — sin ningun caso especial, porque no existe ninguna seleccion
+manual que pueda partirlo. La UI (`PuntuacionDelEvento.tsx`) ya no ofrece checkboxes por equipo:
+solo el numero de corte, con el resumen derivado ("avanzan 21 equipos — empate en el puesto 19: el
+corte se estira para no partir el grupo").
+
+**Consistencia temporal: `huellaDelStanding`** (`src/shared/scoring/hash.ts`) es un FNV-1a puro
+sobre `teamId:position:totalPoints.toFixed(3)`, ordenado por `teamId` para no depender de en que
+orden itero un `Map`. `toFixed(3)` es obligatorio: sin el, el mismo numero con otra representacion
+de punto flotante (174.222 vs 174.22199999999998) daria otra huella. La pantalla manda la huella de
+lo que MOSTRO; `confirmarCorteDeEtapa` (`etapas.ts`) recalcula el standing FRESCO con
+`getRankingGeneralDelEvento` — el MISMO `buildScoreboard` que arma el leaderboard en vivo — y
+rechaza con un mensaje legible si la huella no coincide: alguien cambio un score entre que se
+revisó la pantalla y se apreto "Confirmar", y el corte no se congela sobre datos que nadie llego a
+ver.
+
+**Auditoria: se congela el standing de TODOS los elegibles, no solo los clasificados.**
+`scoring_snapshots` gana `cut_position` (el puesto que eligio el organizador), `cut_standings`
+(jsonb: una entrada por equipo elegible, CON los eliminados, cada una con su `rank`, `points`,
+`tied_with` y `advanced`) y `cut_standings_hash` (la huella confirmada). Se reutiliza
+`scoring_snapshots` — que ya tiene `unique (division_id, stage)`, exactamente una fila por corte —
+en vez de crear una tabla nueva; el precedente directo en el proyecto es
+`result_publications.snapshot jsonb`, que ya congela un ranking publicado asi.
+
+- **Por que NO en `stage_advancements`.** Esa tabla es un FILTRO load-bearing: la leen
+  `scoreboard_document`, `auto_distribuir_heats` y `assign_heat_lanes` para decidir quien compite en
+  la etapa N. Meterle filas de eliminados con una bandera `advanced` obligaria a agregar `and
+  advanced` en varios lugares, y olvidarse en uno mete a un eliminado en un heat. El registro de
+  auditoria no tiene por que compartir tabla con un filtro de seguridad — `stage_advancements` sigue
+  poblandose SOLO con quien avanza, sin cambios de semantica.
+- **`field_size` YA era el `qualifiedCount`** de una etapa de corte (se escribe como la cantidad de
+  clasificados) y sigue siendolo: la expansion por empate queda derivable como
+  `field_size > cut_position`.
+- **El RPC cambio de aridad** (`confirmar_corte_de_etapa`, de 4 argumentos a 6) y **eso exige
+  `drop function`** de la firma vieja en la migracion: `create or replace` no reemplaza una funcion
+  si cambia la cantidad de parametros, y sin el drop quedan dos funciones con el mismo nombre
+  ("is not unique" en cualquier llamada). Es la misma trampa que ya documenta
+  `admin_create_registration`.
+- **`p_points` se renombro a `p_scoring_points`.** El payload ahora TAMBIEN trae un `points` por
+  atleta dentro de `cut_standings` (lo que cada uno tenia al momento del corte); el nombre viejo
+  hubiera sido ambiguo entre "la curva de la etapa siguiente" y "los puntos de cada equipo
+  cortado". Son dos cosas distintas que no pueden llamarse igual.
+- **Quien avanza SALE del payload que ya paso por la huella, nunca se recalcula en SQL.** La
+  posicion no se puede calcular en Postgres (el desempate por vector de puestos no es una window
+  function — ver `20260901100300_scoreboard.sql`), asi que confiar en el standing que
+  `confirmarCorteDeEtapa` ya valido contra su propio recalculo fresco es lo que hace que la huella
+  sirva de algo: el RPC no vuelve a cuestionar el ranking, solo autoriza y persiste.
+
+**El corte sigue sin excluir a nadie.** Un WD/DQ es otro flujo, ya auditado y existente:
+`teams.status = 'withdrawn'` y `teams.approved` via `set_team_approval`. El corte solo decide QUIEN
+SIGUE COMPITIENDO, nunca quien queda descalificado.
 
 ### El desempate puede venir de OTRA prueba
 

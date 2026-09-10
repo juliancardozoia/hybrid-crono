@@ -13,7 +13,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { asUser, expectDenied } from "./harness";
+import { asAnon, asUser, expectDenied } from "./harness";
 import { seedScenario, type Scenario } from "./fixtures";
 
 let s: Scenario;
@@ -72,13 +72,33 @@ async function terminarEtapaUno(): Promise<void> {
   });
 }
 
+/**
+ * Un standing minimo para el RPC: el organizador de un test no necesita el
+ * ranking REAL (eso lo valida `confirmarCorteDeEtapa`, la accion de
+ * TypeScript, comparando la huella contra un recalculo fresco -- ver
+ * `src/features/events/config/etapas.ts`). El RPC de Postgres solo exige que
+ * el payload tenga forma y que el hash no este vacio; estos tests ejercitan
+ * el RPC directo, un nivel por debajo de esa validacion.
+ */
+function standingDePrueba(idsQueAvanzan: string[]): { team_id: string; rank: number; points: number; tied_with: number; advanced: boolean }[] {
+  return idsQueAvanzan.map((teamId, i) => ({
+    team_id: teamId,
+    rank: i + 1,
+    points: 100 - i,
+    tied_with: 1,
+    advanced: true,
+  }));
+}
+
 async function confirmarCorte(stage: number, teamIds: string[]): Promise<void> {
   await terminarEtapaUno();
   await asUser(s.db, s.users.owner, () =>
-    s.db.query("select confirmar_corte_de_etapa($1, $2, $3, $4)", [
+    s.db.query("select confirmar_corte_de_etapa($1, $2, $3, $4::jsonb, $5, $6)", [
       s.divisionId,
       stage,
-      teamIds,
+      teamIds.length,
+      JSON.stringify(standingDePrueba(teamIds)),
+      "hash-de-prueba",
       teamIds.map(() => 100),
     ]),
   );
@@ -88,14 +108,31 @@ describe("confirmar_corte_de_etapa", () => {
   it("exige permiso de gestion", async () => {
     await asUser(s.db, s.users.judgeA, async () => {
       const msg = await expectDenied(() =>
-        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3)", [
+        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5)", [
           s.divisionId,
-          [s.teamIds[0]],
+          1,
+          JSON.stringify(standingDePrueba([s.teamIds[0]])),
+          "hash-de-prueba",
           [100],
         ]),
       );
       expect(msg).toContain("No tienes permiso");
     });
+  });
+
+  it("el anonimo no puede invocarla: no hay GRANT, no es un tema de RLS", async () => {
+    await terminarEtapaUno();
+    await expectDenied(() =>
+      asAnon(s.db, () =>
+        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5)", [
+          s.divisionId,
+          1,
+          JSON.stringify(standingDePrueba([s.teamIds[0]])),
+          "hash-de-prueba",
+          [100],
+        ]),
+      ),
+    );
   });
 
   it("registra quien avanza", async () => {
@@ -112,14 +149,55 @@ describe("confirmar_corte_de_etapa", () => {
     );
   });
 
+  it("congela el standing completo, incluidos los que NO avanzan", async () => {
+    const standing = [
+      { team_id: s.teamIds[0], rank: 1, points: 100, tied_with: 1, advanced: true },
+      { team_id: s.teamIds[1], rank: 2, points: 80, tied_with: 1, advanced: false },
+    ];
+    await terminarEtapaUno();
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5)", [
+        s.divisionId,
+        1,
+        JSON.stringify(standing),
+        "hash-de-prueba",
+        [100],
+      ]),
+    );
+
+    const fila = await asUser(s.db, s.users.owner, () =>
+      s.db.query<{ cut_position: number; cut_standings: typeof standing; cut_standings_hash: string }>(
+        "select cut_position, cut_standings, cut_standings_hash from scoring_snapshots where division_id = $1 and stage = 2",
+        [s.divisionId],
+      ),
+    );
+    expect(fila.rows[0].cut_position).toBe(1);
+    expect(fila.rows[0].cut_standings).toHaveLength(2);
+    expect(fila.rows[0].cut_standings.some((e) => e.team_id === s.teamIds[1] && !e.advanced)).toBe(
+      true,
+    );
+    expect(fila.rows[0].cut_standings_hash).toBe("hash-de-prueba");
+
+    // El eliminado esta en el standing congelado, pero NO en stage_advancements.
+    const avanzan = await asUser(s.db, s.users.owner, () =>
+      s.db.query<{ team_id: string }>(
+        "select team_id from stage_advancements where division_id = $1 and stage = 2",
+        [s.divisionId],
+      ),
+    );
+    expect(avanzan.rows.map((r) => r.team_id)).toEqual([s.teamIds[0]]);
+  });
+
   it("un corte ya confirmado no se puede rehacer", async () => {
     await confirmarCorte(2, [s.teamIds[0]]);
 
     await asUser(s.db, s.users.owner, async () => {
       const msg = await expectDenied(() =>
-        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3)", [
+        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5)", [
           s.divisionId,
-          [s.teamIds[1]],
+          1,
+          JSON.stringify(standingDePrueba([s.teamIds[1]])),
+          "hash-de-prueba",
           [100],
         ]),
       );
@@ -146,9 +224,11 @@ describe("confirmar_corte_de_etapa", () => {
 
     await asUser(s.db, s.users.owner, async () => {
       const msg = await expectDenied(() =>
-        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3)", [
+        s.db.query("select confirmar_corte_de_etapa($1, 2, $2, $3::jsonb, $4, $5)", [
           s.divisionId,
-          [s.teamIds[0]],
+          1,
+          JSON.stringify(standingDePrueba([s.teamIds[0]])),
+          "hash-de-prueba",
           [100],
         ]),
       );

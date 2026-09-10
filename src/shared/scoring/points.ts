@@ -16,7 +16,7 @@
  * tiempo del circuito. Ver `tablaDeCategoria`.
  */
 
-import type { ScoringTable, ScoreDir } from "./types";
+import type { ScoringTable, ScoreDir, TiePointPolicy } from "./types";
 
 /**
  * Curva de referencia: CrossFit Games 2026, individuales, field de 30.
@@ -77,6 +77,11 @@ export const TABLA_TIEMPO_TOTAL: ScoringTable = {
   name: "Tiempo total",
   points: [],
   dir: "menor_gana",
+  // Una carrera no tiene empates de puntos que repartir -- points=[] hace que
+  // pointsForPosition devuelva la posicion misma, y pointsForTiedGroup nunca
+  // promedia una tabla vacia (ver su guard). El valor es irrelevante en la
+  // practica, pero se fija en el reglamento oficial para no dejarlo indefinido.
+  tiePolicy: "same_position_points",
 };
 
 /**
@@ -132,12 +137,14 @@ export function puntosDinamicos(
 export function tablaDinamica(
   fieldSize: number,
   maxPoints: number = PUNTOS_MAXIMOS_POR_DEFECTO,
+  tiePolicy: TiePointPolicy = "same_position_points",
 ): ScoringTable {
   return {
     id: "games_2026_dynamic",
     name: "Games 2026 Dynamic",
     points: puntosDinamicos(fieldSize, maxPoints),
     dir: "mayor_gana",
+    tiePolicy,
   };
 }
 
@@ -174,11 +181,21 @@ export function tablaDeCategoria(params: {
   snapshot: readonly number[] | null;
   /** Atletas de la categoria AHORA. Solo se usa si no hay snapshot. */
   fieldSize: number;
+  /**
+   * Como reparte un empate. Del snapshot si ya esta congelado (es la
+   * autoridad, ver `scoring_snapshots.tie_point_policy`), o del evento
+   * mientras se previsualiza. Default `same_position_points` para no
+   * romper a ningun llamador que todavia no la conozca.
+   */
+  tiePolicy?: TiePointPolicy;
 }): ScoringTable {
+  const tiePolicy = params.tiePolicy ?? "same_position_points";
+
   // Una carrera se gana llegando antes: no hay puestos que convertir en
   // puntos, y el leaderboard muestra el tiempo. El motor la trata como
   // "los puntos son la posicion" para que una hibrida y un CrossFit entren
-  // por el mismo camino.
+  // por el mismo camino. La politica de empate no le hace nada -- ver
+  // TABLA_TIEMPO_TOTAL -- asi que la hibrida queda fuera de esta decision.
   if (params.formato === "carrera_hibrida") return TABLA_TIEMPO_TOTAL;
 
   if (params.snapshot && params.snapshot.length > 0) {
@@ -187,20 +204,29 @@ export function tablaDeCategoria(params: {
       name: "Games 2026 Dynamic",
       points: params.snapshot,
       dir: "mayor_gana",
+      tiePolicy,
     };
   }
 
-  return tablaDinamica(params.fieldSize);
+  return tablaDinamica(params.fieldSize, PUNTOS_MAXIMOS_POR_DEFECTO, tiePolicy);
 }
 
 /**
  * Puntos que le tocan a una posicion.
  *
- * Fuera del rango de la tabla se repite el ultimo valor. Con la tabla dinamica
- * eso solo puede pasar si alguien se INSCRIBIO despues de bloquear el
- * snapshot: los que entran de mas comparten el ultimo valor (cero) en vez de
- * mover la curva de todos los demas hacia atras, que es exactamente lo que el
- * snapshot existe para impedir.
+ * Fuera del rango de la tabla se repite el ultimo valor (clamp). Esto NO es
+ * comportamiento previsto: es un ESTADO DEGRADADO. Solo puede pasar si el
+ * field real crecio por encima del `field_size` que describe un snapshot ya
+ * CONGELADO -- alguien se inscribio despues de bloquear la curva -- y en ese
+ * caso los que entran de mas comparten el ultimo valor (cero) en silencio,
+ * sin que el snapshot vuelva a describir al field que en verdad compite.
+ *
+ * El clamp se conserva porque la alternativa (indexar fuera de rango) da
+ * `undefined` y de ahi `NaN`, que es peor. Pero el camino correcto es NO
+ * llegar nunca a este estado: `detectarFieldMismatch` existe exactamente
+ * para eso, y los consumidores (recompute, el corte, la publicacion oficial)
+ * tienen que llamarlo ANTES de puntuar y bloquear si dispara, en vez de
+ * confiar en que este clamp calle el problema.
  */
 export function pointsForPosition(table: ScoringTable, position: number): number {
   if (position < 1) return 0;
@@ -210,7 +236,77 @@ export function pointsForPosition(table: ScoringTable, position: number): number
   return table.points[index];
 }
 
+/**
+ * Puntos que le tocan a un GRUPO empatado, segun la politica de la tabla.
+ *
+ * `same_position_points` (y cualquier grupo sin empate, `tiedWith <= 1`) es
+ * EXACTAMENTE `pointsForPosition(table, position)` -- el comportamiento de
+ * siempre, bit a bit. Con `average_occupied_positions`, el grupo reparte
+ * equitativamente los puntos de las `tiedWith` posiciones que ocupa
+ * (`position`, `position+1`, ..., `position+tiedWith-1`), redondeado a la
+ * misma precision que el resto de la tabla.
+ *
+ * Un empate SOLO puede darse entre marcas del mismo `statusRank` -- ver
+ * `compareComparable` -- asi que un grupo empatado es siempre HOMOGENEO: o
+ * todos puntuan, o ninguno (un grupo de DNF nunca llega aca con puntos que
+ * repartir, porque `rankPart` ya le da 0 antes de llamar a esta funcion).
+ */
+export function pointsForTiedGroup(
+  table: ScoringTable,
+  position: number,
+  tiedWith: number,
+): number {
+  // Una carrera hibrida (points=[]) queda FUERA de esta regla siempre, sin
+  // importar que tiePolicy traiga la tabla: los puntos son la posicion misma,
+  // y promediar posiciones (en vez de puntos) inventaria un numero que no es
+  // ni un puesto ni un puntaje. El guard vive aca, no solo en el default de
+  // TABLA_TIEMPO_TOTAL, para que ningun llamador pueda romperlo por accidente.
+  if (table.points.length === 0 || tiedWith <= 1 || table.tiePolicy === "same_position_points") {
+    return pointsForPosition(table, position);
+  }
+
+  let suma = 0;
+  for (let i = 0; i < tiedWith; i++) {
+    suma += pointsForPosition(table, position + i);
+  }
+  return redondear(suma / tiedWith);
+}
+
 /** Hacia donde gana la suma de puntos de la tabla. */
 export function pointsDirection(table: ScoringTable): ScoreDir {
   return table.dir;
+}
+
+/**
+ * Un snapshot CONGELADO que ya no describe al field real.
+ *
+ * `actualFieldSize > snapshotFieldSize` es la unica direccion que importa:
+ * el field solo puede CRECER despues de congelar por una inscripcion nueva
+ * (`admin_create_registration` / `confirm_registration` no saben que hay un
+ * snapshot bloqueado y no tienen por que saberlo). Que el field sea MENOR es
+ * legitimo -- alguien se retiro -- y no dispara nada: un retirado sale del
+ * padron en los dos consumidores (ver CLAUDE.md, "los equipos retirados no
+ * entran al padron"), asi que reduce el field sin romper la curva congelada.
+ */
+export type FieldMismatch = {
+  divisionId: string;
+  stage: number;
+  snapshotFieldSize: number;
+  actualFieldSize: number;
+};
+
+/**
+ * Detecta el mismatch de arriba. Pura: no consulta nada, solo compara los
+ * dos numeros que ya trajo el llamador (el `field_size` del snapshot, y el
+ * tamano real del padron elegible calculado con la MISMA regla en los dos
+ * consumidores -- retirados fuera).
+ */
+export function detectarFieldMismatch(params: {
+  divisionId: string;
+  stage: number;
+  snapshotFieldSize: number;
+  actualFieldSize: number;
+}): FieldMismatch | null {
+  if (params.actualFieldSize <= params.snapshotFieldSize) return null;
+  return { ...params };
 }

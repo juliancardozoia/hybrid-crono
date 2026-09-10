@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import { Badge } from "@/shared/components/Badge";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
 import type { ScoreboardPart } from "@/shared/scoring/scoreboard";
@@ -201,8 +202,18 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
                       {fila.position}
                       {/* Compartir posicion no es un error: el reglamento no rompe
                           los empates de la tabla general si los puestos por prueba
-                          tambien empatan. */}
-                      {fila.tiedWith > 1 && <span className="text-neutral-600">=</span>}
+                          tambien empatan. Antes era un "=" gris casi invisible;
+                          ahora es un color de apoyo (ambar) mas un titulo, para
+                          que el organizador o el locutor sepan que no es un
+                          error de la pantalla. */}
+                      {fila.tiedWith > 1 && (
+                        <span
+                          className="ml-0.5 font-semibold text-amber-400"
+                          title={`Empatado con ${fila.tiedWith - 1} equipo${fila.tiedWith - 1 === 1 ? "" : "s"} mas`}
+                        >
+                          =
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       <button
@@ -318,12 +329,23 @@ function DetalleDelAtleta({
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <EstadisticaResumen
             etiqueta="Overall"
             valor={`${medalla ?? ""} ${fila.position} / ${fieldSize}`}
           />
           <EstadisticaResumen etiqueta="Total" valor={`${fila.displayPoints} pts`} destacado />
+          {/* El empate deportivo se COMPARTE: misma posicion, misma medalla si
+              corresponde. Que los puntos sean iguales o no depende de la
+              politica de la categoria (same_position_points reparte integro,
+              average_occupied_positions promedia las posiciones ocupadas) --
+              este aviso es solo sobre la POSICION, no asume nada de los
+              puntos. */}
+          {fila.tiedWith > 1 && (
+            <Badge tono="warning">
+              Empate ({fila.tiedWith} equipos en el puesto {fila.position})
+            </Badge>
+          )}
         </div>
       </div>
 

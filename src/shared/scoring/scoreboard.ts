@@ -8,7 +8,7 @@
  * implementaciones que puedan divergir, hay una.
  */
 
-import { computeOverall, compareTiebreakVectors, resolverTiebreaksDeOtraPrueba } from "./overall";
+import { compararEntradasGenerales, computeOverall, resolverTiebreaksDeOtraPrueba } from "./overall";
 import { assignPhysicalPositions } from "./place";
 import { escalarTabla, redondear, tablaDeCategoria } from "./points";
 import type {
@@ -20,6 +20,7 @@ import type {
   ScoreStatus,
   ScoreUnit,
   ScoringTable,
+  TiePointPolicy,
 } from "./types";
 
 export type ScoreboardDivision = {
@@ -63,6 +64,8 @@ export type ScoreboardSnapshot = {
   stage: number;
   points: number[];
   locked: boolean;
+  /** Como reparte esta (categoria, etapa) sus empates. Congelada con la tabla. */
+  tiePointPolicy: TiePointPolicy;
 };
 
 /** Quien avanzo a una etapa. Decision explicita del organizador, nunca automatica. */
@@ -112,6 +115,8 @@ export type ScoreboardInput = {
     /** Decide si la categoria reparte puntos o se gana por tiempo. */
     format: string;
     official: boolean;
+    /** El default mientras una (categoria, etapa) todavia no tiene snapshot. */
+    tiePointPolicy: TiePointPolicy;
   };
   divisions: ScoreboardDivision[];
   /** Una fila por (categoria, etapa) que ya tenga tabla generada o congelada. */
@@ -234,11 +239,15 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
 
       // La curva de esta etapa: la congelada si ya se genero, o una al vuelo
       // con el field que la corrio. Una carrera hibrida no reparte puntos.
+      // La politica de empate sale del SNAPSHOT si ya existe -- es la
+      // autoridad, congelada junto con la curva -- y del evento mientras se
+      // previsualiza.
       const snapshot = snapshotPorDivisionYEtapa.get(`${division.id}|${stage}`);
       const tabla: ScoringTable = tablaDeCategoria({
         formato: input.event.format,
         snapshot: snapshot ? snapshot.points : null,
         fieldSize: equipoIds.length,
+        tiePolicy: snapshot ? snapshot.tiePointPolicy : input.event.tiePointPolicy,
       });
 
       // El peso de cada prueba escala esa misma curva. Antes esto se
@@ -292,7 +301,6 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
       // direcciones entre etapas seria una configuracion incoherente que la
       // UI no ofrece), asi que alcanza con la de cualquier etapa ya resuelta.
       const dir = tablaDeCategoria({ formato: input.event.format, snapshot: null, fieldSize: 1 }).dir;
-      const signo = dir === "menor_gana" ? 1 : -1;
 
       const listaAcumulada = [...acumulado.entries()].map(([teamId, { placements, totalPoints }]) => {
         const ordenados = [...placements].sort(
@@ -308,10 +316,7 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
         };
       });
 
-      const ubicados = assignPhysicalPositions(listaAcumulada, (a, b) => {
-        if (a.totalPoints !== b.totalPoints) return signo * (a.totalPoints - b.totalPoints);
-        return compareTiebreakVectors(a.tiebreakVector, b.tiebreakVector);
-      });
+      const ubicados = assignPhysicalPositions(listaAcumulada, compararEntradasGenerales(dir));
 
       const entries = ubicados.flatMap(({ item, position, tiedWith }) => {
         const team = equipoPorId.get(item.teamId);

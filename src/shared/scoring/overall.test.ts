@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compareTiebreakVectors, computeOverall, resolverTiebreaksDeOtraPrueba } from "./overall";
+import {
+  compararEntradasGenerales,
+  compareTiebreakVectors,
+  computeOverall,
+  resolverTiebreaksDeOtraPrueba,
+} from "./overall";
 import { TABLA_TIEMPO_TOTAL, tablaDinamica } from "./points";
 
 /** Una categoria de 40: el 1.o saca 100 y el 40.o cero. */
@@ -123,7 +128,13 @@ describe("la tabla de puntos puede variar por parte", () => {
     // e1 con CF-Open (los puntos son la posicion); e2 con una tabla de solo
     // dos valores, para que la diferencia sea imposible de confundir con una
     // coincidencia.
-    const tablaEspecial: ScoringTable = { id: "t2", name: "Especial", points: [500, 200], dir: "mayor_gana" };
+    const tablaEspecial: ScoringTable = {
+      id: "t2",
+      name: "Especial",
+      points: [500, 200],
+      dir: "mayor_gana",
+      tiePolicy: "same_position_points",
+    };
 
     const general = computeOverall({
       parts: partes,
@@ -155,6 +166,35 @@ describe("compareTiebreakVectors", () => {
     // No se inventa un tercer criterio: el reglamento no lo tiene, y cualquiera
     // que inventaramos seria arbitrario.
     expect(compareTiebreakVectors([1, 3, 4], [1, 3, 4])).toBe(0);
+  });
+});
+
+describe("compararEntradasGenerales: el comparador COMPLETO, compartido por overall y scoreboard", () => {
+  it("el mismo multiset de posiciones en orden distinto queda EMPATADO, no ordenado por cronologia", () => {
+    // Dos equipos con placements [5,5,2,2] y [2,2,5,5] (mismas cuatro
+    // posiciones, corridas en orden distinto) producen el MISMO
+    // tiebreakVector una vez ordenado ascendente -- que es como lo construyen
+    // computeOverall y buildScoreboard. El comparador tiene que verlos
+    // empatados: no es un ranking por en que orden del evento salieron los
+    // podios, es "quien tuvo mejores podios en conjunto".
+    const a = { totalPoints: 14, tiebreakVector: [5, 5, 2, 2].sort((x, y) => x - y) };
+    const b = { totalPoints: 14, tiebreakVector: [2, 2, 5, 5].sort((x, y) => x - y) };
+    expect(compararEntradasGenerales("mayor_gana")(a, b)).toBe(0);
+  });
+
+  it("con totalPoints distintos, decide el total antes de mirar el vector", () => {
+    const mejor = { totalPoints: 20, tiebreakVector: [3, 3] };
+    const peor = { totalPoints: 14, tiebreakVector: [1, 1] };
+    // mayor_gana: el de mas puntos va primero (numero negativo = "va antes").
+    expect(compararEntradasGenerales("mayor_gana")(mejor, peor)).toBeLessThan(0);
+    // menor_gana (carrera por tiempo): se invierte.
+    expect(compararEntradasGenerales("menor_gana")(mejor, peor)).toBeGreaterThan(0);
+  });
+
+  it("con el vector identico, sigue empatado -- no hay tercer criterio", () => {
+    const a = { totalPoints: 14, tiebreakVector: [1, 3, 4] };
+    const b = { totalPoints: 14, tiebreakVector: [1, 3, 4] };
+    expect(compararEntradasGenerales("mayor_gana")(a, b)).toBe(0);
   });
 });
 

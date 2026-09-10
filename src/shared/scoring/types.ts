@@ -112,6 +112,29 @@ export type ComparableScore = {
 };
 
 /**
+ * Como se reparten los puntos de un GRUPO empatado.
+ *
+ * Dos convenciones legitimas y distintas, nunca una mezcla silenciosa:
+ *
+ * - `same_position_points`: cada empatado cobra los puntos INTEGROS de la
+ *   posicion compartida. Es el reglamento oficial de los Games: "more than
+ *   one athlete can share a workout rank, and each will earn the original
+ *   point value". El puesto consumido (el 4 de un empate en el 3) no lo paga
+ *   nadie, y el total repartido queda por ENCIMA de lo que ofrece la curva.
+ * - `average_occupied_positions`: el grupo reparte equitativamente los puntos
+ *   de TODAS las posiciones que ocupa -- (P3+P4)/2 para un empate en el 3.
+ *   Es una CONVENCION SCORA, no el reglamento tradicional: conserva el total
+ *   que reparte la curva, a costa de que un empate cerca del fondo ya no
+ *   iguale exactamente los puntos del puesto compartido.
+ *
+ * El default es `same_position_points` porque es lo que el codigo siempre
+ * hizo y lo que un organizador que viene de CrossFit espera al auditar la
+ * tabla contra el reglamento oficial. La UI ofrece la otra rotulada como
+ * convencion Scora, nunca como default.
+ */
+export type TiePointPolicy = "same_position_points" | "average_occupied_positions";
+
+/**
  * Tabla de puntos por puesto.
  *
  * `points` vacio significa que los puntos SON la posicion (el sistema del
@@ -124,6 +147,8 @@ export type ScoringTable = {
   points: readonly number[];
   /** Hacia donde gana la SUMA de puntos. Intrinseco a la tabla. */
   dir: ScoreDir;
+  /** Como reparte los puntos un grupo empatado. Ver `TiePointPolicy`. */
+  tiePolicy: TiePointPolicy;
 };
 
 /** El puesto de un equipo en una parte, con los puntos que le tocaron. */

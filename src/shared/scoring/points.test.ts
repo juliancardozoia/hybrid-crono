@@ -3,8 +3,10 @@ import {
   FIELD_DE_REFERENCIA,
   GAMES_2026,
   TABLA_TIEMPO_TOTAL,
+  detectarFieldMismatch,
   escalarTabla,
   pointsForPosition,
+  pointsForTiedGroup,
   puntosDinamicos,
   tablaDeCategoria,
   tablaDinamica,
@@ -195,6 +197,42 @@ describe("tablaDeCategoria: el unico lugar que decide", () => {
     expect(tabla.points).toEqual(congelada);
   });
 
+  it("propaga tiePolicy a la tabla resultante: sin snapshot", () => {
+    // Bug real que este test hubiera atrapado: tablaDeCategoria recibe
+    // tiePolicy y se lo pasa a tablaDinamica -- sin este test, romper esa
+    // linea (por ejemplo ignorando el parametro) no lo detectaria nada, y
+    // rankPart terminaria repartiendo puntos con la politica equivocada.
+    const tabla = tablaDeCategoria({
+      formato: "crossfit",
+      snapshot: null,
+      fieldSize: 10,
+      tiePolicy: "average_occupied_positions",
+    });
+    expect(tabla.tiePolicy).toBe("average_occupied_positions");
+  });
+
+  it("propaga tiePolicy a la tabla resultante: con snapshot", () => {
+    const congelada = puntosDinamicos(10);
+    const tabla = tablaDeCategoria({
+      formato: "crossfit",
+      snapshot: congelada,
+      fieldSize: 10,
+      tiePolicy: "average_occupied_positions",
+    });
+    expect(tabla.tiePolicy).toBe("average_occupied_positions");
+  });
+
+  it("sin tiePolicy explicita, el default es same_position_points (el reglamento oficial)", () => {
+    const sinSnapshot = tablaDeCategoria({ formato: "crossfit", snapshot: null, fieldSize: 10 });
+    const conSnapshot = tablaDeCategoria({
+      formato: "crossfit",
+      snapshot: puntosDinamicos(10),
+      fieldSize: 10,
+    });
+    expect(sinSnapshot.tiePolicy).toBe("same_position_points");
+    expect(conSnapshot.tiePolicy).toBe("same_position_points");
+  });
+
   it("un snapshot vacio no se toma por bueno", () => {
     const tabla = tablaDeCategoria({ formato: "crossfit", snapshot: [], fieldSize: 9 });
     expect(tabla.points).toHaveLength(9);
@@ -217,5 +255,138 @@ describe("pointsForPosition", () => {
 
   it("una posicion invalida no rompe el calculo", () => {
     expect(pointsForPosition(tablaDinamica(30), 0)).toBe(0);
+  });
+});
+
+describe("pointsForTiedGroup: same_position_points (default, reglamento oficial)", () => {
+  it("es EXACTAMENTE pointsForPosition para cualquier tiedWith -- no se mueve ni un decimal", () => {
+    const tabla = tablaDinamica(10);
+    for (let position = 1; position <= 10; position++) {
+      for (const tiedWith of [1, 2, 3]) {
+        expect(pointsForTiedGroup(tabla, position, tiedWith)).toBe(
+          pointsForPosition(tabla, position),
+        );
+      }
+    }
+  });
+
+  it("sin empate (tiedWith=1) es igual con cualquier politica", () => {
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    expect(pointsForTiedGroup(tabla, 3, 1)).toBe(pointsForPosition(tabla, 3));
+  });
+});
+
+describe("pointsForTiedGroup: average_occupied_positions (convencion Scora)", () => {
+  it("el caso real: 10 atletas, empates en 3, 5 y 9 -- (P3+P4)/2, (P5+P6)/2, (P9+P10)/2", () => {
+    // Precision 2, no 3: el promedio crudo puede caer justo en el limite de
+    // redondeo (x.xxx5) y toBeCloseTo(_, 3) exige una tolerancia mas chica
+    // que ese medio-milesimo. El valor YA se compara exacto a 3 decimales en
+    // place.test.ts contra la cifra escrita a mano.
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    expect(pointsForTiedGroup(tabla, 3, 2)).toBeCloseTo(
+      (pointsForPosition(tabla, 3) + pointsForPosition(tabla, 4)) / 2,
+      2,
+    );
+    expect(pointsForTiedGroup(tabla, 5, 2)).toBeCloseTo(
+      (pointsForPosition(tabla, 5) + pointsForPosition(tabla, 6)) / 2,
+      2,
+    );
+    expect(pointsForTiedGroup(tabla, 9, 2)).toBeCloseTo(
+      (pointsForPosition(tabla, 9) + pointsForPosition(tabla, 10)) / 2,
+      2,
+    );
+  });
+
+  it("el ultimo empate (9,10 de 10) no saca 0: reparte el 0 del ultimo puesto entre los dos", () => {
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    const puntos = pointsForTiedGroup(tabla, 9, 2);
+    expect(puntos).toBeGreaterThan(0);
+    expect(puntos).toBeCloseTo(pointsForPosition(tabla, 9) / 2, 3);
+  });
+
+  it("grupo de 3 promedia 3 posiciones", () => {
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    const esperado =
+      (pointsForPosition(tabla, 3) +
+        pointsForPosition(tabla, 4) +
+        pointsForPosition(tabla, 5)) /
+      3;
+    expect(pointsForTiedGroup(tabla, 3, 3)).toBeCloseTo(esperado, 3);
+  });
+
+  it("un grupo que se pasa del largo de la tabla hereda el clamp de pointsForPosition", () => {
+    // Snapshot de 10, un grupo de 2 empatado en el puesto 9: las posiciones
+    // ocupadas son 9 y 10, ambas dentro de rango, sin clamp. Forzar un grupo
+    // que exceda el largo (10 empatados en el puesto 9 con snapshot de 10)
+    // repite el ultimo valor para las posiciones que faltan, igual que
+    // pointsForPosition.
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    const esperado =
+      (pointsForPosition(tabla, 9) +
+        pointsForPosition(tabla, 10) +
+        pointsForPosition(tabla, 11)) /
+      3; // el puesto 11 no existe: repite el valor del 10 (0)
+    expect(pointsForTiedGroup(tabla, 9, 3)).toBeCloseTo(esperado, 3);
+  });
+
+  it("conserva el total EXACTAMENTE hasta el redondeo a 3 decimales", () => {
+    // La curva completa de 10 puestos reparte una suma fija. Repartir un
+    // empate por promedio no puede cambiar ese total, salvo el ruido de
+    // redondear cada grupo por separado.
+    const tabla = tablaDinamica(10, 100, "average_occupied_positions");
+    const totalCurva = Array.from({ length: 10 }, (_, i) => pointsForPosition(tabla, i + 1)).reduce(
+      (a, b) => a + b,
+      0,
+    );
+
+    // 1,2,3,3,5,5,7,8,9,9 -- grupos en 1,2,3(x2),5(x2),7,8,9(x2)
+    const grupos: Array<[number, number]> = [
+      [1, 1],
+      [2, 1],
+      [3, 2],
+      [5, 2],
+      [7, 1],
+      [8, 1],
+      [9, 2],
+    ];
+    const totalRepartido = grupos.reduce(
+      (suma, [posicion, tiedWith]) => suma + pointsForTiedGroup(tabla, posicion, tiedWith) * tiedWith,
+      0,
+    );
+
+    expect(Math.abs(totalRepartido - totalCurva)).toBeLessThanOrEqual(0.001 * 10);
+  });
+
+  it("TABLA_TIEMPO_TOTAL no promedia nunca: points es la posicion entera", () => {
+    // TABLA_TIEMPO_TOTAL declara same_position_points, pero aunque alguien la
+    // fuerce con la otra politica, points.length === 0 hace que
+    // pointsForPosition devuelva la posicion misma sin pasar por el promedio.
+    const tablaForzada = { ...TABLA_TIEMPO_TOTAL, tiePolicy: "average_occupied_positions" as const };
+    expect(pointsForTiedGroup(tablaForzada, 3, 2)).toBe(3);
+    expect(pointsForTiedGroup(TABLA_TIEMPO_TOTAL, 3, 2)).toBe(3);
+  });
+});
+
+describe("detectarFieldMismatch", () => {
+  it("dispara cuando el field real crecio por encima del snapshot congelado", () => {
+    const mismatch = detectarFieldMismatch({
+      divisionId: "d1",
+      stage: 1,
+      snapshotFieldSize: 10,
+      actualFieldSize: 13,
+    });
+    expect(mismatch).toEqual({ divisionId: "d1", stage: 1, snapshotFieldSize: 10, actualFieldSize: 13 });
+  });
+
+  it("no dispara si el field es igual al snapshot", () => {
+    expect(
+      detectarFieldMismatch({ divisionId: "d1", stage: 1, snapshotFieldSize: 10, actualFieldSize: 10 }),
+    ).toBeNull();
+  });
+
+  it("no dispara si el field es MENOR (un retiro es legitimo, no un mismatch)", () => {
+    expect(
+      detectarFieldMismatch({ divisionId: "d1", stage: 1, snapshotFieldSize: 10, actualFieldSize: 8 }),
+    ).toBeNull();
   });
 });

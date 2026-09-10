@@ -506,6 +506,51 @@ export interface PuntuacionDeCategoria {
  * y devuelve PGRST200 recien en produccion, y esto es exactamente lo que
  * documenta el CLAUDE.md sobre `lanes`/`events`.
  */
+/**
+ * El ranking ACUMULADO de cada (categoria, etapa) de un evento, resuelto por
+ * el MISMO motor que usa el leaderboard en vivo (`buildScoreboard`).
+ *
+ * Un solo lugar que consulta `scoreboard_document` y lo proyecta: lo usan
+ * `getPuntuacionDelEvento` (para pintar la pantalla) y
+ * `confirmarCorteDeEtapa` (para derivar, EN EL SERVIDOR y con datos frescos,
+ * quien avanza y con que huella). Si cada uno volviera a armar el documento a
+ * su manera, la pantalla y la accion que confirma el corte podrian ver dos
+ * standings distintos.
+ */
+export async function getRankingGeneralDelEvento(
+  eventId: string,
+): Promise<Map<string, Map<string, { totalPoints: number; position: number; tiedWith: number }>>> {
+  const supabase = await createClient();
+  // Sin parciales (`p_detalle: false`): esto necesita el acumulado y las
+  // posiciones, no los splits de cada segmento. `scoreboard_document` valida
+  // acceso por su cuenta (`puede_leer_evento`) -- si por lo que sea no
+  // devuelve nada, el mapa sale vacio y el llamador sigue sin ordenar.
+  const { data: documento } = await supabase.rpc("scoreboard_document", {
+    p_event_id: eventId,
+    p_detalle: false,
+  });
+
+  const rankingPorDivisionYEtapa = new Map<
+    string,
+    Map<string, { totalPoints: number; position: number; tiedWith: number }>
+  >();
+  if (documento) {
+    const resultados = buildScoreboard(documento as unknown as ScoreboardInput);
+    for (const r of resultados) {
+      rankingPorDivisionYEtapa.set(
+        `${r.division.id}|${r.stage}`,
+        new Map(
+          r.entries.map((e) => [
+            e.teamId,
+            { totalPoints: e.totalPoints, position: e.position, tiedWith: e.tiedWith },
+          ]),
+        ),
+      );
+    }
+  }
+  return rankingPorDivisionYEtapa;
+}
+
 export async function getPuntuacionDelEvento(
   eventId: string,
 ): Promise<PuntuacionDeCategoria[]> {
@@ -519,7 +564,7 @@ export async function getPuntuacionDelEvento(
     { data: partes },
     { data: asignaciones },
     { data: avances },
-    { data: documento },
+    rankingPorDivisionYEtapa,
   ] = await Promise.all([
     supabase.from("divisions").select("id, name").eq("event_id", eventId).order("name"),
     supabase
@@ -538,30 +583,8 @@ export async function getPuntuacionDelEvento(
       .from("stage_advancements")
       .select("division_id, stage, team_id")
       .eq("event_id", eventId),
-    // Sin parciales (`p_detalle: false`): esta pantalla necesita el
-    // acumulado y las posiciones, no los splits de cada segmento.
-    // `scoreboard_document` valida acceso por su cuenta (`puede_leer_evento`)
-    // -- si por lo que sea no devuelve nada, el pool sigue mostrandose sin
-    // ordenar, como antes de este cambio.
-    supabase.rpc("scoreboard_document", { p_event_id: eventId, p_detalle: false }),
+    getRankingGeneralDelEvento(eventId),
   ]);
-
-  // (division, etapa) -> el ranking ACUMULADO de esa vista, ya resuelto por
-  // el mismo motor que usa el leaderboard en vivo (`buildScoreboard`): un
-  // solo lugar donde se calcula esto, ver scoreboard.ts.
-  const rankingPorDivisionYEtapa = new Map<
-    string,
-    Map<string, { totalPoints: number; position: number }>
-  >();
-  if (documento) {
-    const resultados = buildScoreboard(documento as unknown as ScoreboardInput);
-    for (const r of resultados) {
-      rankingPorDivisionYEtapa.set(
-        `${r.division.id}|${r.stage}`,
-        new Map(r.entries.map((e) => [e.teamId, { totalPoints: e.totalPoints, position: e.position }])),
-      );
-    }
-  }
 
   const activosPorDivision = new Map<string, number>();
   const equipoPorId = new Map(

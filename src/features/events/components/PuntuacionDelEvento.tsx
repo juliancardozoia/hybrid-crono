@@ -8,6 +8,7 @@ import {
 import { confirmarCorteDeEtapa } from "../config/etapas";
 import type { EtapaDeCategoria, PuntuacionDeCategoria } from "../config/queries";
 import { puntosDinamicos } from "@/shared/scoring/points";
+import { huellaDelStanding } from "@/shared/scoring/hash";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Modal } from "@/shared/components/Modal";
 import { Badge } from "@/shared/components/Badge";
@@ -101,13 +102,23 @@ function TarjetaDeCategoria({
         <Estado categoria={categoria} />
       </div>
 
-      {desfasada(categoria) && (
-        <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-200/90">
-          La tabla se congeló con {categoria.fieldSize} y hoy hay{" "}
-          {categoria.atletasActivos}. Es lo esperado si alguien se retiró después de
-          empezar: los puntos de las pruebas ya corridas no se tocan.
-        </p>
-      )}
+      {desfasada(categoria) &&
+        (crecioSobreElSnapshot(categoria) ? (
+          <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-200/90">
+            La tabla se congeló con {categoria.fieldSize} y hoy hay{" "}
+            {categoria.atletasActivos}: {categoria.atletasActivos - (categoria.fieldSize ?? 0)} atleta
+            {categoria.atletasActivos - (categoria.fieldSize ?? 0) === 1 ? "" : "s"} de mas quedarian
+            puntuando en cero, sin que nadie lo note. La tabla general de esta categoria NO se
+            actualiza mientras esto siga asi. Sacalos de la categoria, o regenerá y volvé a bloquear
+            la tabla con el tamaño real.
+          </p>
+        ) : (
+          <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-200/90">
+            La tabla se congeló con {categoria.fieldSize} y hoy hay{" "}
+            {categoria.atletasActivos}. Es lo esperado si alguien se retiró después de
+            empezar: los puntos de las pruebas ya corridas no se tocan.
+          </p>
+        ))}
 
       {/* Todo en una sola fila: el label va AL LADO del input, no arriba, y el
           texto de ayuda pasa a `title` (tooltip). Con el label arriba y la
@@ -238,6 +249,16 @@ function desfasada(c: PuntuacionDeCategoria): boolean {
   return c.fieldSize !== null && c.fieldSize !== c.atletasActivos;
 }
 
+/**
+ * El field creció por ENCIMA de lo que describe el snapshot congelado -- la
+ * unica direccion que bloquea (ver `detectarFieldMismatch` en
+ * src/shared/scoring/points.ts). Que el field sea MENOR es legitimo (un
+ * retiro) y no bloquea nada: `desfasada` ya lo avisa sin frenar.
+ */
+function crecioSobreElSnapshot(c: PuntuacionDeCategoria): boolean {
+  return c.fieldSize !== null && c.atletasActivos > c.fieldSize;
+}
+
 /** Dos decimales para leer, tres para calcular. */
 function formatear(puntos: number): string {
   return Number.isInteger(puntos) ? String(puntos) : puntos.toFixed(2);
@@ -281,7 +302,7 @@ function BloqueDeEtapa({
   etapa: EtapaDeCategoria;
 }) {
   const [pendiente, startTransition] = useTransition();
-  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [puestoStr, setPuestoStr] = useState("");
   const { exito, error: avisarError } = useNotificaciones();
 
   // Confirmado: no se puede rehacer, mismo criterio que bloquear la tabla de
@@ -300,17 +321,25 @@ function BloqueDeEtapa({
     );
   }
 
-  const alternar = (teamId: string) =>
-    setSeleccion((prev) => {
-      const next = new Set(prev);
-      if (next.has(teamId)) next.delete(teamId);
-      else next.add(teamId);
-      return next;
-    });
+  const puesto = Number(puestoStr);
+  const puestoValido = Number.isFinite(puesto) && puesto >= 1;
+
+  // La derivacion es UNA comparacion: `position <= puesto`. Como los
+  // empatados COMPARTEN `position` (posicion fisica), un grupo que cruza la
+  // linea de corte queda ENTERO adentro -- no hay forma de partirlo, porque
+  // no hay ninguna seleccion manual que pueda hacerlo.
+  const avanzan = puestoValido
+    ? etapa.pool.filter((t) => t.position !== null && t.position <= puesto)
+    : [];
+  // El puesto REAL en el que termina el corte, si un empate lo empujo mas
+  // alla del numero que se escribio (ej: se pidio 20 pero el grupo de la
+  // frontera ocupa 19-21 y avanzan los 21).
+  const puestoReal = avanzan.reduce((max, t) => Math.max(max, t.position ?? 0), 0);
+  const seExpandioPorEmpate = puestoValido && puestoReal > 0 && puestoReal !== puesto;
 
   return (
     <div className="rounded-xl border border-neutral-800 p-3">
-      <p className="text-sm font-medium">Etapa {etapa.stage} · elegí quién avanza</p>
+      <p className="text-sm font-medium">Etapa {etapa.stage} · puesto de corte</p>
 
       {etapa.pool.length === 0 ? (
         <p className="mt-2 text-xs text-neutral-500">
@@ -332,22 +361,47 @@ function BloqueDeEtapa({
               acumulado.
             </p>
           )}
+
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            Avanzan los primeros
+            <input
+              value={puestoStr}
+              onChange={(e) => setPuestoStr(e.target.value.replace(/[^0-9]/g, ""))}
+              inputMode="numeric"
+              placeholder="20"
+              className="w-16 rounded-lg border border-neutral-800 bg-transparent px-2 py-1 text-center text-sm outline-none focus:border-lime-400"
+            />
+            puestos
+          </label>
+
+          {puestoValido && (
+            <p className="mt-1 text-xs text-neutral-500">
+              Avanzan <span className="font-medium text-lime-400">{avanzan.length}</span> equipo
+              {avanzan.length === 1 ? "" : "s"}
+              {seExpandioPorEmpate && (
+                <>
+                  {" "}
+                  (empate en el puesto {puestoReal}: el corte se estira para no partir el grupo)
+                </>
+              )}
+              . Ningún equipo se puede quitar a mano: si el resultado de alguien tiene que cambiar, se
+              corrige el score, no el corte.
+            </p>
+          )}
+
           {/* Ordenado por el acumulado real hasta esta etapa (no solo el
               ultimo WOD): es la misma cifra que va a usar el leaderboard, asi
               que el corte se confirma mirando el mismo numero, no una lista
-              de bibs sin orden. */}
+              de bibs sin orden. Sin checkboxes: el puesto de arriba es la
+              UNICA forma de decidir quien avanza. */}
           <ul className="mt-2 flex flex-col divide-y divide-neutral-900 overflow-hidden rounded-xl border border-neutral-800">
             {etapa.pool.map((t) => {
-              const activo = seleccion.has(t.teamId);
+              const avanzaEsteEquipo = avanzan.some((a) => a.teamId === t.teamId);
               return (
                 <li key={t.teamId}>
-                  <button
-                    type="button"
-                    onClick={() => alternar(t.teamId)}
-                    className={`flex w-full items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs transition-colors ${
-                      activo
-                        ? "bg-lime-400/10 text-lime-300"
-                        : "text-neutral-400 hover:bg-neutral-900"
+                  <div
+                    className={`flex w-full items-baseline justify-between gap-3 px-3 py-1.5 text-left text-xs ${
+                      avanzaEsteEquipo ? "bg-lime-400/10 text-lime-300" : "text-neutral-400"
                     }`}
                   >
                     <span className="flex items-baseline gap-2">
@@ -357,14 +411,14 @@ function BloqueDeEtapa({
                       <span className="inline-block w-8 shrink-0 font-mono tabular-nums text-neutral-600">
                         {t.position !== null ? `${t.position}.º` : "—"}
                       </span>
-                      {activo ? "✓ " : ""}#{t.bib} {t.nombre ?? ""}
+                      {avanzaEsteEquipo ? "✓ " : ""}#{t.bib} {t.nombre ?? ""}
                     </span>
                     {t.totalPoints !== null && (
                       <span className="font-mono tabular-nums text-neutral-500">
                         {formatear(t.totalPoints)} pts
                       </span>
                     )}
-                  </button>
+                  </div>
                 </li>
               );
             })}
@@ -372,17 +426,27 @@ function BloqueDeEtapa({
 
           <button
             type="button"
-            disabled={pendiente || seleccion.size === 0}
+            disabled={pendiente || !puestoValido || avanzan.length === 0}
             onClick={() =>
               startTransition(async () => {
-                const r = await confirmarCorteDeEtapa(eventId, divisionId, etapa.stage, [...seleccion]);
+                // La huella es de LO QUE ESTA PANTALLA MUESTRA -- si el
+                // servidor recalcula y le da otra, alguien cambio un score
+                // desde que se abrio esta vista, y el corte se rechaza en
+                // vez de confirmarse sobre datos que ya quedaron viejos.
+                const entradas = etapa.pool
+                  .filter((t): t is typeof t & { position: number; totalPoints: number } =>
+                    t.position !== null && t.totalPoints !== null,
+                  )
+                  .map((t) => ({ teamId: t.teamId, position: t.position, totalPoints: t.totalPoints }));
+                const huella = huellaDelStanding(entradas);
+                const r = await confirmarCorteDeEtapa(eventId, divisionId, etapa.stage, puesto, huella);
                 if (r.error) avisarError(r.error);
                 else exito("Corte confirmado.");
               })
             }
             className={`mt-3 ${claseDeBoton({ variante: "primary", compacto: true })}`}
           >
-            Confirmar corte ({seleccion.size})
+            Confirmar corte ({avanzan.length})
           </button>
         </>
       )}

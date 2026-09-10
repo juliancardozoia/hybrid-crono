@@ -11,6 +11,7 @@ function documento(parcial: Partial<ScoreboardInput> = {}): ScoreboardInput {
       status: "live",
       format: "crossfit",
       official: false,
+      tiePointPolicy: "same_position_points",
     },
     divisions: [{ id: "d1", name: "RX Masculino" }],
     snapshots: [],
@@ -113,7 +114,7 @@ describe("buildScoreboard", () => {
     // da al segundo puesto. Sin esto, retirarse le cambiaria los puntos a los
     // que se quedaron.
     const doc = documento();
-    doc.snapshots = [{ divisionId: "d1", stage: 1, points: [100, 66.667, 33.333, 0], locked: true }];
+    doc.snapshots = [{ divisionId: "d1", stage: 1, points: [100, 66.667, 33.333, 0], locked: true, tiePointPolicy: "same_position_points" }];
     const [categoria] = buildScoreboard(doc);
     const t1 = categoria.entries.find((e) => e.teamId === "t1")!;
     expect(t1.placements.find((p) => p.partId === "p1")!.points).toBe(100);
@@ -212,6 +213,7 @@ describe("buildScoreboard", () => {
           venue: null,
           status: "draft",
           format: "crossfit",
+          tiePointPolicy: "same_position_points",
           official: false,
         },
         divisions: [],
@@ -286,8 +288,8 @@ describe("buildScoreboard", () => {
       const doc = documentoConEtapa2();
       doc.stageAdvancements = [{ divisionId: "d1", stage: 2, teamId: "t1" }];
       doc.snapshots = [
-        { divisionId: "d1", stage: 1, points: [100, 0], locked: true },
-        { divisionId: "d1", stage: 2, points: [100, 40], locked: true },
+        { divisionId: "d1", stage: 1, points: [100, 0], locked: true, tiePointPolicy: "same_position_points" },
+        { divisionId: "d1", stage: 2, points: [100, 40], locked: true, tiePointPolicy: "same_position_points" },
       ];
 
       const resultados = buildScoreboard(doc);
@@ -377,7 +379,7 @@ describe("buildScoreboard", () => {
       const doc: ScoreboardInput = {
         version: 5,
         detalle: true,
-        event: { name: "Copa Test", venue: null, status: "live", format: "crossfit", official: false },
+        event: { name: "Copa Test", venue: null, status: "live", format: "crossfit", official: false, tiePointPolicy: "same_position_points" },
         divisions: [{ id: "d1", name: "RX Masculino" }],
         teams: [
           { id: "t1", divisionId: "d1", bib: 1, name: null, athletes: "T1", countries: [] },
@@ -422,9 +424,9 @@ describe("buildScoreboard", () => {
           { partId: "p3", teamId: "t3", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
         ],
         snapshots: [
-          { divisionId: "d1", stage: 1, points: [100, 70, 40, 0], locked: true },
-          { divisionId: "d1", stage: 2, points: [100, 50, 0], locked: true },
-          { divisionId: "d1", stage: 3, points: [100, 0], locked: true },
+          { divisionId: "d1", stage: 1, points: [100, 70, 40, 0], locked: true, tiePointPolicy: "same_position_points" },
+          { divisionId: "d1", stage: 2, points: [100, 50, 0], locked: true, tiePointPolicy: "same_position_points" },
+          { divisionId: "d1", stage: 3, points: [100, 0], locked: true, tiePointPolicy: "same_position_points" },
         ],
         stageAdvancements: [
           // Corte 1: top 3 (t1, t2, t3). t4 queda afuera.

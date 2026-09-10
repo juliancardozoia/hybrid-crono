@@ -20,6 +20,7 @@ import {
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { NuevoCircuito } from "@/features/events/components/NuevoCircuito";
 import { SimuladorDeJuezCircuito } from "@/features/events/components/SimuladorDeJuezCircuito";
+import { ToggleDesempateDeSegmento } from "@/features/events/components/ToggleDesempateDeSegmento";
 
 const TIPOS: Record<string, string> = {
   run: "Corrida",
@@ -119,6 +120,14 @@ export default async function CircuitoPage({
                         {TIPOS[segment.kind]}
                       </span>
                     </span>
+
+                    {canManage && (
+                      <ToggleDesempateDeSegmento
+                        eventId={id}
+                        segmentId={segment.id}
+                        activo={segment.es_tiebreak}
+                      />
+                    )}
 
                     {canManage && (
                       <span className="flex items-center gap-1">
