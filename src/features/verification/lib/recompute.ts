@@ -11,7 +11,7 @@ import {
   type FilaDeParte,
 } from "@/shared/timing/wodStructure";
 import { scoreFromLaneResult, scoreFromWodResult } from "@/shared/scoring/fromTiming";
-import type { ScoreStatus, ScoreUnit } from "@/shared/scoring/types";
+import type { RoundBreakdownStep, ScoreStatus, ScoreUnit } from "@/shared/scoring/types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 /**
@@ -401,6 +401,9 @@ export interface ScoreDeWod {
   value_reps: number | null;
   value_cap: number | null;
   tiebreak_value: number | null;
+  /** Ver `RawScore.roundBreakdown`. Persistido para que el leaderboard pueda
+   *  mostrar el mismo detalle que ve el juez, sin recalcular nada. */
+  round_breakdown: RoundBreakdownStep[] | null;
   source: "en_vivo";
   lane_id: string;
 }
@@ -484,6 +487,7 @@ export function calcularScoresDeWod(params: {
       value_reps: score.reps,
       value_cap: score.capValue,
       tiebreak_value: score.tiebreak,
+      round_breakdown: score.roundBreakdown,
       source: "en_vivo",
       lane_id: laneId,
     };

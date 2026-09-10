@@ -25,6 +25,7 @@ function score(parcial: Partial<RawScore> = {}): RawScore {
     reps: null,
     capValue: null,
     tiebreak: null,
+    roundBreakdown: null,
     ...parcial,
   };
 }
@@ -196,6 +197,7 @@ describe("scorePendiente", () => {
       reps: null,
       capValue: null,
       tiebreak: null,
+      roundBreakdown: null,
     });
   });
 });

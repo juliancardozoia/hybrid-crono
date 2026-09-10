@@ -59,10 +59,10 @@ function documento(parcial: Partial<ScoreboardInput> = {}): ScoreboardInput {
       { id: "t2", divisionId: "d1", bib: 102, name: null, athletes: "Beto Gomez", countries: [] },
     ],
     scores: [
-      { partId: "p1", teamId: "t1", status: "valido", value: 150, reps: null, capValue: null, tiebreak: null },
-      { partId: "p1", teamId: "t2", status: "valido", value: 120, reps: null, capValue: null, tiebreak: null },
-      { partId: "p2", teamId: "t1", status: "valido", value: 400_000, reps: null, capValue: null, tiebreak: null },
-      { partId: "p2", teamId: "t2", status: "valido", value: 300_000, reps: null, capValue: null, tiebreak: null },
+      { partId: "p1", teamId: "t1", status: "valido", value: 150, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+      { partId: "p1", teamId: "t2", status: "valido", value: 120, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+      { partId: "p2", teamId: "t1", status: "valido", value: 400_000, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+      { partId: "p2", teamId: "t2", status: "valido", value: 300_000, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
     ],
     ...parcial,
   };
@@ -249,8 +249,8 @@ describe("buildScoreboard", () => {
       });
       doc.assignments.push({ partId: "p3", divisionId: "d1" });
       doc.scores.push(
-        { partId: "p3", teamId: "t1", status: "valido", value: 50, reps: null, capValue: null, tiebreak: null },
-        { partId: "p3", teamId: "t2", status: "valido", value: 80, reps: null, capValue: null, tiebreak: null },
+        { partId: "p3", teamId: "t1", status: "valido", value: 50, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+        { partId: "p3", teamId: "t2", status: "valido", value: 80, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
       );
       return doc;
     }
@@ -411,17 +411,17 @@ describe("buildScoreboard", () => {
         ],
         scores: [
           // WOD 1 (los 4): t1 1ro, t2 2do, t3 3ro, t4 4to (ultimo, eliminado).
-          { partId: "p1", teamId: "t1", status: "valido", value: 400, reps: null, capValue: null, tiebreak: null },
-          { partId: "p1", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null },
-          { partId: "p1", teamId: "t3", status: "valido", value: 200, reps: null, capValue: null, tiebreak: null },
-          { partId: "p1", teamId: "t4", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+          { partId: "p1", teamId: "t1", status: "valido", value: 400, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p1", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p1", teamId: "t3", status: "valido", value: 200, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p1", teamId: "t4", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
           // WOD 2 (top 3): se invierte -- t3 gana, t2 2do, t1 ultimo.
-          { partId: "p2", teamId: "t3", status: "valido", value: 500, reps: null, capValue: null, tiebreak: null },
-          { partId: "p2", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null },
-          { partId: "p2", teamId: "t1", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+          { partId: "p2", teamId: "t3", status: "valido", value: 500, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p2", teamId: "t2", status: "valido", value: 300, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p2", teamId: "t1", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
           // Final (top 2, t2 y t3): t2 gana grande.
-          { partId: "p3", teamId: "t2", status: "valido", value: 600, reps: null, capValue: null, tiebreak: null },
-          { partId: "p3", teamId: "t3", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
+          { partId: "p3", teamId: "t2", status: "valido", value: 600, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+          { partId: "p3", teamId: "t3", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
         ],
         snapshots: [
           { divisionId: "d1", stage: 1, points: [100, 70, 40, 0], locked: true, tiePointPolicy: "same_position_points" },

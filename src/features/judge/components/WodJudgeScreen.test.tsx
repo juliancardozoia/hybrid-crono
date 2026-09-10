@@ -342,3 +342,28 @@ describe("el cap detiene la pantalla", () => {
     expect(screen.queryByRole("button", { name: "REGISTRAR" })).toBeNull();
   });
 });
+
+describe("el cierre de un AMRAP dice EN QUE MOVIMIENTO quedo, no solo un total", () => {
+  it("muestra la ronda y el movimiento a medias, no '0 rondas + N reps'", async () => {
+    // Bug real reportado: el cierre de un AMRAP mostraba "0 rondas + 5 reps"
+    // sin decir en cual movimiento -ni si era el 1ro, 2do o 3ro de la ronda-
+    // quedo esa cantidad. Con un solo movimiento (Thruster, objetivo 21) y la
+    // ventana ya agotada (LARGADA es hace 60s, ventana de 30s), el cierre
+    // final reporta 12 -a medias- y la pantalla tiene que decirlo asi.
+    await pintar({ targetPerRound: [21] }, { scheme: "ventana", windowMs: 30_000 });
+
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("TERMINÓ")).toBeTruthy());
+    // Nunca mas el total ambiguo "0 rondas + 12 reps".
+    expect(screen.queryByText(/rondas \+/)).toBeNull();
+    expect(screen.getByText(/Ronda\s*1/)).toBeTruthy();
+    expect(screen.getByText(/Thruster/)).toBeTruthy();
+    expect(screen.getByText("12/21")).toBeTruthy();
+  });
+
+});

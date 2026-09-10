@@ -2394,6 +2394,7 @@ export type Database = {
           event_id: string
           lane_id: string | null
           part_id: string
+          round_breakdown: Json | null
           score_unit: Database["public"]["Enums"]["score_unit"]
           source: Database["public"]["Enums"]["capture_mode"]
           status: Database["public"]["Enums"]["score_status"]
@@ -2413,6 +2414,7 @@ export type Database = {
           event_id: string
           lane_id?: string | null
           part_id: string
+          round_breakdown?: Json | null
           score_unit: Database["public"]["Enums"]["score_unit"]
           source?: Database["public"]["Enums"]["capture_mode"]
           status?: Database["public"]["Enums"]["score_status"]
@@ -2432,6 +2434,7 @@ export type Database = {
           event_id?: string
           lane_id?: string | null
           part_id?: string
+          round_breakdown?: Json | null
           score_unit?: Database["public"]["Enums"]["score_unit"]
           source?: Database["public"]["Enums"]["capture_mode"]
           status?: Database["public"]["Enums"]["score_status"]
@@ -3557,6 +3560,7 @@ export type Database = {
           event_id: string
           lane_id: string | null
           part_id: string
+          round_breakdown: Json | null
           score_unit: Database["public"]["Enums"]["score_unit"]
           source: Database["public"]["Enums"]["capture_mode"]
           status: Database["public"]["Enums"]["score_status"]

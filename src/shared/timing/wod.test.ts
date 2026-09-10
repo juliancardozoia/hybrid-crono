@@ -661,6 +661,80 @@ describe("el cap", () => {
     expect(r.completedReps).toBe(2);
   });
 
+  it("currentRoundBreakdown dice EN CUAL movimiento quedo, no solo el total ambiguo", () => {
+    // Lo que motivo agregar este campo: "3 rondas + 10 reps" no dice si esas
+    // 10 son de un Push-up (objetivo 10, completo) o de un Air Squat
+    // (objetivo 15, a medias). El desglose lo saca de dudas.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      // Ronda 1 completa: Pull-up (5), Push-up (10), Air Squat (15).
+      marcaje("movement_done", 30_000, { partMovementId: "m1" }),
+      marcaje("movement_done", 60_000, { partMovementId: "m2" }),
+      marcaje("movement_done", 90_000, { partMovementId: "m3" }),
+      // Ronda 2: Pull-up completo, Push-up a medias con 6 de 10.
+      marcaje("movement_done", 120_000, { partMovementId: "m1" }),
+      marcaje("movement_done", 1_205_000, { partMovementId: "m2", cantidad: 6 }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cindy(), 1_210_000);
+
+    expect(r.completedRounds).toBe(1);
+    expect(r.repsInRound).toBe(11); // 5 (Pull-up) + 6 (Push-up a medias)
+    expect(r.currentRoundBreakdown).toEqual([
+      { name: "Pull-up", unit: "reps", target: 5, done: 5, completo: true },
+      { name: "Push-up", unit: "reps", target: 10, done: 6, completo: false },
+      { name: "Air Squat", unit: "reps", target: 15, done: 0, completo: false },
+    ]);
+  });
+
+  it("una ronda 2 que todavia no empezo se desglosa igual, todo en cero", () => {
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 30_000, { partMovementId: "m1" }),
+      marcaje("movement_done", 60_000, { partMovementId: "m2" }),
+      marcaje("movement_done", 90_000, { partMovementId: "m3" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cindy(), 90_000);
+    expect(r.completedRounds).toBe(1);
+    expect(r.currentRoundBreakdown).toEqual([
+      { name: "Pull-up", unit: "reps", target: 5, done: 0, completo: false },
+      { name: "Push-up", unit: "reps", target: 10, done: 0, completo: false },
+      { name: "Air Squat", unit: "reps", target: 15, done: 0, completo: false },
+    ]);
+  });
+
+  it("un cierre final que fuerza el ultimo paso de una ronda NO cuenta esa ronda como completa", () => {
+    // Mismo defecto que el de repsInRound, encontrado al escribir los tests
+    // de arriba: completedRounds contaba una ronda como terminada si el
+    // ultimo paso simplemente AVANZO (stepIndex), sin chequear si llego al
+    // objetivo. Un cierre final que cierra el UNICO/ULTIMO movimiento de una
+    // ronda con menos de lo pedido avanza el indice igual -y con eso "parece"
+    // completa- pero el atleta no la termino.
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      // Ronda 1 completa: los tres movimientos a su objetivo.
+      marcaje("movement_done", 30_000, { partMovementId: "m1" }),
+      marcaje("movement_done", 60_000, { partMovementId: "m2" }),
+      marcaje("movement_done", 90_000, { partMovementId: "m3" }),
+      // Ronda 2: dos movimientos completos, y el cierre final del tercero
+      // (Air Squat, objetivo 15) con solo 6.
+      marcaje("movement_done", 120_000, { partMovementId: "m1" }),
+      marcaje("movement_done", 150_000, { partMovementId: "m2" }),
+      marcaje("movement_done", 1_205_000, { partMovementId: "m3", cantidad: 6 }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cindy(), 1_210_000);
+
+    // Solo la ronda 1 esta completa: la 2 se quedo en el tercer movimiento.
+    expect(r.completedRounds).toBe(1);
+    expect(r.currentRoundBreakdown).toEqual([
+      { name: "Pull-up", unit: "reps", target: 5, done: 5, completo: true },
+      { name: "Push-up", unit: "reps", target: 10, done: 10, completo: true },
+      { name: "Air Squat", unit: "reps", target: 15, done: 6, completo: false },
+    ]);
+  });
+
   it("el cierre final con MENOS del objetivo, distinto por atleta, no los empata a todos", () => {
     // Mismo bug, en los terminos exactos del reporte: cinco atletas cierran
     // el primer movimiento (objetivo 5) con cantidades DISTINTAS, y las

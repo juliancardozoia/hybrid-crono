@@ -36,6 +36,7 @@ function reps(partId: string, teamId: string, value: number): RawScore {
     reps: null,
     capValue: null,
     tiebreak: null,
+    roundBreakdown: null,
   };
 }
 
@@ -86,7 +87,7 @@ describe("el desempate que viene de otra prueba", () => {
     const parts = [parteConTiebreakDeOtra("final", "clasificatoria")];
     const scores: RawScore[] = [
       reps("final", "c1", 50),
-      { partId: "clasificatoria", teamId: "c1", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null },
+      { partId: "clasificatoria", teamId: "c1", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
     ];
 
     const [final] = resolverTiebreaksDeOtraPrueba(parts, scores);

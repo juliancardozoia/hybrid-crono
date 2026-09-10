@@ -26,6 +26,7 @@ function reps(teamId: string, value: number): RawScore {
     reps: null,
     capValue: null,
     tiebreak: null,
+    roundBreakdown: null,
   };
 }
 
@@ -355,9 +356,9 @@ describe("el caso real: 10 atletas con empates en 3, 5 y 9", () => {
 
   it("un grupo empatado es HOMOGENEO: un dnf nunca empata con un valido", () => {
     const conDnf: RawScore[] = [
-      { partId: "p1", teamId: "a1", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null },
-      { partId: "p1", teamId: "a2", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null },
-      { partId: "p1", teamId: "a3", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null },
+      { partId: "p1", teamId: "a1", status: "valido", value: 100, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+      { partId: "p1", teamId: "a2", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
+      { partId: "p1", teamId: "a3", status: "dnf", value: null, reps: null, capValue: null, tiebreak: null, roundBreakdown: null },
     ];
     const tabla = tablaDinamica(3, 100, "average_occupied_positions");
     const placements = rankPart({

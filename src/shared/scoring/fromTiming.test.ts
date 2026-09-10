@@ -171,6 +171,7 @@ describe("scoreFromWodResult", () => {
       completedReps: 90,
       completedRounds: 3,
       repsInRound: 0,
+      currentRoundBreakdown: [],
       currentStepIndex: null,
       currentStepProgress: 0,
       finishedMs: 240_000,

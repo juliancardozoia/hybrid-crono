@@ -117,5 +117,6 @@ export function rankPart(params: {
     value: item.raw.value,
     reps: item.raw.reps,
     capValue: item.raw.capValue,
+    roundBreakdown: item.raw.roundBreakdown,
   }));
 }

@@ -75,6 +75,27 @@ export type PartSpec = {
 };
 
 /**
+ * Un movimiento de la ronda en la que el atleta quedo, con cuanto pedia y
+ * cuanto se hizo de verdad. Mismo dato que `WodStepBreakdown` de
+ * `shared/timing/wod.ts`, redeclarado aca (no importado) para no acoplar el
+ * motor de puntuacion al de tiempos -- `fromTiming.ts` es el unico que conoce
+ * a los dos y hace el traspaso.
+ *
+ * Es lo que permite mostrar "Pull-up completo · Push-up completo · Air
+ * Squat 10 de 15" en vez de un total ambiguo como "3 rondas + 10 reps", que
+ * no dice en cual de los movimientos de la ronda quedo ni si los anteriores
+ * estan completos.
+ */
+export type RoundBreakdownStep = {
+  name: string;
+  unit: string;
+  /** 0 si el movimiento es "las que pueda" (sin objetivo). */
+  target: number;
+  done: number;
+  completo: boolean;
+};
+
+/**
  * El score crudo de un equipo en una parte, tal como se cargo a mano o como lo
  * derivo el reductor. Los cuatro numericos son excluyentes por status: se
  * separan en campos con nombre en vez de reusar uno solo porque un campo que
@@ -92,6 +113,12 @@ export type RawScore = {
   capValue: number | null;
   /** Valor del desempate, en `tiebreakUnit`. */
   tiebreak: number | null;
+  /**
+   * Desglose de la ronda en la que quedo, movimiento por movimiento. Null
+   * cuando no aplica (no es un WOD por rondas, viene de carga manual sin
+   * ese detalle, o el bloque cerro entero sin nada a medias).
+   */
+  roundBreakdown: RoundBreakdownStep[] | null;
 };
 
 /**
@@ -172,6 +199,8 @@ export type PartPlacement = {
   reps: number | null;
   /** Valor en `capUnit`. Solo si el status es "capeado". */
   capValue: number | null;
+  /** Ver `RawScore.roundBreakdown`. */
+  roundBreakdown: RoundBreakdownStep[] | null;
 };
 
 /** Una fila de la tabla general de una categoria. */

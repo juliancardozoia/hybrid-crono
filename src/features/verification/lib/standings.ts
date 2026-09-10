@@ -8,7 +8,7 @@ import {
   tablaDeCategoria,
 } from "@/shared/scoring/points";
 import type { FieldMismatch } from "@/shared/scoring/points";
-import type { PartSpec, RawScore, ScoringTable } from "@/shared/scoring/types";
+import type { PartSpec, RawScore, RoundBreakdownStep, ScoringTable } from "@/shared/scoring/types";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/types";
 
@@ -64,7 +64,9 @@ export async function recomputeStandings(
       service.from("divisions").select("id, name").eq("event_id", eventId),
       service
         .from("workout_scores")
-        .select("part_id, team_id, status, value_num, value_reps, value_cap, tiebreak_value")
+        .select(
+          "part_id, team_id, status, value_num, value_reps, value_cap, tiebreak_value, round_breakdown",
+        )
         .eq("event_id", eventId),
     ]);
 
@@ -101,6 +103,7 @@ export async function recomputeStandings(
     reps: s.value_reps,
     capValue: s.value_cap,
     tiebreak: s.tiebreak_value,
+    roundBreakdown: (s.round_breakdown as RoundBreakdownStep[] | null) ?? null,
   }));
 
   // Una sola pasada sobre TODO el evento: alcanza con resolverlo una vez,

@@ -16,6 +16,7 @@ import type {
   PartPlacement,
   PartSpec,
   RawScore,
+  RoundBreakdownStep,
   ScoreDir,
   ScoreStatus,
   ScoreUnit,
@@ -96,6 +97,7 @@ export type ScoreboardScore = {
   reps: number | null;
   capValue: number | null;
   tiebreak: number | null;
+  roundBreakdown: RoundBreakdownStep[] | null;
 };
 
 /** Que categoria corre que prueba. */
@@ -150,6 +152,7 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
     reps: aNumero(s.reps),
     capValue: aNumero(s.capValue),
     tiebreak: aNumero(s.tiebreak),
+    roundBreakdown: s.roundBreakdown ?? null,
   }));
 
   // Todas las partes del evento, no solo las de una categoria: el desempate

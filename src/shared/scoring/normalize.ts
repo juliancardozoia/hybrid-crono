@@ -129,5 +129,6 @@ export function scorePendiente(partId: string, teamId: string): RawScore {
     reps: null,
     capValue: null,
     tiebreak: null,
+    roundBreakdown: null,
   };
 }

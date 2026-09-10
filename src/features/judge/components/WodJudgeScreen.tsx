@@ -1022,6 +1022,67 @@ const ETIQUETA_ESQUEMA: Record<string, string> = {
  *     ("¿hasta donde llego?") aunque el esquema no sea ventana.
  *   - Una sola ronda sin tiempo: reps a secas.
  */
+/**
+ * "3 rondas + 10 reps" no dice si esas 10 son de un Push-up (objetivo 10,
+ * completo) o de un Air Squat (objetivo 15, a medias) -- es justo la
+ * ambiguedad reportada, tanto para el juez que cierra el WOD como para
+ * cualquiera que despues mire el resultado. Con `currentRoundBreakdown` se
+ * puede decir "Ronda 3 -- Pull-up ✓ · Push-up ✓ · Air Squat 10 de 15" en vez
+ * de un total que hay que adivinar.
+ *
+ * Vacio (bloque cerrado entero, sin nada a medias) cae al numero de rondas a
+ * secas: no hay ningun movimiento a medio camino que desglosar.
+ */
+function DesgloseDeRonda({
+  resultado,
+}: {
+  resultado: NonNullable<ReturnType<typeof reduceWodEvents>>;
+}) {
+  if (resultado.currentRoundBreakdown.length === 0) {
+    return (
+      <p className="font-mono text-2xl">
+        {resultado.completedRounds}
+        <span className="ml-2 text-base font-sans font-normal text-neutral-500">
+          {resultado.completedRounds === 1 ? "ronda completa" : "rondas completas"}
+        </span>
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <p className="text-sm font-bold tracking-widest text-neutral-500 uppercase">
+        Ronda {resultado.completedRounds + 1}
+      </p>
+      <ul className="flex flex-col items-stretch gap-1.5">
+        {resultado.currentRoundBreakdown.map((paso, i) => (
+          <li
+            key={i}
+            className={`flex items-center justify-between gap-4 rounded-xl border px-3 py-1.5 font-mono text-base ${
+              paso.completo
+                ? "border-lime-400/30 bg-lime-400/10 text-lime-300"
+                : "border-amber-400/30 bg-amber-400/10 text-amber-300"
+            }`}
+          >
+            <span className="flex items-center gap-2 font-sans font-semibold">
+              {paso.completo ? "✓" : "●"} {paso.name}
+            </span>
+            <span>
+              {paso.completo
+                ? paso.target > 0
+                  ? `${paso.target}/${paso.target}`
+                  : paso.done
+                : paso.target > 0
+                  ? `${paso.done}/${paso.target}`
+                  : paso.done}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Cerrado({
   resultado,
   esquema,
@@ -1052,10 +1113,7 @@ function Cerrado({
       )}
       <p className="text-3xl font-black">{titulo}</p>
       {esquema === "ventana" || (multiRonda && resultado.finishedMs === null) ? (
-        <p className="font-mono text-2xl">
-          {resultado.completedRounds} rondas + {resultado.repsInRound}
-          <span className="ml-2 text-base font-sans font-normal text-neutral-500">reps</span>
-        </p>
+        <DesgloseDeRonda resultado={resultado} />
       ) : resultado.finishedMs !== null ? (
         <p className="font-mono text-2xl">{formatElapsed(resultado.finishedMs)}</p>
       ) : (

@@ -5,7 +5,7 @@ import { Badge } from "@/shared/components/Badge";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
 import type { ScoreboardPart } from "@/shared/scoring/scoreboard";
-import type { PartPlacement } from "@/shared/scoring/types";
+import type { PartPlacement, RoundBreakdownStep } from "@/shared/scoring/types";
 import { formatElapsed } from "@/shared/timing/clock";
 import { getTablaGeneral, type TablaGeneral as Datos } from "../queries";
 
@@ -33,6 +33,34 @@ function formatearResultado(parte: ScoreboardPart, puesto: PartPlacement): strin
     return `${puesto.value} rondas + ${puesto.reps ?? 0} reps`;
   }
   return formatearUnidad(parte.scoreUnit, puesto.value);
+}
+
+/**
+ * "3 rondas + 10 reps" no dice si esas 10 son de un Push-up (objetivo 10,
+ * completo) o de un Air Squat (objetivo 15, a medias) -- reportado como
+ * confuso tanto para el juez como para quien mira el leaderboard. Cuando el
+ * score trae `roundBreakdown` (ver src/shared/timing/wod.ts), se muestra el
+ * detalle movimiento por movimiento en vez del total ambiguo.
+ */
+function DesgloseDeRonda({ rondaActual, pasos }: { rondaActual: number; pasos: RoundBreakdownStep[] }) {
+  return (
+    <div className="mt-1 flex flex-col gap-0.5">
+      <span className="text-[11px] font-semibold tracking-wide text-neutral-500 uppercase">
+        Ronda {rondaActual}
+      </span>
+      <div className="flex flex-col gap-0.5">
+        {pasos.map((paso, i) => (
+          <span
+            key={i}
+            className={`text-xs ${paso.completo ? "text-lime-400" : "text-amber-300"}`}
+          >
+            {paso.completo ? "✓" : "●"} {paso.name}
+            {!paso.completo && (paso.target > 0 ? ` ${paso.done}/${paso.target}` : ` ${paso.done}`)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function formatearUnidad(unidad: string, valor: number): string {
@@ -374,7 +402,11 @@ function DetalleDelAtleta({
                   <p className="mt-1.5 text-sm font-semibold text-neutral-200">
                     {puesto.position}º
                   </p>
-                  {resultado && <p className="text-xs text-neutral-400">{resultado}</p>}
+                  {puesto.roundBreakdown && puesto.roundBreakdown.length > 0 ? (
+                    <DesgloseDeRonda rondaActual={(puesto.value ?? 0) + 1} pasos={puesto.roundBreakdown} />
+                  ) : (
+                    resultado && <p className="text-xs text-neutral-400">{resultado}</p>
+                  )}
                   <p className="mt-1 font-mono text-xs font-semibold text-lime-400">
                     {Math.round(puesto.points)} pts
                   </p>

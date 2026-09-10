@@ -118,6 +118,25 @@ export type LiftAttempt = {
   elapsedMs: number;
 };
 
+/**
+ * Un movimiento de la ronda en la que el atleta quedo -en curso, capeada, o
+ * la ultima antes de terminar-, con cuanto pedia y cuanto se hizo de verdad.
+ *
+ * Es lo que permite decir "Pull-up completo · Push-up completo · Air Squat
+ * 10 de 15" en vez de un total ambiguo como "3 rondas + 10 reps", que no
+ * dice en CUAL de los tres movimientos de la ronda quedo ni si los
+ * anteriores estan completos -esa ambiguedad fue justo lo que se reporto
+ * como confuso, tanto para el juez como para el leaderboard.
+ */
+export type WodStepBreakdown = {
+  name: string;
+  unit: MovementUnit;
+  /** 0 si el movimiento es "las que pueda" (sin objetivo). */
+  target: number;
+  done: number;
+  completo: boolean;
+};
+
 export type WodResult = {
   laneId: string;
   status: LaneStatus;
@@ -127,6 +146,13 @@ export type WodResult = {
   completedRounds: number;
   /** Unidades hechas en la ronda en curso. */
   repsInRound: number;
+  /**
+   * Movimiento por movimiento de la ronda en `completedRounds + 1` (en
+   * curso, capeada, o la ultima si el WOD ya cerro con algo pendiente).
+   * Vacio si el bloque no tiene rondas o si todas quedaron completas sin
+   * ninguna a medias (ahi "completedRounds" ya lo dice todo).
+   */
+  currentRoundBreakdown: WodStepBreakdown[];
   /** Paso que le toca marcar al juez, o null si ya termino. */
   currentStepIndex: number | null;
   /** Cuanto lleva hecho del paso actual. */
@@ -530,7 +556,12 @@ export function reduceWodEvents(
   else if (completo || ventanaAgotada || intentosAgotados) status = "finished";
   else status = "running";
 
-  const { completedRounds, repsInRound } = contarRondas(plan, stepIndex, progress, unidadesCerradas);
+  const { completedRounds, repsInRound, currentRoundBreakdown } = contarRondas(
+    plan,
+    stepIndex,
+    progress,
+    unidadesCerradas,
+  );
 
   const finishedMs = completo ? ultimoCierreMs : null;
 
@@ -553,6 +584,7 @@ export function reduceWodEvents(
     completedReps: completedReps + progress,
     completedRounds,
     repsInRound,
+    currentRoundBreakdown,
     currentStepIndex:
       status === "running" || status === "not_started" || awaitingFinalTally
         ? Math.min(stepIndex, plan.length)
@@ -582,8 +614,14 @@ function contarRondas(
   stepIndex: number,
   progress: number,
   unidadesCerradas: readonly number[],
-): { completedRounds: number; repsInRound: number } {
-  if (plan.length === 0) return { completedRounds: 0, repsInRound: 0 };
+): {
+  completedRounds: number;
+  repsInRound: number;
+  currentRoundBreakdown: WodStepBreakdown[];
+} {
+  if (plan.length === 0) {
+    return { completedRounds: 0, repsInRound: 0, currentRoundBreakdown: [] };
+  }
 
   const posicion = Math.min(stepIndex, plan.length - 1);
   const bloque = plan[posicion].blockId;
@@ -591,26 +629,62 @@ function contarRondas(
 
   const rondas = [...new Set(delBloque.map((p) => p.round))].sort((a, b) => a - b);
 
-  const completedRounds = rondas.filter((ronda) =>
-    delBloque.filter((p) => p.round === ronda).every((p) => p.index < stepIndex),
-  ).length;
-
-  // La ronda en curso es la primera que todavia tiene algun paso sin cerrar.
-  const rondaEnCurso = rondas.find((ronda) =>
-    delBloque.filter((p) => p.round === ronda).some((p) => p.index >= stepIndex),
-  );
-
   // `unidadesCerradas[p.index] ?? p.target`: un paso cerrado por `rep` (que
   // solo cierra AL llegar al objetivo) o por `round_done` (que salta pasos
   // sin cerrarlos uno por uno) no tiene entrada propia, y ahi el objetivo es
   // la cuenta correcta. Un paso cerrado por `movement_done` SI tiene su
   // entrada, y esa -no el objetivo- es lo que de verdad se hizo.
+  const hecho = (p: WodStep) => (p.index < stepIndex ? (unidadesCerradas[p.index] ?? p.target) : progress);
+
+  // Una ronda cuenta como completa solo si CADA paso llego a su objetivo, no
+  // solo si "avanzo": un cierre final que cierra el ultimo paso de la ronda
+  // con menos de lo pedido (12 de 21 al agotarse el tiempo) hace avanzar el
+  // indice igual, pero esa ronda NO se termino.
+  const completedRounds = rondas.filter((ronda) =>
+    delBloque
+      .filter((p) => p.round === ronda)
+      .every((p) => p.index < stepIndex && (p.target === 0 || hecho(p) >= p.target)),
+  ).length;
+
+  // La ronda en curso es la primera que todavia tiene algun paso sin cerrar
+  // O cerrado por debajo de su objetivo -mismo criterio que `completedRounds`,
+  // para que las dos cuenten lo mismo por "ronda terminada".
+  const rondaEnCurso = rondas.find((ronda) =>
+    delBloque
+      .filter((p) => p.round === ronda)
+      .some((p) => p.index >= stepIndex || (p.target > 0 && hecho(p) < p.target)),
+  );
+
   const repsInRound =
     rondaEnCurso === undefined
       ? 0
       : delBloque
           .filter((p) => p.round === rondaEnCurso && p.index < stepIndex)
-          .reduce((suma, p) => suma + (unidadesCerradas[p.index] ?? p.target), 0) + progress;
+          .reduce((suma, p) => suma + hecho(p), 0) + progress;
 
-  return { completedRounds, repsInRound };
+  // Sin ronda en curso el bloque ya cerro entero: "completedRounds" ya
+  // describe el resultado sin ambiguedad, y no hace falta desglosar nada.
+  const currentRoundBreakdown: WodStepBreakdown[] =
+    rondaEnCurso === undefined
+      ? []
+      : delBloque
+          .filter((p) => p.round === rondaEnCurso)
+          .map((p) => {
+            const done = hecho(p);
+            return {
+              name: p.name,
+              unit: p.unit,
+              target: p.target,
+              done,
+              // "Completo" es llegar al OBJETIVO, no solo que el paso haya
+              // avanzado: un cierre final con menos cantidad (12 de 21 al
+              // acabarse el tiempo) SI cierra el paso -stepIndex avanza- pero
+              // no llego a los 21, y mostrarlo con un check seria mentir. Un
+              // movimiento "las que pueda" (target 0) nunca tiene objetivo
+              // que cumplir, asi que nunca se marca completo.
+              completo: p.target > 0 && done >= p.target,
+            };
+          });
+
+  return { completedRounds, repsInRound, currentRoundBreakdown };
 }

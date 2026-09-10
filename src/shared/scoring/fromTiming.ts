@@ -55,6 +55,8 @@ export function scoreFromLaneResult(params: {
     // Un circuito no tiene cap: o termina o es DNF.
     capValue: null,
     tiebreak,
+    // Un circuito no tiene rondas ni movimientos: eso es de un WOD.
+    roundBreakdown: null,
   };
 }
 
@@ -118,5 +120,8 @@ export function scoreFromWodResult(params: {
     reps,
     capValue: status === "capeado" ? wod.completedReps : null,
     tiebreak: wod.tiebreakMs,
+    // Vacio cuando el bloque cerro entero sin nada a medias -ahi "completedRounds"
+    // ya describe el resultado sin ambiguedad-, o cuando la prueba no tiene rondas.
+    roundBreakdown: wod.currentRoundBreakdown.length > 0 ? wod.currentRoundBreakdown : null,
   };
 }
