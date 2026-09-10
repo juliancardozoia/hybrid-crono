@@ -302,11 +302,25 @@ export function reduceWodEvents(
   let ultimoCierreMs: number | null = null;
   const attempts: LiftAttempt[] = [];
 
+  // Cuanto se cerro CADA paso de verdad, indexado por su posicion en `plan`.
+  // `contarRondas` (el "0 rondas + N reps" que ve el juez y el score que
+  // calcula el motor) necesita esto: sin esto, asumia que un paso cerrado
+  // SIEMPRE llego a su objetivo completo, lo cual es cierto para un `rep`
+  // (que solo cierra AL llegar al objetivo) pero FALSO para un
+  // `movement_done` con una cantidad menor -un cierre final al agotarse el
+  // tiempo reportando "llevaba 2 de 5", o el juez cerrando a mano con menos
+  // de lo pedido-. Bug real: un WOD entero donde nadie llego ni a la mitad
+  // del primer movimiento mostraba "5 reps" (el objetivo) para TODOS, sin
+  // importar cuanto habian tapeado en realidad, y eso empataba a todo el
+  // field en el mismo puesto.
+  const unidadesCerradas: number[] = [];
+
   /** Cierra el paso actual y avanza. */
   function cerrarPaso(unidades: number, elapsedMs: number) {
     const paso = plan[stepIndex];
     if (!paso) return;
     completedReps += unidades;
+    unidadesCerradas[stepIndex] = unidades;
     if (paso.isTiebreak) tiebreakMs = elapsedMs;
     ultimoCierreMs = elapsedMs;
     stepIndex += 1;
@@ -516,7 +530,7 @@ export function reduceWodEvents(
   else if (completo || ventanaAgotada || intentosAgotados) status = "finished";
   else status = "running";
 
-  const { completedRounds, repsInRound } = contarRondas(plan, stepIndex, progress);
+  const { completedRounds, repsInRound } = contarRondas(plan, stepIndex, progress, unidadesCerradas);
 
   const finishedMs = completo ? ultimoCierreMs : null;
 
@@ -567,6 +581,7 @@ function contarRondas(
   plan: WodStep[],
   stepIndex: number,
   progress: number,
+  unidadesCerradas: readonly number[],
 ): { completedRounds: number; repsInRound: number } {
   if (plan.length === 0) return { completedRounds: 0, repsInRound: 0 };
 
@@ -585,12 +600,17 @@ function contarRondas(
     delBloque.filter((p) => p.round === ronda).some((p) => p.index >= stepIndex),
   );
 
+  // `unidadesCerradas[p.index] ?? p.target`: un paso cerrado por `rep` (que
+  // solo cierra AL llegar al objetivo) o por `round_done` (que salta pasos
+  // sin cerrarlos uno por uno) no tiene entrada propia, y ahi el objetivo es
+  // la cuenta correcta. Un paso cerrado por `movement_done` SI tiene su
+  // entrada, y esa -no el objetivo- es lo que de verdad se hizo.
   const repsInRound =
     rondaEnCurso === undefined
       ? 0
       : delBloque
           .filter((p) => p.round === rondaEnCurso && p.index < stepIndex)
-          .reduce((suma, p) => suma + p.target, 0) + progress;
+          .reduce((suma, p) => suma + (unidadesCerradas[p.index] ?? p.target), 0) + progress;
 
   return { completedRounds, repsInRound };
 }

@@ -635,6 +635,47 @@ describe("el cap", () => {
     expect(r.currentStepIndex).not.toBeNull();
   });
 
+  it("el cierre final con MENOS del objetivo cuenta lo que de verdad se hizo, no el objetivo", () => {
+    // Bug real, reportado en produccion: un WOD entero (Cindy, AMRAP de 3
+    // minutos) donde nadie llego ni a la mitad del primer movimiento (5
+    // pull-ups) mostraba "0 rondas + 5 reps" para TODOS los atletas, sin
+    // importar cuantas hubieran hecho de verdad -y eso los empataba a todos
+    // en el mismo puesto-. La causa: `contarRondas` sumaba el OBJETIVO de
+    // cada paso ya cerrado (correcto para un `rep`, que solo cierra AL
+    // llegar al objetivo) en vez de la cantidad real con la que un
+    // `movement_done` lo cerro -que puede ser menor, tanto en un cierre
+    // final al agotarse el tiempo como en cualquier cierre a mano.
+    reset();
+    // La ventana de `cindy()` es 1_200_000ms (20 min); se acaba con el primer
+    // movimiento (objetivo 5) a medias, y el juez reporta 2 reps -no 5- en
+    // el cierre final.
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 1_205_000, { partMovementId: "m1", cantidad: 2 }),
+    ];
+    const r = reduceWodEvents("c1", eventos, cindy(), 1_210_000);
+
+    expect(r.status).toBe("finished");
+    expect(r.completedRounds).toBe(0);
+    expect(r.repsInRound).toBe(2);
+    expect(r.completedReps).toBe(2);
+  });
+
+  it("el cierre final con MENOS del objetivo, distinto por atleta, no los empata a todos", () => {
+    // Mismo bug, en los terminos exactos del reporte: cinco atletas cierran
+    // el primer movimiento (objetivo 5) con cantidades DISTINTAS, y las
+    // cinco tienen que quedar distintas -nunca las cinco en "5 reps".
+    for (const cantidad of [1, 2, 3, 4, 2]) {
+      reset();
+      const eventos = [
+        marcaje("lane_start", 0),
+        marcaje("movement_done", 1_205_000, { partMovementId: "m1", cantidad }),
+      ];
+      const r = reduceWodEvents("c1", eventos, cindy(), 1_210_000);
+      expect(r.repsInRound).toBe(cantidad);
+    }
+  });
+
   it("aunque el cierre final reporte el objetivo completo, el WOD NUNCA queda 'finished' si se cerro tarde", () => {
     // Es la regresion que el cierre final podria reabrir: si el ultimo
     // movimiento se cierra CON EL TIEMPO YA VENCIDO, cerrarlo con el objetivo
