@@ -6,13 +6,84 @@ import {
   generarTablaDePuntuacion,
 } from "../config/puntuacion";
 import { confirmarCorteDeEtapa } from "../config/etapas";
+import { actualizarPoliticaDeEmpate } from "../config/actions";
 import type { EtapaDeCategoria, PuntuacionDeCategoria } from "../config/queries";
 import { puntosDinamicos } from "@/shared/scoring/points";
 import { huellaDelStanding } from "@/shared/scoring/hash";
+import type { TiePointPolicy } from "@/shared/scoring/types";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Modal } from "@/shared/components/Modal";
 import { Badge } from "@/shared/components/Badge";
 import { claseDeBoton } from "@/shared/components/Boton";
+import { Selector } from "@/shared/components/Selector";
+
+/**
+ * Como reparte puntos un grupo empatado, para toda la competencia.
+ *
+ * DOS convenciones, nunca una mezcla silenciosa (ver `TiePointPolicy` en
+ * `src/shared/scoring/types.ts`): `same_position_points` es el reglamento
+ * OFICIAL de los Games y el default -- cada empatado cobra integro el puesto
+ * compartido. `average_occupied_positions` es una convencion DE SCORA, nunca
+ * default, que reparte los puntos de las posiciones que el grupo ocupa.
+ *
+ * Cambiar esto NO altera ninguna categoria ya bloqueada: la politica se
+ * congela en el snapshot al generar la tabla, y ahi queda para siempre.
+ */
+export function SelectorDePoliticaDeEmpate({
+  eventId,
+  policy,
+}: {
+  eventId: string;
+  policy: TiePointPolicy;
+}) {
+  const [pendiente, startTransition] = useTransition();
+  const { exito, error: avisarError } = useNotificaciones();
+
+  return (
+    <div className="rounded-2xl border border-neutral-800 p-4">
+      <h3 className="text-sm font-semibold">Cómo cobra un grupo empatado</h3>
+      <p className="mt-1 max-w-2xl text-xs text-neutral-500">
+        Las posiciones físicas no cambian: un triple empate en el 3.º sigue dejando al
+        siguiente en el 6.º. Esto decide cuánto cobra CADA empatado.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-start gap-3">
+        <Selector
+          className="w-full max-w-md"
+          value={policy}
+          disabled={pendiente}
+          onChange={(e) =>
+            startTransition(async () => {
+              const r = await actualizarPoliticaDeEmpate(
+                eventId,
+                e.target.value as TiePointPolicy,
+              );
+              if (r.error) avisarError(r.error);
+              else exito("Política de empate actualizada.");
+            })
+          }
+        >
+          <option value="same_position_points">
+            Puntos íntegros del puesto compartido (reglamento oficial)
+          </option>
+          <option value="average_occupied_positions">
+            Promedio de posiciones ocupadas (convención Scora — no es el reglamento oficial)
+          </option>
+        </Selector>
+      </div>
+
+      <p className="mt-2 text-xs text-neutral-600">
+        {policy === "same_position_points"
+          ? "Cada empatado en un puesto cobra los puntos íntegros de ese puesto. Es el comportamiento oficial de los CrossFit Games: el puesto que el empate consume no lo paga nadie."
+          : "El grupo empatado reparte equitativamente los puntos de todas las posiciones que ocupa, así el total repartido no excede lo que ofrece la curva. No es el reglamento tradicional de CrossFit."}
+      </p>
+      <p className="mt-1 text-xs text-neutral-600">
+        Cambiar esto no toca ninguna categoría con la tabla ya bloqueada: la política se
+        congela junto con la curva al generarla.
+      </p>
+    </div>
+  );
+}
 
 /**
  * Como se reparten los puntos, por categoria.

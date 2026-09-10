@@ -1,18 +1,20 @@
 import { requireEventAccess } from "@/features/events/lib/access";
 import { getPuntuacionDelEvento } from "@/features/events/config/queries";
-import { PuntuacionDelEvento } from "@/features/events/components/PuntuacionDelEvento";
+import {
+  PuntuacionDelEvento,
+  SelectorDePoliticaDeEmpate,
+} from "@/features/events/components/PuntuacionDelEvento";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Como se reparten los puntos.
  *
- * NO OFRECE ELEGIR UN SISTEMA porque hay uno solo: la curva de los CrossFit
- * Games 2026 adaptada al tamaño real de cada categoría. Lo que sí se decide
- * acá es cuándo se congela esa curva y con cuántos atletas — que es la única
- * decisión que el organizador tiene que tomar de verdad, porque de ella
- * depende que retirarse a mitad de competencia no le cambie los puntos a
- * nadie.
+ * NO OFRECE ELEGIR LA CURVA porque hay una sola: la de los CrossFit Games
+ * 2026 adaptada al tamaño real de cada categoría. Lo que sí se decide acá:
+ * cuándo se congela esa curva y con cuántos atletas (para que retirarse a
+ * mitad de competencia no le cambie los puntos a nadie), y cómo cobra un
+ * grupo empatado (`SelectorDePoliticaDeEmpate` — ver `TiePointPolicy`).
  *
  * Una carrera híbrida no tiene nada que configurar acá: se gana llegando
  * antes, no repartiendo puntos.
@@ -42,6 +44,7 @@ export default async function PuntuacionPage({
   return (
     <div className="flex flex-col gap-5">
       <Encabezado />
+      <SelectorDePoliticaDeEmpate eventId={id} policy={event.tie_point_policy} />
       <PuntuacionDelEvento eventId={id} categorias={categorias} />
     </div>
   );

@@ -13,6 +13,7 @@ import {
 } from "@/features/events/lib/courseTemplates";
 import { requireManage } from "@/features/events/lib/access";
 import { esLimiteDePlan } from "@/features/planes/lib/errores";
+import type { TiePointPolicy } from "@/shared/scoring/types";
 
 export interface FormState {
   error: string | null;
@@ -539,6 +540,31 @@ export async function setEventStatus(
   // Antes el error de Postgres se descartaba sin mirarlo: un RLS que negara el
   // cambio, o un trigger de plan que lo bloqueara, no le llegaba a nadie — el
   // boton quedaba igual y el organizador no sabia por que.
+  if (error) return { error: traducir(error) };
+
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Como reparte puntos un grupo empatado, para TODAS las categorias que no
+ * tengan ya su tabla congelada -- ver `TiePointPolicy` en
+ * `src/shared/scoring/types.ts` y "Como reparte puntos un grupo empatado" en
+ * CLAUDE.md. Cambiar esto NO toca ninguna categoria ya bloqueada: la columna
+ * vive en `events` y se COPIA a `scoring_snapshots` recien al generar o
+ * regenerar la tabla de esa categoria (`guardar_snapshot_de_puntuacion`), que
+ * es la autoridad una vez congelada.
+ */
+export async function actualizarPoliticaDeEmpate(
+  eventId: string,
+  policy: TiePointPolicy,
+): Promise<FormState> {
+  await requireManage(eventId);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("events")
+    .update({ tie_point_policy: policy })
+    .eq("id", eventId);
   if (error) return { error: traducir(error) };
 
   refrescar(eventId);
