@@ -1241,6 +1241,12 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     // -aunque en este caso coinciden porque el cierre se dio justo al tope-.
     expect(cerrado.enDescanso).toBe(true);
     expect(cerrado.descansoTerminaMs).toBe(540_000);
+    // BUG REAL reportado en produccion: justo aca, con el atleta recien
+    // entrando al descanso, `capped` ya es true pero TODAVIA falta el
+    // descanso y la Parte B. Si `sinNadaMasQueMarcar` fuera true en este
+    // momento, `scoreFromWodResult` escribiria "capeado" (TERMINAL) y
+    // `actualizarCierreDeHeat` cerraria el heat entero antes de tiempo.
+    expect(cerrado.sinNadaMasQueMarcar).toBe(false);
 
     // Termina el descanso, y el atleta SIGUE: hace las 21 de B completas.
     const eventosCompletos = [
@@ -1256,6 +1262,8 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(r.capped).toBe(true); // ...pero es capeado, no valido.
     expect(r.finishedMs).toBeNull();
     expect(r.completedReps).toBe(43); // 22 + 21.
+    // Ahora SI: recien termino todo, recien es seguro tratarlo como terminal.
+    expect(r.sinNadaMasQueMarcar).toBe(true);
   });
 
   it("si el juez cierra TARDE (el reloj ya avanzo bastante), el descanso igual arranca desde el cierre real", () => {
@@ -1393,5 +1401,61 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(r.capped).toBe(false);
     expect(r.completedReps).toBe(30);
     expect(r.finishedMs).toBe(260_000);
+  });
+
+  it("REGRESION de produccion: bloque 1 capea con DOS movimientos en el bloque 2 (15-12-9 de dos ejercicios) — no queda 'atascado'", () => {
+    // Reproduce EXACTAMENTE la configuracion real de CrossFit Session #1:
+    // 30 Clean & Jerk (cap 3 min) - descanso 1 min - 15-12-9 de Crossover Y
+    // Handstand Push-up (cap 4 min, dos movimientos por ronda). El bug real:
+    // el juez registro el cierre del bloque 1 (25 de 30) y la pantalla saltaba
+    // directo a "CAPEADO", sin pasar por el descanso ni ofrecer el Crossover.
+    reset();
+    const estructura: WodStructure = {
+      scheme: "cap",
+      timeCapMs: 480_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b0", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 180_000,
+          movements: [
+            { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "b1", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 60_000, restMs: null, movements: [] },
+        {
+          id: "b2", orderIndex: 2, kind: "trabajo", rounds: 3, durationMs: null, restMs: null,
+          capMs: 240_000,
+          movements: [
+            { id: "crossover", orderIndex: 0, name: "Crossover", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+            { id: "hspu", orderIndex: 1, name: "Handstand Push-up", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+
+    const eventos = [
+      marcaje("lane_start", 0),
+      // El juez registra 25 de 30 unos segundos despues del cap de 3 min.
+      marcaje("movement_done", 190_747, { cantidad: 25, partMovementId: "cj" }),
+    ];
+
+    const justoDespues = reduceWodEvents("c1", eventos, estructura, 191_000);
+    expect(justoDespues.capped).toBe(true);
+    expect(justoDespues.enDescanso).toBe(true);
+    expect(justoDespues.descansoTerminaMs).toBe(190_747 + 60_000);
+    // ESTO es lo que estaba mal: sin el fix, esto daba `true` y el score
+    // quedaba "capeado" (terminal) mientras el atleta todavia tenia que
+    // descansar y hacer el Crossover/HSPU.
+    expect(justoDespues.sinNadaMasQueMarcar).toBe(false);
+    // Apunta al primer paso del bloque 2 (Crossover, ronda 1), no a null.
+    expect(justoDespues.currentStepIndex).toBe(1);
+
+    const terminoElDescanso = reduceWodEvents("c1", eventos, estructura, 190_747 + 61_000);
+    expect(terminoElDescanso.enDescanso).toBe(false);
+    expect(terminoElDescanso.sinNadaMasQueMarcar).toBe(false); // sigue sin terminar: falta marcar el Crossover.
+    expect(terminoElDescanso.status).toBe("running");
+    expect(terminoElDescanso.currentStepIndex).toBe(1);
   });
 });

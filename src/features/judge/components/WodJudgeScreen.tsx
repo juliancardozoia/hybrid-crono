@@ -220,11 +220,12 @@ export function WodJudgeScreen({
   // ademas el cierre normal (`finished`) y DNF/DQ, no solo el cap.
   const terminalAntesRef = useRef(false);
   useEffect(() => {
-    const terminalAhora =
-      resultado?.status === "finished" ||
-      resultado?.status === "dnf" ||
-      resultado?.status === "dq" ||
-      (resultado?.capped ?? false);
+    // `sinNadaMasQueMarcar`, no `capped` a secas: con bloques + descanso,
+    // `capped` puede prenderse a mitad de la prueba -bug real reportado en
+    // produccion, ver el comentario en `WodResult.sinNadaMasQueMarcar`-, y
+    // disparar el recalculo ahi escribia un score "capeado" (TERMINAL) que
+    // cerraba el heat entero antes de que el atleta pasara por el descanso.
+    const terminalAhora = resultado?.sinNadaMasQueMarcar ?? false;
     if (terminalAhora && !terminalAntesRef.current) {
       void fetch("/api/resultados/recalcular", {
         method: "POST",
@@ -233,7 +234,7 @@ export function WodJudgeScreen({
       }).catch(() => {});
     }
     terminalAntesRef.current = terminalAhora;
-  }, [resultado?.status, resultado?.capped, laneId]);
+  }, [resultado?.sinNadaMasQueMarcar, laneId]);
 
   const marcar = useCallback(
     (type: Parameters<typeof markWod>[0]["type"], payload: Record<string, unknown> = {}) => {
@@ -261,16 +262,15 @@ export function WodJudgeScreen({
   }
 
   const esquema = parte.structure.scheme;
-  // `resultado.capped` NUNCA pone `status` en "finished" -queda en "running"
-  // para siempre, es lo que despues traduce `scoreFromWodResult` a
-  // "capeado"- asi que sin sumarlo aca la pantalla seguiria mostrando el
-  // Marcador interactivo despues del cap, aceptando toques que el reductor ya
-  // ignora en silencio.
-  const terminado =
-    resultado.status === "finished" ||
-    resultado.status === "dnf" ||
-    resultado.status === "dq" ||
-    resultado.capped;
+  // `sinNadaMasQueMarcar`, no `resultado.capped` a secas -bug real
+  // reportado en produccion: con bloques + descanso, `capped` se prende
+  // apenas el PRIMER bloque no llega a tiempo, mientras el atleta todavia
+  // tiene el descanso y el bloque siguiente por delante. Usar `capped` aca
+  // hacia que la pantalla saltara directo a "CAPEADO" (`Cerrado`) sin pasar
+  // nunca por "Descanso obligatorio" ni por el bloque que seguia. Para un WOD
+  // de un solo bloque `sinNadaMasQueMarcar` es EXACTAMENTE la formula vieja
+  // (ver `WodResult.sinNadaMasQueMarcar`): cero cambio de comportamiento ahi.
+  const terminado = resultado.sinNadaMasQueMarcar;
 
   // El movimiento que sigue. Se calcula ACA (no adentro de un componente mas
   // abajo en el arbol) para poder mostrarlo arriba, pegado al reloj: es el

@@ -186,6 +186,9 @@ describe("scoreFromWodResult", () => {
       stoppedAtMs: 240_000,
       enDescanso: false,
       descansoTerminaMs: null,
+      // Default "terminado": la mayoria de estos tests parten de un WOD ya
+      // resuelto (finished, dq, dnf o capeado sin nada mas atras).
+      sinNadaMasQueMarcar: true,
       anomalies: [],
       ...parcial,
     };
@@ -262,12 +265,43 @@ describe("scoreFromWodResult", () => {
     const score = scoreFromWodResult({
       partId: "p1",
       teamId: "t1",
-      wod: wod({ status: "running", capped: true, finishedMs: null, completedReps: 152 }),
+      wod: wod({
+        status: "running",
+        capped: true,
+        sinNadaMasQueMarcar: true,
+        finishedMs: null,
+        completedReps: 152,
+      }),
       scoreUnit: "tiempo",
     });
     expect(score.status).toBe("capeado");
     expect(score.value).toBeNull();
     expect(score.capValue).toBe(152);
+  });
+
+  it("BUG REAL: un bloque capeado con OTRO bloque todavia por delante no rankea como capeado -sigue en_curso", () => {
+    // Es el caso de "30 clean and jerk (cap) - descanso - thruster (cap)"
+    // como una sola prueba: el bloque 1 no llega a tiempo, pero el atleta
+    // todavia tiene el descanso y el bloque 2 por delante. Marcarlo
+    // "capeado" -un estado TERMINAL- ahi cerraba el heat entero y le vencia
+    // el lease al juez antes de que el atleta terminara de verdad. Reportado
+    // en produccion.
+    const score = scoreFromWodResult({
+      partId: "p1",
+      teamId: "t1",
+      wod: wod({
+        status: "running",
+        capped: true,
+        sinNadaMasQueMarcar: false,
+        finishedMs: null,
+        completedReps: 25,
+      }),
+      scoreUnit: "tiempo",
+    });
+    expect(score.status).toBe("en_curso");
+    expect(score.value).toBeNull();
+    // Sin marca todavia -ni "capeado" ni "valido"-: el WOD sigue corriendo.
+    expect(score.capValue).toBeNull();
   });
 
   it("un DNF no deja marca aunque haya hecho repeticiones", () => {

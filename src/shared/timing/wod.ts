@@ -232,6 +232,36 @@ export type WodResult = {
   enDescanso: boolean;
   /** Elapsed en el que termina el descanso actual, o null si no hay ninguno activo. */
   descansoTerminaMs: number | null;
+  /**
+   * No queda NADA MAS que el juez pueda marcar: o se completo todo, o dq/dnf,
+   * o capeo y no hay ningun bloque de trabajo despues por recorrer.
+   *
+   * BUG REAL que este campo existe para cerrar: antes de que existiera, tanto
+   * `scoreFromWodResult` como `WodJudgeScreen` trataban `capped` como
+   * sinonimo de "terminado" -y en un WOD de un solo bloque eso es correcto,
+   * ahi no hay nada mas despues de un cap-. Pero con bloques + descanso,
+   * `capped` se prende apenas el PRIMER bloque no llega a tiempo, mientras
+   * el atleta todavia tiene el descanso y el bloque siguiente por delante.
+   * Con la version vieja, apenas el juez registraba el cierre del bloque 1,
+   * el score pasaba a "capeado" (un estado TERMINAL) de una, lo que cerraba
+   * el HEAT ENTERO (`actualizarCierreDeHeat`) y le vencia el lease al juez
+   * -antes de que el atleta pasara por el descanso o tocara el bloque
+   * siguiente-. Reportado en produccion: la pantalla mostraba "CAPEADO" de
+   * inmediato y nunca goteaba a "Descanso obligatorio" ni al bloque 3.
+   *
+   * Por eso los dos reductores lo calculan DISTINTO, cada uno con su propia
+   * nocion correcta de "no hay mas nada":
+   *   - `reduceWodEventsSimple` (un solo tramo, sin bloques de descanso):
+   *     `capped` YA significa "no hay mas nada" -es la unica forma de saber
+   *     que el WOD termino, porque `status` nunca llega a "finished" despues
+   *     de un cap-, asi que se preserva el comportamiento de siempre.
+   *   - `reduceWodEventsConDescanso`: `capped` por si solo NO alcanza -puede
+   *     haber bloques por recorrer todavia-. Solo es true cuando `status` ya
+   *     es un estado terminal (dq/dnf/finished), que en este reductor
+   *     significa de verdad "se recorrio TODO el plan, con o sin capeo en
+   *     el camino".
+   */
+  sinNadaMasQueMarcar: boolean;
   anomalies: Anomaly[];
 };
 
@@ -756,6 +786,11 @@ function reduceWodEventsSimple(
     // `reduceWodEventsConDescanso`-, asi que nunca esta descansando.
     enDescanso: false,
     descansoTerminaMs: null,
+    // Un solo tramo: `status` nunca llega a "finished" despues de un cap
+    // (`completo` exige `!cierreFinalUsado`), asi que `capped` es la UNICA
+    // señal de que no hay nada mas -exactamente el comportamiento de
+    // siempre, ahora explicito en su propio campo.
+    sinNadaMasQueMarcar: status === "dq" || status === "dnf" || status === "finished" || capped,
     anomalies,
   };
 }
@@ -1144,6 +1179,11 @@ function reduceWodEventsConDescanso(
     stoppedAtMs,
     enDescanso,
     descansoTerminaMs,
+    // Con bloques, `capped` NO alcanza para decir "no hay nada mas" -puede
+    // haber un descanso o un bloque siguiente por delante-. Solo cuando
+    // `status` ya es terminal (dq/dnf, o "finished" porque se recorrio TODO
+    // el plan) es de verdad cierto que no queda nada mas que marcar.
+    sinNadaMasQueMarcar: status === "dq" || status === "dnf" || status === "finished",
     anomalies,
   };
 }

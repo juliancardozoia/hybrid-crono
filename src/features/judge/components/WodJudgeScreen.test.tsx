@@ -759,8 +759,11 @@ describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)
       botones.every((t) => t?.includes("DESHACER") || t === "Marcar DNF"),
     ).toBe(true);
 
-    // Dice que movimiento viene despues del descanso.
-    expect(screen.getByText(/Thruster/)).toBeTruthy();
+    // Dice que movimiento viene despues del descanso -ahora aparece DOS
+    // veces: en la caja "Sigue" de siempre (que con el fix vuelve a
+    // mostrarse durante el descanso, `terminado` ya no la tapa) y en el
+    // "Despues:" del panel de descanso.
+    expect(screen.getAllByText(/Thruster/).length).toBeGreaterThan(0);
   });
 
   it("una prueba sin ningun bloque de descanso no se ve afectada: sigue mostrando el marcador normal", async () => {

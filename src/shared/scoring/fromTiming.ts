@@ -112,9 +112,15 @@ export function scoreFromWodResult(params: {
 }): RawScore {
   const { partId, teamId, wod, scoreUnit } = params;
 
-  const status: ScoreStatus = wod.capped
-    ? "capeado"
-    : ESTADO_POR_LANE[wod.status];
+  // `wod.capped` por si solo NO alcanza: con bloques + descanso puede
+  // prenderse a mitad de la prueba, mientras el atleta todavia tiene el
+  // descanso y el bloque siguiente por delante. Escribir "capeado" ahi -un
+  // estado TERMINAL- cierra el HEAT ENTERO (`actualizarCierreDeHeat`) y le
+  // vence el lease al juez antes de que termine de verdad. `sinNadaMasQueMarcar`
+  // es la señal correcta de "no hay nada mas", calculada distinto en cada
+  // reductor -ver el comentario en `WodResult`-.
+  const status: ScoreStatus =
+    wod.sinNadaMasQueMarcar && wod.capped ? "capeado" : ESTADO_POR_LANE[wod.status];
 
   // Solo un WOD terminado tiene marca. Uno capeado rankea por lo que alcanzo a
   // hacer, y eso viaja en capValue.
