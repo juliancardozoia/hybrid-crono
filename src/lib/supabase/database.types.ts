@@ -2830,6 +2830,7 @@ export type Database = {
         }
       }
       cupos_disponibles: { Args: { p_division_id: string }; Returns: number }
+      delete_team: { Args: { p_team_id: string }; Returns: undefined }
       ensure_circuit_part: { Args: { p_event_id: string }; Returns: string }
       ensure_my_organization: {
         Args: never
