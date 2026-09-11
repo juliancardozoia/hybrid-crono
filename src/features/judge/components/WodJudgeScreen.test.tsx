@@ -536,7 +536,7 @@ describe("el descanso forzado entre dos partes del mismo WOD", () => {
   // alcanzara a mirar la pantalla.
   const LARGADA_CERCA = Date.now() - 12_000;
 
-  function parteConDescanso(restMs: number | null): WodStructure {
+  function parteConDescanso(descansoMs: number | null): WodStructure {
     return {
       scheme: "cap",
       timeCapMs: 8_000, // ya vencido: LARGADA_CERCA es hace 12s.
@@ -558,7 +558,7 @@ describe("el descanso forzado entre dos partes del mismo WOD", () => {
             },
           ],
         },
-        ...(restMs === null
+        ...(descansoMs === null
           ? []
           : [
               {
@@ -566,8 +566,11 @@ describe("el descanso forzado entre dos partes del mismo WOD", () => {
                 orderIndex: 1,
                 kind: "descanso" as const,
                 rounds: 1,
-                durationMs: null,
-                restMs,
+                // "duracion_ms", no "descanso_ms": el propio formulario de
+                // "Editar bloque" dice que Duración es "cuánto dura el
+                // descanso" para un bloque de este tipo.
+                durationMs: descansoMs,
+                restMs: null,
                 movements: [],
               },
             ]),

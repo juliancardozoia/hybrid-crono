@@ -295,7 +295,7 @@ export function WodJudgeScreen({
    * Sin esto, apenas la parte A quedaba terminal aparecia "Empezar parte B"
    * ACTIVO: nada impedia que el juez lo tocara de una, cortando el descanso
    * antes de tiempo, o se olvidara de tocarlo y el atleta arrancara la parte
-   * B sin que el juez lo estuviera mirando. `part_blocks.descanso_ms` ya
+   * B sin que el juez lo estuviera mirando. `part_blocks.duracion_ms` ya
    * existe en la base y ya se carga desde "Editar bloque" — hasta ahora era
    * puramente informativo (el reductor nunca lo lee, y sigue sin leerlo: esto
    * es una pantalla, no un cambio en `wod.ts`). Si la parte que se acaba de
@@ -305,9 +305,16 @@ export function WodJudgeScreen({
    * a la parte siguiente. Si no hay ningun bloque de descanso configurado, el
    * boton manual de siempre sigue igual: ningun WOD existente cambia de
    * comportamiento.
+   *
+   * ES "duracion_ms" (`durationMs`) Y NO "descanso_ms" (`restMs`) A PROPOSITO:
+   * el propio formulario de "Editar bloque" dice que "Duración (seg)" es
+   * "intervalos, o cuánto dura el descanso", y que "Descanso (seg)" es "solo
+   * intervalos" (el descanso ENTRE repeticiones de un EMOM/Tabata, no la
+   * duracion de un bloque tipo descanso). Usar el otro campo leeria un dato
+   * que el organizador cargo para otra cosa.
    */
   const descansoDeLaParte =
-    parte.structure.blocks.find((b) => b.kind === "descanso")?.restMs ?? null;
+    parte.structure.blocks.find((b) => b.kind === "descanso")?.durationMs ?? null;
   const finDelDescansoMs =
     terminado &&
     indiceParte < partes.length - 1 &&
