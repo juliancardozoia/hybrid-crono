@@ -286,12 +286,8 @@ function SeccionDeParte({
         <>
           <div>
             <h4 className="text-sm font-semibold text-neutral-400 uppercase">
-              Categorías que la corren
+              Categorías
             </h4>
-            <p className="mt-1 text-sm text-neutral-500">
-              Solo a estas se les pide resultado, y solo ellas aparecen en la
-              grilla de pesos.
-            </p>
             <ul className="mt-3 flex flex-wrap gap-2">
               {divisiones.map((d) => {
                 const activa = corren.has(d.id);
@@ -324,22 +320,35 @@ function SeccionDeParte({
             </p>
           ) : (
             <ul className="flex flex-col gap-4">
-              {blocks.map((bloque) => {
+              {blocks.map((bloque, indice) => {
                 const suyos = movements.filter((m) => m.block_id === bloque.id);
+                const esDescanso = bloque.kind === "descanso";
                 return (
-                  <li key={bloque.id} className="rounded-xl border border-neutral-800 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                  <li
+                    key={bloque.id}
+                    className={`rounded-xl p-4 ${
+                      esDescanso
+                        ? "border border-neutral-800 bg-neutral-950/60"
+                        : "border border-neutral-700 bg-neutral-900/40"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800 pb-3">
                       <div>
-                        <p className="font-medium">
-                          {bloque.label ?? TIPO_DE_BLOQUE[bloque.kind] ?? bloque.kind}
-                          {bloque.repeticiones > 1 && (
-                            <span className="ml-2 text-sm text-neutral-400">
-                              × {bloque.repeticiones} rondas
-                            </span>
-                          )}
+                        <p className="flex items-baseline gap-2 font-semibold">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-xs text-neutral-400">
+                            {indice + 1}
+                          </span>
+                          <span>
+                            {bloque.label ?? TIPO_DE_BLOQUE[bloque.kind] ?? bloque.kind}
+                            {bloque.repeticiones > 1 && (
+                              <span className="ml-2 text-sm font-normal text-neutral-400">
+                                × {bloque.repeticiones} rondas
+                              </span>
+                            )}
+                          </span>
                         </p>
                         {(bloque.duracion_ms || bloque.descanso_ms) && (
-                          <p className="mt-0.5 text-sm text-neutral-500">
+                          <p className="mt-0.5 ml-7 text-sm text-neutral-500">
                             {bloque.duracion_ms && `${bloque.duracion_ms / 1000}s de trabajo`}
                             {bloque.duracion_ms && bloque.descanso_ms && " · "}
                             {bloque.descanso_ms && `${bloque.descanso_ms / 1000}s de descanso`}
@@ -371,27 +380,27 @@ function SeccionDeParte({
                     </div>
 
                     {suyos.length > 0 && (
-                      <ul className="mt-3 divide-y divide-neutral-800 border-t border-neutral-800">
+                      <ul className="mt-3 flex flex-col gap-1.5 rounded-lg bg-black/25 p-2">
                         {suyos.map((m) => (
                           <li
                             key={m.id}
-                            className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-neutral-900/60 px-3 py-2 text-sm"
                           >
-                            <span>
-                              <span className="font-mono text-neutral-400">
+                            <span className="flex items-center gap-2">
+                              <span className="rounded border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-xs text-lime-300">
                                 {m.max_reps ? "máx" : m.target_per_round.join("-")}
-                              </span>{" "}
-                              {nombreDe(m)}
+                              </span>
+                              <span>{nombreDe(m)}</span>
                               {m.load_kg !== null && (
-                                <span className="ml-2 text-neutral-400">
+                                <span className="text-neutral-400">
                                   {desdeKilos(m.load_kg, m.load_unit)} {m.load_unit}
                                 </span>
                               )}
                               {m.unit !== "reps" && (
-                                <span className="ml-2 text-neutral-500">{m.unit}</span>
+                                <span className="text-neutral-500">{m.unit}</span>
                               )}
                               {m.es_tiebreak && (
-                                <span className="ml-2 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-300">
+                                <span className="rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-300">
                                   desempate
                                 </span>
                               )}
@@ -428,21 +437,32 @@ function SeccionDeParte({
                       </ul>
                     )}
 
-                    {canManage && (
-                      <div className="mt-4 border-t border-neutral-800 pt-4">
-                        <NuevoMovimiento
-                          eventId={eventId}
-                          partId={part.id}
-                          blockId={bloque.id}
-                          catalogo={catalogo.map((m) => ({
-                            id: m.id,
-                            name: m.name,
-                            category: m.category,
-                            defaultUnit: m.default_unit,
-                            allowsLoad: m.allows_load,
-                          }))}
-                        />
-                      </div>
+                    {canManage && !esDescanso && (
+                      <details
+                        className="mt-4 border-t border-neutral-800 pt-3"
+                        open={suyos.length === 0}
+                      >
+                        <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-lime-400 select-none hover:text-lime-300">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-lime-400/10 text-xs">
+                            +
+                          </span>
+                          Agregar movimiento
+                        </summary>
+                        <div className="mt-4">
+                          <NuevoMovimiento
+                            eventId={eventId}
+                            partId={part.id}
+                            blockId={bloque.id}
+                            catalogo={catalogo.map((m) => ({
+                              id: m.id,
+                              name: m.name,
+                              category: m.category,
+                              defaultUnit: m.default_unit,
+                              allowsLoad: m.allows_load,
+                            }))}
+                          />
+                        </div>
+                      </details>
                     )}
                   </li>
                 );
