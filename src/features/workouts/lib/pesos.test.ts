@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { celdasEnKilos, type CeldaDeSpec } from "./pesos";
+import { celdasEnKilos, objetivoDeCelda, type CeldaDeSpec } from "./pesos";
+
+/**
+ * Regresion de un bug real: en la grilla de pesos, una categoria que solo
+ * queria cambiar el PESO de "Clean and Jerk" (dejando el objetivo vacio para
+ * heredar el "30" de la prueba) terminaba con `target_per_round = [0]` en la
+ * base. `"".split(/[-,\s]+/)` da `[""]`, y `Number("")` es `0` -que pasa el
+ * filtro de "numero valido y no negativo"-, asi que el campo vacio se leia
+ * como "el objetivo es cero" en vez de "no toques el objetivo". El juez
+ * cerraba el movimiento con el boton de un solo toque ("hecho") y, sin
+ * cantidad en el payload, el reductor cerraba con `max(objetivo, progreso) =
+ * max(0, 0) = 0` -el WOD #1 real de CrossFit Session #2 no sumaba las 30
+ * reps de Clean and Jerk de esa categoria.
+ */
+describe("objetivoDeCelda", () => {
+  it("vacio da [] (heredar), no [0]", () => {
+    expect(objetivoDeCelda("")).toEqual([]);
+    expect(objetivoDeCelda("   ")).toEqual([]);
+  });
+
+  it("un numero solo da un arreglo de un elemento", () => {
+    expect(objetivoDeCelda("30")).toEqual([30]);
+  });
+
+  it("una escalera separada por guiones da varios elementos", () => {
+    expect(objetivoDeCelda("21-15-9")).toEqual([21, 15, 9]);
+  });
+
+  it("acepta comas y espacios como separador", () => {
+    expect(objetivoDeCelda("21, 15, 9")).toEqual([21, 15, 9]);
+  });
+});
 
 /**
  * Regresion de un bug real: la grilla de "Pesos y cantidades por categoria"

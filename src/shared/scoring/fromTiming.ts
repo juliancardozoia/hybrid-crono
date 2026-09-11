@@ -9,8 +9,41 @@
  */
 
 import type { LaneResult, LaneStatus } from "../timing/types";
-import type { WodResult } from "../timing/wod";
+import type { MovementUnit, WodResult } from "../timing/wod";
 import type { RawScore, ScoreStatus, ScoreUnit } from "./types";
+
+/**
+ * Que unidad de MOVIMIENTO corresponde a cada unidad de SCORE.
+ *
+ * Existe porque `wod.completedReps` suma TODOS los movimientos sin importar
+ * su unidad -correcto para un chipper donde todos son `reps`, pero sin
+ * sentido si el WOD mezcla, por ejemplo, "10 devil press" (reps, objetivo
+ * fijo) con "max cal bike" (calorias, sin objetivo): sumarlas daria un
+ * numero que no es ni reps ni calorias.
+ *
+ * `"puntos"` no tiene equivalente: es para carga manual, no para un WOD que
+ * el reductor mide. Se queda sin entrada a proposito, y el llamador cae al
+ * total sin discriminar.
+ */
+const UNIDAD_DE_SCORE: Partial<Record<ScoreUnit, MovementUnit>> = {
+  reps: "reps",
+  calorias: "calorias",
+  distancia: "metros",
+};
+
+/**
+ * El valor "de verdad" para una unidad de score que no es tiempo/rondas/carga.
+ *
+ * Si el WOD tiene un solo tipo de movimiento (el caso normal: un chipper
+ * donde todo es `reps`), esto es exactamente `wod.completedReps` -mismo
+ * numero, cero cambio de comportamiento. Solo difiere cuando el WOD mezcla
+ * unidades, que es justo el caso que sumar todo junto rompe.
+ */
+function valorParaUnidadDeScore(wod: WodResult, scoreUnit: ScoreUnit): number {
+  const unidadMovimiento = UNIDAD_DE_SCORE[scoreUnit];
+  if (unidadMovimiento === undefined) return wod.completedReps;
+  return wod.completedByUnit[unidadMovimiento] ?? wod.completedReps;
+}
 
 /**
  * El reductor de circuitos y el motor de puntuacion nombran distinto los mismos
@@ -106,8 +139,9 @@ export function scoreFromWodResult(params: {
         value = wod.bestLiftKg;
         break;
       default:
-        // reps, calorias, distancia y puntos se cuentan igual: unidades hechas.
-        value = wod.completedReps;
+        // reps, calorias, distancia y puntos se cuentan igual: unidades
+        // hechas EN LA UNIDAD QUE LA PRUEBA PUNTUA (ver `valorParaUnidadDeScore`).
+        value = valorParaUnidadDeScore(wod, scoreUnit);
         break;
     }
   }

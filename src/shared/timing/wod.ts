@@ -142,6 +142,19 @@ export type WodResult = {
   status: LaneStatus;
   /** Suma de unidades completadas en todos los pasos. */
   completedReps: number;
+  /**
+   * Lo mismo que `completedReps`, pero separado por unidad de movimiento.
+   *
+   * `completedReps` suma TODO sin importar la unidad: en un chipper donde
+   * todos los movimientos son `reps` eso es exactamente lo que hace falta
+   * ("50 wall balls + 40 pull-ups = 90 reps"). Pero en un WOD que mezcla
+   * unidades -"10 devil press" (reps, objetivo fijo) + "max cal bike"
+   * (calorias, sin objetivo)- sumarlas da un numero que no significa nada:
+   * 10 reps + 80 calorias no son "90" de ninguna cosa. Quien arma el score
+   * (`fromTiming.ts`) usa esto para tomar SOLO la unidad que la prueba
+   * puntua, en vez de la mezcla.
+   */
+  completedByUnit: Partial<Record<MovementUnit, number>>;
   /** Rondas enteras cerradas del bloque de trabajo. */
   completedRounds: number;
   /** Unidades hechas en la ronda en curso. */
@@ -323,6 +336,10 @@ export function reduceWodEvents(
   let stepIndex = 0;
   let progress = 0;
   let completedReps = 0;
+  const completedByUnit: Partial<Record<MovementUnit, number>> = {};
+  function sumarPorUnidad(unit: MovementUnit, unidades: number) {
+    completedByUnit[unit] = (completedByUnit[unit] ?? 0) + unidades;
+  }
   let noRepCount = 0;
   let tiebreakMs: number | null = null;
   let ultimoCierreMs: number | null = null;
@@ -346,6 +363,7 @@ export function reduceWodEvents(
     const paso = plan[stepIndex];
     if (!paso) return;
     completedReps += unidades;
+    sumarPorUnidad(paso.unit, unidades);
     unidadesCerradas[stepIndex] = unidades;
     if (paso.isTiebreak) tiebreakMs = elapsedMs;
     ultimoCierreMs = elapsedMs;
@@ -480,6 +498,7 @@ export function reduceWodEvents(
           destino += 1;
         }
         completedReps += progress;
+        sumarPorUnidad(paso.unit, progress);
         ultimoCierreMs = evento.elapsedMs;
         stepIndex = destino;
         progress = 0;
@@ -578,10 +597,20 @@ export function reduceWodEvents(
 
   const validos = attempts.filter((a) => a.valido).map((a) => a.loadKg);
 
+  // El paso en curso (si hay uno) todavia no paso por `cerrarPaso`: su
+  // progreso esta en `completedReps + progress` de siempre, y tiene que
+  // sumarse a SU unidad tambien para que las dos cuentas sigan cuadrando.
+  const completedByUnitFinal = { ...completedByUnit };
+  if (progress > 0 && stepIndex < plan.length) {
+    const unidadEnCurso = plan[stepIndex].unit;
+    completedByUnitFinal[unidadEnCurso] = (completedByUnitFinal[unidadEnCurso] ?? 0) + progress;
+  }
+
   return {
     laneId,
     status,
     completedReps: completedReps + progress,
+    completedByUnit: completedByUnitFinal,
     completedRounds,
     repsInRound,
     currentRoundBreakdown,

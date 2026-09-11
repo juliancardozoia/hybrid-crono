@@ -272,6 +272,50 @@ export function WodJudgeScreen({
     resultado.status === "dq" ||
     resultado.capped;
 
+  // El movimiento que sigue. Se calcula ACA (no adentro de un componente mas
+  // abajo en el arbol) para poder mostrarlo arriba, pegado al reloj: es el
+  // dato que el juez necesita leer de reojo para avisarle al atleta o al
+  // corredor de material, y antes vivia debajo del marcador entero -habia que
+  // hacer scroll para verlo mientras el WOD seguia corriendo-. `!terminado`
+  // es la parte que faltaba: sin ella, un WOD capeado a mitad de un movimiento
+  // seguia anunciando "Sigue: Pull-up" con el reloj ya detenido, porque
+  // `currentStepIndex` no se vuelve null cuando el estado real es "running"
+  // con `capped = true` (un For Time capeado no cambia `status`, solo prende
+  // la bandera).
+  const siguiente =
+    !terminado && resultado.currentStepIndex != null
+      ? (plan[resultado.currentStepIndex + 1] ?? null)
+      : null;
+
+  /**
+   * El descanso FORZADO entre partes de un mismo WOD (ej: "3 min de clean and
+   * jerk, 1 min de descanso, 4 min de thruster+pull-up" — las tres, un solo
+   * WOD, partido en dos partes con su propio cap cada una).
+   *
+   * Sin esto, apenas la parte A quedaba terminal aparecia "Empezar parte B"
+   * ACTIVO: nada impedia que el juez lo tocara de una, cortando el descanso
+   * antes de tiempo, o se olvidara de tocarlo y el atleta arrancara la parte
+   * B sin que el juez lo estuviera mirando. `part_blocks.descanso_ms` ya
+   * existe en la base y ya se carga desde "Editar bloque" — hasta ahora era
+   * puramente informativo (el reductor nunca lo lee, y sigue sin leerlo: esto
+   * es una pantalla, no un cambio en `wod.ts`). Si la parte que se acaba de
+   * cerrar tiene un bloque `descanso` con esa duracion cargada, el "Empezar
+   * parte siguiente" se REEMPLAZA por una cuenta regresiva sin ningun boton
+   * -no hay nada que el juez pueda tocar de mas- y al llegar a cero pasa solo
+   * a la parte siguiente. Si no hay ningun bloque de descanso configurado, el
+   * boton manual de siempre sigue igual: ningun WOD existente cambia de
+   * comportamiento.
+   */
+  const descansoDeLaParte =
+    parte.structure.blocks.find((b) => b.kind === "descanso")?.restMs ?? null;
+  const finDelDescansoMs =
+    terminado &&
+    indiceParte < partes.length - 1 &&
+    descansoDeLaParte !== null &&
+    resultado.stoppedAtMs !== null
+      ? resultado.stoppedAtMs + descansoDeLaParte
+      : null;
+
   return (
     <main className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
       <div className="safe-top">
@@ -328,14 +372,14 @@ export function WodJudgeScreen({
         <>
           {/* `destello-de-largada`: ver globals.css. Mismo tratamiento que
               JudgeScreen — se dispara solo al montarse esta seccion. */}
-          <section className="destello-de-largada rounded-2xl px-4 pt-4 text-center">
+          <section className="destello-de-largada rounded-2xl px-4 pt-3 text-center">
             {esquema === "ventana" && parte.structure.windowMs ? (
               <CuentaRegresiva
                 anchor={anchor}
                 duracionMs={parte.structure.windowMs}
                 umbralAmbarMs={60_000}
                 umbralRojoMs={10_000}
-                className="font-mono text-5xl font-bold tabular-nums"
+                className="font-mono text-[clamp(2.5rem,11vw,3.75rem)] leading-none font-bold tabular-nums"
               />
             ) : esquema === "sin_reloj" ? (
               <p className="font-mono text-3xl font-bold text-neutral-500">Sin reloj</p>
@@ -343,7 +387,7 @@ export function WodJudgeScreen({
               <LiveClock
                 anchor={anchor}
                 frozenMs={resultado.stoppedAtMs}
-                className="font-mono text-5xl font-bold tabular-nums"
+                className="font-mono text-[clamp(2.5rem,11vw,3.75rem)] leading-none font-bold tabular-nums"
               />
             )}
 
@@ -375,6 +419,8 @@ export function WodJudgeScreen({
               </p>
             )}
           </section>
+
+          <CajaDeSiguiente siguiente={siguiente} />
 
           {esquema === "sin_reloj" ? (
             <Intentos
@@ -450,52 +496,81 @@ export function WodJudgeScreen({
             />
           </div>
 
-          <Progreso
-            resultado={resultado}
-            esquema={esquema}
-            plan={plan}
-            terminado={terminado}
-            siguiente={
-              resultado.currentStepIndex != null
-                ? (plan[resultado.currentStepIndex + 1] ?? null)
-                : null
-            }
-          />
+          <Progreso resultado={resultado} esquema={esquema} plan={plan} terminado={terminado} />
 
-          <footer className="safe-bottom mt-auto flex gap-2 px-4 pt-4 pb-2">
+          <footer className="safe-bottom mt-auto px-4 pt-3 pb-2">
+            {/* Mismo tratamiento que FooterActions en JudgeScreen (carrera
+                hibrida): un link discreto, no un boton con borde compitiendo
+                por espacio con el resto de la pantalla. Las dos pantallas de
+                juez tienen que ofrecer el DNF con el mismo peso visual — y de
+                paso, un texto ocupa una fraccion de lo que ocupaba el boton
+                anterior, que es space que un WOD en curso no sobra. */}
             {!terminado && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (!confirmandoDnf) {
-                    setConfirmandoDnf(true);
-                    return;
-                  }
-                  marcar("dnf");
-                  setConfirmandoDnf(false);
-                }}
-                className={`flex-1 rounded-xl border px-4 py-3 text-sm ${
-                  confirmandoDnf
-                    ? "border-red-500 bg-red-500/10 text-red-300"
-                    : "border-neutral-800 text-neutral-500"
-                }`}
-              >
-                {confirmandoDnf ? "Confirmar DNF" : "Marcar DNF"}
-              </button>
+              <div className="flex items-center border-t border-neutral-800 pt-3 text-sm">
+                {confirmandoDnf ? (
+                  <span className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        marcar("dnf");
+                        setConfirmandoDnf(false);
+                      }}
+                      className="font-semibold text-red-400"
+                    >
+                      Confirmar DNF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmandoDnf(false)}
+                      className="text-neutral-500"
+                    >
+                      Cancelar
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmandoDnf(true)}
+                    className="text-neutral-500"
+                  >
+                    Marcar DNF
+                  </button>
+                )}
+              </div>
             )}
 
-            {terminado && indiceParte < partes.length - 1 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIndiceParte(indiceParte + 1);
-                  setConfirmandoDnf(false);
-                }}
-                className="flex-1 rounded-xl bg-lime-400 px-4 py-3 font-bold text-lime-950"
-              >
-                Empezar parte {partes[indiceParte + 1].label || indiceParte + 2} ▸
-              </button>
-            )}
+            {terminado &&
+              indiceParte < partes.length - 1 &&
+              (finDelDescansoMs !== null ? (
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-amber-500/30 bg-amber-500/10 py-3">
+                  <span className="text-xs font-semibold tracking-widest text-amber-300 uppercase">
+                    Descanso
+                  </span>
+                  <CuentaRegresiva
+                    anchor={anchor}
+                    duracionMs={finDelDescansoMs}
+                    className="font-mono text-3xl font-bold text-amber-200"
+                    onLlegarACero={() => {
+                      setIndiceParte(indiceParte + 1);
+                      setConfirmandoDnf(false);
+                    }}
+                  />
+                  <span className="text-xs text-neutral-500">
+                    Empieza sola la parte {partes[indiceParte + 1].label || indiceParte + 2}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIndiceParte(indiceParte + 1);
+                    setConfirmandoDnf(false);
+                  }}
+                  className="w-full rounded-xl bg-lime-400 px-4 py-3 font-bold text-lime-950"
+                >
+                  Empezar parte {partes[indiceParte + 1].label || indiceParte + 2} ▸
+                </button>
+              ))}
           </footer>
         </>
       )}
@@ -644,6 +719,34 @@ function Marcador({
   const estilo: CaptureStyle = contandoAMano ? "tap" : paso.captureStyle;
   const escribiendo = confirmando || estilo === "numero";
 
+  /**
+   * Un movimiento "las que pueda" con unidad que se escribe (calorías,
+   * metros...) es SIEMPRE lo último que el atleta hace antes de que suene:
+   * la caja ya dice "Hasta que suene" arriba, pero antes de esto el botón
+   * quedaba activo igual. Si el juez lo tocaba antes de tiempo, cerraba el
+   * paso y el reductor lo empujaba a la ronda siguiente -que en un WOD como
+   * "10 devil press + max cal bike" no existe: el atleta nunca vuelve al
+   * devil press-. Mientras `Marcador` está en pantalla el tiempo TODAVÍA no
+   * se acabó (ver WodJudgeScreen: `awaitingFinalTally` reemplaza a este
+   * componente por `CierreDelTiempo` apenas se cumple el cap/ventana), así
+   * que bloquear acá nunca choca con el cierre automático — solo hace
+   * cumplir lo que el texto de arriba ya prometía.
+   */
+  const esperandoElFinal = paso.maxReps && estilo === "numero";
+
+  /**
+   * El mismo candado que `esperandoElFinal`, pero para `tap`: acá "+ REP"
+   * SIGUE activo -es la unica forma de contar en tiempo real, no se puede
+   * diferir- y lo unico que se bloquea es "MOVIMIENTO ✓", el boton que
+   * cierra el paso. Sin esto, tocarlo antes de tiempo abre el mismo agujero
+   * que en `numero`: cierra el paso y empuja a una ronda siguiente que en un
+   * WOD de un solo esfuerzo abierto no existe. El cierre automatico
+   * (`CierreDelTiempo`, al llegar al cap/ventana) ya precarga el numero con
+   * lo que se tapeo, asi que no hace falta que el juez confirme a mano antes
+   * de que suene.
+   */
+  const cierreDeTapBloqueado = paso.maxReps && estilo === "tap";
+
   // El objetivo del paso, como tope de lo que se puede escribir a mano. Un
   // `maxReps` no tiene objetivo que respetar -ahi contar ES el resultado- y
   // sin tope el juez podria tipear de mas y darle al atleta reps (y puntos)
@@ -665,7 +768,7 @@ function Marcador({
   };
 
   return (
-    <section className="flex flex-col gap-3 px-4 pt-4">
+    <section className="flex flex-col gap-2.5 px-4 pt-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-xl font-bold uppercase">{paso.name}</p>
         <p className="text-lg text-neutral-400">
@@ -688,9 +791,22 @@ function Marcador({
 
       {/* LA CAJA. Mismo alto y misma posición en los tres estilos: un botón
           que cambia de tamaño entre movimientos hace que el pulgar del juez
-          caiga en otro lado, y el juez no está mirando la pantalla. */}
-      <div className="flex h-[clamp(13rem,40dvh,20rem)] flex-col">
-        {escribiendo ? (
+          caiga en otro lado, y el juez no está mirando la pantalla. El clamp
+          es mas chico que el de JudgeScreen (BigButton) a proposito: esta
+          pantalla apila mas secciones arriba y abajo -reloj, cuenta
+          regresiva del cap, caja de "Sigue", deshacer, resumen de ronda- y
+          con el alto de aquella el juez tenia que scrollear para llegar al
+          DNF con el WOD corriendo. Sigue siendo grande de sobra para el
+          pulgar; solo deja de reclamar mas espacio del que hace falta. */}
+      <div className="flex h-[clamp(11rem,34dvh,17rem)] flex-col">
+        {esperandoElFinal ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-3xl border border-dashed border-neutral-700 text-neutral-500">
+            <span className="text-lg font-semibold uppercase">Esperando el final</span>
+            <span className="px-6 text-center text-sm">
+              Se habilita solo cuando se acabe el tiempo
+            </span>
+          </div>
+        ) : escribiendo ? (
           <div className="flex h-full flex-col gap-2">
             <input
               inputMode="numeric"
@@ -763,7 +879,16 @@ function Marcador({
           NO REP
         </button>
 
-        {estilo === "tap" && !confirmando ? (
+        {estilo === "tap" && cierreDeTapBloqueado && !confirmando ? (
+          <button
+            type="button"
+            disabled
+            title="Se habilita solo cuando se acaba el tiempo"
+            className="cursor-not-allowed rounded-2xl border border-dashed border-neutral-800 py-4 text-lg font-semibold text-neutral-600"
+          >
+            MOVIMIENTO ✓
+          </button>
+        ) : estilo === "tap" && !confirmando ? (
           <button
             type="button"
             onClick={() => {
@@ -869,7 +994,7 @@ function Intentos({
 
   if (terminado) {
     return (
-      <section className="flex h-[clamp(13rem,40dvh,20rem)] flex-col items-center justify-center gap-2 px-4">
+      <section className="flex h-[clamp(11rem,34dvh,17rem)] flex-col items-center justify-center gap-2 px-4">
         <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
           Carga máxima
         </span>
@@ -967,7 +1092,7 @@ function CierreDelTiempo({
         </p>
       </div>
 
-      <div className="flex h-[clamp(13rem,40dvh,20rem)] flex-col gap-2">
+      <div className="flex h-[clamp(11rem,34dvh,17rem)] flex-col gap-2">
         <input
           inputMode="numeric"
           autoFocus
@@ -1105,7 +1230,7 @@ function Cerrado({
   const multiRonda = plan.some((p) => p.totalRounds > 1);
 
   return (
-    <section className="flex h-[clamp(13rem,40dvh,20rem)] flex-col items-center justify-center gap-2 px-4">
+    <section className="flex h-[clamp(11rem,34dvh,17rem)] flex-col items-center justify-center gap-2 px-4">
       {etiqueta && (
         <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs font-semibold tracking-widest text-neutral-500 uppercase">
           {etiqueta}
@@ -1132,22 +1257,51 @@ function Cerrado({
   );
 }
 
+/**
+ * Lo que viene, en una caja propia y grande, pegada al reloj.
+ *
+ * Antes vivia debajo del marcador entero -recien despues de la ranura de
+ * deshacer-, asi que en un WOD en curso el juez tenia que scrollear para
+ * leerla justo cuando mas la necesita: decirle al atleta o al corredor de
+ * material que sigue, sin entrecerrar los ojos. El acento lima (en vez del
+ * gris neutro que tenia antes) es lo que la separa de un dato mas: es la
+ * unica caja de toda la pantalla, aparte del marcador, que usa ese color.
+ */
+function CajaDeSiguiente({ siguiente }: { siguiente: WodStep | null }) {
+  if (!siguiente) return null;
+
+  return (
+    <div className="mx-4 mt-2.5 flex items-center justify-between gap-3 rounded-2xl border border-lime-400/30 bg-lime-400/10 px-4 py-2.5">
+      <span className="shrink-0 text-[11px] font-bold tracking-widest text-lime-300 uppercase">
+        Sigue
+      </span>
+      <p className="min-w-0 flex-1 truncate text-right text-xl font-black text-lime-50">
+        {siguiente.maxReps ? "Máx" : siguiente.target} {siguiente.name}
+        {siguiente.loadKg !== null && (
+          <span className="ml-2 font-mono text-base font-normal text-lime-200/70">
+            {formatearCarga(siguiente.loadKg, siguiente.loadUnit)}
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
 function Progreso({
   resultado,
   esquema,
   plan,
-  siguiente,
   terminado,
 }: {
   resultado: NonNullable<ReturnType<typeof reduceWodEvents>>;
   esquema: string;
   plan: WodStep[];
-  /** El paso que viene, o null si este es el ultimo. */
-  siguiente: WodStep | null;
   /** Con el WOD cerrado, `Cerrado` ya muestra ronda/reps y no-reps: repetirlo
    *  aca abajo es la misma informacion dos veces en la misma pantalla. */
   terminado: boolean;
 }) {
+  if (terminado) return null;
+
   // El resumen habla en RONDAS Y MOVIMIENTO, no en el indice plano del plan:
   // un juez piensa "ronda 3 de 3, thruster", no "paso 5 de 6" — y ese numero
   // de paso fue justo lo que se leyo como una cuenta rara cuando el WOD se
@@ -1157,50 +1311,26 @@ function Progreso({
     resultado.currentStepIndex != null ? plan[resultado.currentStepIndex] : plan.at(-1);
 
   return (
-    <>
-    {/* LO QUE VIENE, EN UNA CAJA PROPIA Y GRANDE: es lo que el juez tiene que
-        poder leer de reojo y decirle al atleta o al corredor de material sin
-        entrecerrar los ojos -antes era una linea gris chica, facil de perder
-        justo debajo del marcador. */}
-    {siguiente && (
-      <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/60 px-4 py-2.5">
-        <span className="shrink-0 text-[11px] font-bold tracking-widest text-neutral-500 uppercase">
-          Sigue
+    <section className="flex flex-wrap justify-center gap-x-5 gap-y-1 px-4 text-sm text-neutral-400">
+      {esquema === "ventana" ? (
+        <span>
+          Ronda {resultado.completedRounds + 1} · {resultado.completedReps} reps
         </span>
-        <p className="min-w-0 flex-1 truncate text-right text-lg font-bold text-neutral-100">
-          {siguiente.maxReps ? "Máx" : siguiente.target} {siguiente.name}
-          {siguiente.loadKg !== null && (
-            <span className="ml-2 font-mono text-base font-normal text-neutral-400">
-              {formatearCarga(siguiente.loadKg, siguiente.loadUnit)}
-            </span>
-          )}
-        </p>
-      </div>
-    )}
-
-    {!terminado && (
-      <section className="flex flex-wrap justify-center gap-x-5 gap-y-1 px-4 text-sm text-neutral-400">
-        {esquema === "ventana" ? (
-          <span>
-            Ronda {resultado.completedRounds + 1} · {resultado.completedReps} reps
-          </span>
-        ) : pasoDeReferencia ? (
-          <span>
-            {pasoDeReferencia.totalRounds > 1
-              ? `Ronda ${pasoDeReferencia.round} de ${pasoDeReferencia.totalRounds}`
-              : "Única ronda"}
-            {" · "}
-            {pasoDeReferencia.name}
-          </span>
-        ) : null}
-        {resultado.noRepCount > 0 && (
-          <span className="text-red-400">{resultado.noRepCount} no reps</span>
-        )}
-        {resultado.tiebreakMs !== null && (
-          <span>desempate {formatElapsed(resultado.tiebreakMs)}</span>
-        )}
-      </section>
-    )}
-    </>
+      ) : pasoDeReferencia ? (
+        <span>
+          {pasoDeReferencia.totalRounds > 1
+            ? `Ronda ${pasoDeReferencia.round} de ${pasoDeReferencia.totalRounds}`
+            : "Única ronda"}
+          {" · "}
+          {pasoDeReferencia.name}
+        </span>
+      ) : null}
+      {resultado.noRepCount > 0 && (
+        <span className="text-red-400">{resultado.noRepCount} no reps</span>
+      )}
+      {resultado.tiebreakMs !== null && (
+        <span>desempate {formatElapsed(resultado.tiebreakMs)}</span>
+      )}
+    </section>
   );
 }

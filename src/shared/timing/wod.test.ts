@@ -1063,3 +1063,58 @@ describe("DNF y DQ", () => {
     expect(reduceWodEvents("c1", eventos, fran()).stoppedAtMs).toBe(500_000);
   });
 });
+
+/**
+ * "10 devil press, max cal bike" — AMRAP de 3 min. Replay exacto de un caso
+ * real reportado en produccion (CrossFit Session #2, WOD #2): el score
+ * mostraba 90 y 100 en vez de las 80 y 90 calorias que de verdad se hicieron,
+ * porque `completedReps` sumaba las 10 reps fijas del devil press junto con
+ * las calorias de la bici. `completedByUnit` es lo que le permite a
+ * `fromTiming.ts` tomar solo la unidad que la prueba puntua.
+ */
+function devilPressYBici(): WodStructure {
+  return {
+    scheme: "ventana",
+    timeCapMs: null,
+    windowMs: 180_000,
+    intervalMs: null,
+    blocks: [
+      {
+        id: "b1",
+        orderIndex: 0,
+        kind: "trabajo",
+        rounds: 50,
+        durationMs: null,
+        restMs: null,
+        movements: [
+          {
+            id: "m1", orderIndex: 0, name: "Devil Press", unit: "reps",
+            targetPerRound: [10], loadKg: 5.44, loadUnit: "lb",
+            maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+          },
+          {
+            id: "m2", orderIndex: 1, name: "Bike", unit: "calorias",
+            targetPerRound: [0], loadKg: null, loadUnit: "kg",
+            maxReps: true, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("un buy-in de reps fijas mezclado con un movimiento abierto de otra unidad", () => {
+  it("completedByUnit separa las 10 reps de las 80 calorías; completedReps las sigue sumando", () => {
+    reset();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 62_902, { round: 1, partMovementId: "m1" }),
+      marcaje("movement_done", 185_836, { round: 1, cantidad: 80, partMovementId: "m2" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, devilPressYBici(), 185_836);
+
+    expect(r.status).toBe("finished");
+    expect(r.completedReps).toBe(90); // 10 + 80: la suma cruda, sin discriminar.
+    expect(r.completedByUnit).toEqual({ reps: 10, calorias: 80 });
+  });
+});

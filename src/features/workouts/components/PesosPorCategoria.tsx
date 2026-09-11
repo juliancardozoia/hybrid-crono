@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { guardarSpecs } from "../actions";
-import type { CeldaDeSpec } from "../lib/pesos";
+import { objetivoDeCelda, type CeldaDeSpec } from "../lib/pesos";
 import { Boton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -125,10 +125,7 @@ export function PesosPorCategoria({
         const cargaLimpia = carga.trim();
         if (!objetivoLimpio && !cargaLimpia) continue;
 
-        const numeros = objetivoLimpio
-          .split(/[-,\s]+/)
-          .map((n) => Number(n))
-          .filter((n) => Number.isFinite(n) && n >= 0);
+        const numeros = objetivoDeCelda(objetivoLimpio);
 
         const kilos = cargaLimpia ? Number(cargaLimpia.replace(",", ".")) : null;
         if (kilos !== null && (!Number.isFinite(kilos) || kilos < 0)) {

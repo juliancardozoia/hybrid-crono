@@ -19,6 +19,27 @@ export interface CeldaDeSpec {
 }
 
 /**
+ * El texto del campo "Objetivo" de la grilla -> el arreglo que espera la base.
+ *
+ * "" -> [] (vacio = heredar el objetivo de la prueba), no [0]. Bug real:
+ * "".split(/[-,\s]+/) da [""], y Number("") es 0 -que pasa el filtro de
+ * "numero valido y no negativo"-, asi que un campo vacio (categoria que solo
+ * queria cambiar el PESO, no las repeticiones) se guardaba como
+ * `target_per_round = [0]` en vez de heredar el de la prueba. El movimiento
+ * quedaba con objetivo cero y el juez lo cerraba con 0 reps sin que nadie lo
+ * notara -es la misma regla que `objetivoAArreglo` ya aplica en el alta de un
+ * movimiento, reimplementada aca sin el guard.
+ */
+export function objetivoDeCelda(bruto: string): number[] {
+  const limpio = bruto.trim();
+  if (!limpio) return [];
+  return limpio
+    .split(/[-,\s]+/)
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n >= 0);
+}
+
+/**
  * Convierte cada celda a kilos antes de que le lleguen a la base.
  *
  * `division_movement_specs.load_kg` es SIEMPRE kilos, pero la grilla manda el

@@ -310,6 +310,93 @@ describe("el tope de reps", () => {
   });
 });
 
+describe("un maxReps con unidad que se escribe (calorías, metros) no se registra antes de tiempo", () => {
+  it("mientras corre, no ofrece REGISTRAR: dice que hay que esperar al final", async () => {
+    // Cap largo (600s) y la largada quedó fija hace solo 60s: el WOD sigue
+    // corriendo, no se acabó el tiempo todavía.
+    await pintar({ unit: "calorias", targetPerRound: [0], maxReps: true, loadKg: null });
+
+    expect(screen.getByText("Hasta que suene")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "REGISTRAR" })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByText("Esperando el final")).toBeTruthy();
+  });
+
+  it("una vez que se acaba el tiempo, SÍ deja registrar (vía el cierre automático)", async () => {
+    // Mismo movimiento, pero con un cap ya vencido: acá el bloqueo tiene que
+    // desaparecer, porque `Marcador` ya ni se muestra -lo reemplaza
+    // `CierreDelTiempo`, que es la pantalla pensada para este momento.
+    await pintar(
+      { unit: "calorias", targetPerRound: [0], maxReps: true, loadKg: null },
+      { timeCapMs: 30_000 },
+    );
+
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "REGISTRAR" })).toBeTruthy();
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "80" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(tipos()).toEqual(["movement_done"]));
+    expect(guardados.at(-1)?.payload?.cantidad).toBe(80);
+  });
+
+  it("un objetivo fijo (no maxReps) sigue ofreciendo REGISTRAR como siempre", async () => {
+    // Control: el bloqueo es SOLO para maxReps. "500 m" con objetivo fijo no
+    // se toca -mismo caso que ya cubre "los tres estilos de captura".
+    await pintar({ unit: "metros", targetPerRound: [500], maxReps: false, loadKg: null });
+
+    expect(screen.getByRole("button", { name: "REGISTRAR" })).toBeTruthy();
+    expect(screen.queryByText("Esperando el final")).toBeNull();
+  });
+});
+
+describe("un maxReps que se tapea (max sentadillas, max T2B) no cierra el paso antes de tiempo", () => {
+  it("+ REP sigue activo -es como se cuenta en tiempo real- pero MOVIMIENTO ✓ está deshabilitado", async () => {
+    await pintar({ unit: "reps", targetPerRound: [0], maxReps: true, captureStyle: null });
+
+    // Contar sí, siempre: no hay otra forma de saber cuántas hizo el atleta.
+    const masRep = screen.getByRole("button", { name: /\+ REP/ });
+    expect(masRep).toBeTruthy();
+    fireEvent.click(masRep);
+    await waitFor(() => expect(tipos()).toContain("rep"));
+
+    // Cerrar el paso, no: MOVIMIENTO ✓ está ahí pero deshabilitado.
+    const cerrar = screen.getByRole("button", { name: "MOVIMIENTO ✓" }) as HTMLButtonElement;
+    expect(cerrar.disabled).toBe(true);
+    fireEvent.click(cerrar);
+    expect(tipos()).toEqual(["rep"]); // sigue igual: el click no hizo nada.
+    expect(screen.queryByRole("textbox")).toBeNull(); // no abrió el teclado de confirmar.
+  });
+
+  it("una vez que se acaba el tiempo, el cierre automático ya trae precargado lo tapeado", async () => {
+    await pintar(
+      { unit: "reps", targetPerRound: [0], maxReps: true, captureStyle: null },
+      { timeCapMs: 30_000 },
+    );
+
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "REGISTRAR" })).toBeTruthy();
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "37" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(tipos()).toEqual(["movement_done"]));
+    expect(guardados.at(-1)?.payload?.cantidad).toBe(37);
+  });
+
+  it("un tap forzado sin maxReps sigue con MOVIMIENTO ✓ habilitado, como siempre", async () => {
+    // Control: mismo caso que ya cubre "los tres estilos de captura", ahora
+    // afirmando explícitamente que el botón NO está deshabilitado.
+    await pintar({ targetPerRound: [21], captureStyle: "tap", maxReps: false });
+
+    const boton = screen.getByRole("button", { name: "MOVIMIENTO ✓" }) as HTMLButtonElement;
+    expect(boton.disabled).toBe(false);
+  });
+});
+
 describe("el cap detiene la pantalla", () => {
   it("una vez capeado, pide el cierre final y ya no acepta NO REP ni + REP", async () => {
     // La largada quedó fija hace 60s (LARGADA). Con un cap de 30s, el WOD
@@ -340,6 +427,243 @@ describe("el cap detiene la pantalla", () => {
 
     await waitFor(() => expect(screen.getByText("CAPEADO")).toBeTruthy());
     expect(screen.queryByRole("button", { name: "REGISTRAR" })).toBeNull();
+  });
+});
+
+describe("marcar DNF", () => {
+  it("pide confirmar y recien ahi emite el evento", async () => {
+    await pintar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Marcar DNF" }));
+    // Un solo toque no alcanza -es el mismo criterio que JudgeScreen-: hace
+    // falta ver "Confirmar DNF" antes de que se emita nada.
+    expect(tipos()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar DNF" }));
+
+    await waitFor(() => expect(tipos()).toEqual(["dnf"]));
+    await waitFor(() => expect(screen.getByText("NO TERMINÓ")).toBeTruthy());
+  });
+});
+
+describe("la caja de 'Sigue' no sobrevive al cierre del WOD", () => {
+  it("deja de anunciar el proximo movimiento en cuanto el WOD queda capeado a mitad de camino", async () => {
+    // Bug real: un WOD de dos movimientos por dos rondas (tipo Fran) que se
+    // capea durante el PRIMER movimiento seguia mostrando "Sigue: Pull-up"
+    // -el movimiento de la ronda siguiente- con el reloj ya detenido.
+    // `currentStepIndex` no se vuelve null cuando el estado real es
+    // "running" con `capped = true`, asi que la condicion vieja (solo
+    // miraba si quedaba un paso en el plan) dejaba pasar el anuncio.
+    const estructuraDosMovimientos: WodStructure = {
+      scheme: "cap",
+      timeCapMs: 30_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1",
+          orderIndex: 0,
+          kind: "trabajo",
+          rounds: 2,
+          durationMs: null,
+          restMs: null,
+          movements: [
+            {
+              id: "m1",
+              orderIndex: 0,
+              name: "Thruster",
+              unit: "reps",
+              targetPerRound: [21, 21],
+              loadKg: 43.09,
+              loadUnit: "lb",
+              maxReps: false,
+              isTiebreak: false,
+              maxAttempts: 3,
+              captureStyle: null,
+            },
+            {
+              id: "m2",
+              orderIndex: 1,
+              name: "Pull-up",
+              unit: "reps",
+              targetPerRound: [21, 21],
+              loadKg: null,
+              loadUnit: "kg",
+              maxReps: false,
+              isTiebreak: false,
+              maxAttempts: 3,
+              captureStyle: null,
+            },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: estructuraDosMovimientos }]}
+        heatStartEpochMs={LARGADA}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Ana Díaz")).toBeTruthy());
+
+    // El cap ya paso desde que la pantalla monto (LARGADA es hace 60s, cap de
+    // 30s): arranca pidiendo el cierre final del primer movimiento.
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("CAPEADO")).toBeTruthy());
+    // El WOD ya termino: no puede seguir anunciando un movimiento que viene.
+    expect(screen.queryByText("Sigue")).toBeNull();
+  });
+});
+
+describe("el descanso forzado entre dos partes del mismo WOD", () => {
+  // Estructura de "3 min clean and jerk, descanso, 4 min de couplet" partida
+  // en dos partes -mismo patron que "Agregar parte B"- donde la PARTE A
+  // declara un bloque `descanso` con su duracion. LARGADA propia, mas cerca
+  // de "ahora" que la global: el descanso tiene que seguir corriendo cuando
+  // el test verifica que esta bloqueado, y con la LARGADA global (60s atras)
+  // cualquier descanso corto ya habria terminado antes de que el test
+  // alcanzara a mirar la pantalla.
+  const LARGADA_CERCA = Date.now() - 12_000;
+
+  function parteConDescanso(restMs: number | null): WodStructure {
+    return {
+      scheme: "cap",
+      timeCapMs: 8_000, // ya vencido: LARGADA_CERCA es hace 12s.
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1",
+          orderIndex: 0,
+          kind: "trabajo",
+          rounds: 1,
+          durationMs: null,
+          restMs: null,
+          movements: [
+            {
+              id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "reps",
+              targetPerRound: [30], loadKg: null, loadUnit: "kg",
+              maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+            },
+          ],
+        },
+        ...(restMs === null
+          ? []
+          : [
+              {
+                id: "b2",
+                orderIndex: 1,
+                kind: "descanso" as const,
+                rounds: 1,
+                durationMs: null,
+                restMs,
+                movements: [],
+              },
+            ]),
+      ],
+    };
+  }
+
+  const parteB: WodStructure = {
+    scheme: "cap",
+    timeCapMs: 300_000,
+    windowMs: null,
+    intervalMs: null,
+    blocks: [
+      {
+        id: "b3",
+        orderIndex: 0,
+        kind: "trabajo",
+        rounds: 1,
+        durationMs: null,
+        restMs: null,
+        movements: [
+          {
+            id: "m2", orderIndex: 0, name: "Thruster", unit: "reps",
+            targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg",
+            maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+          },
+        ],
+      },
+    ],
+  };
+
+  /** Cierra la parte A (ya capeada al montar) reportando 18 de 30. */
+  async function cerrarParteA() {
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "18" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+    await waitFor(() => expect(screen.getByText("CAPEADO")).toBeTruthy());
+  }
+
+  it("con un bloque de descanso cargado, no ofrece ningún botón: solo la cuenta regresiva", async () => {
+    // 30s de descanso, muy por encima de lo que tarda el test en correr: sigue
+    // "en curso" cuando se verifica.
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[
+          { partId: "p1", label: "A", structure: parteConDescanso(30_000) },
+          { partId: "p2", label: "B", structure: parteB },
+        ]}
+        heatStartEpochMs={LARGADA_CERCA}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Ana Díaz")).toBeTruthy());
+    await cerrarParteA();
+
+    expect(screen.getByText("Descanso")).toBeTruthy();
+    // Nada que el juez pueda tocar para SALTAR el descanso o arrancar la
+    // parte B antes de tiempo. "DESHACER" queda aparte a propósito: sigue
+    // disponible por si el juez se equivocó al cerrar la parte A -es la
+    // ranura de deshacer de siempre, no una forma de adelantar nada-.
+    expect(screen.queryByRole("button", { name: /Empezar parte/ })).toBeNull();
+    const botones = screen.queryAllByRole("button").map((b) => b.textContent);
+    expect(botones.every((t) => t?.includes("DESHACER"))).toBe(true);
+  });
+
+  it("sin bloque de descanso, sigue con el botón manual de siempre (compatibilidad)", async () => {
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[
+          { partId: "p1", label: "A", structure: parteConDescanso(null) },
+          { partId: "p2", label: "B", structure: parteB },
+        ]}
+        heatStartEpochMs={LARGADA_CERCA}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("Ana Díaz")).toBeTruthy());
+    await cerrarParteA();
+
+    const boton = screen.getByRole("button", { name: /Empezar parte B/ });
+    fireEvent.click(boton);
+
+    // Pasó de verdad a la parte B: ahora pide Thruster (el título del
+    // movimiento, arriba del marcador).
+    await waitFor(() =>
+      expect(screen.getByText("Thruster", { selector: "p" })).toBeTruthy(),
+    );
   });
 });
 

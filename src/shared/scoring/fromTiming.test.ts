@@ -169,6 +169,7 @@ describe("scoreFromWodResult", () => {
       laneId: "c1",
       status: "finished",
       completedReps: 90,
+      completedByUnit: {},
       completedRounds: 3,
       repsInRound: 0,
       currentRoundBreakdown: [],
@@ -230,6 +231,29 @@ describe("scoreFromWodResult", () => {
       });
       expect(score.value).toBe(213);
     }
+  });
+
+  it("un WOD que mezcla reps fijas con calorías abiertas puntúa SOLO la unidad de la prueba", () => {
+    // "10 devil press (reps) + max cal bike (calorias)": completedReps suma
+    // las dos (10 + 80 = 90), pero el score de calorías tiene que ser 80, no
+    // 90. Bug real reportado en produccion (CrossFit Session #2, WOD #2).
+    const score = scoreFromWodResult({
+      partId: "p1",
+      teamId: "t1",
+      wod: wod({ completedReps: 90, completedByUnit: { reps: 10, calorias: 80 } }),
+      scoreUnit: "calorias",
+    });
+    expect(score.value).toBe(80);
+  });
+
+  it("con una sola unidad, el score por unidad da lo mismo que completedReps", () => {
+    const score = scoreFromWodResult({
+      partId: "p1",
+      teamId: "t1",
+      wod: wod({ completedReps: 90, completedByUnit: { reps: 90 } }),
+      scoreUnit: "reps",
+    });
+    expect(score.value).toBe(90);
   });
 
   it("quien capeó no tiene marca: rankea por lo que alcanzó a hacer", () => {
