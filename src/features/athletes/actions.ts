@@ -386,9 +386,13 @@ export async function deleteTeam(
   await requireManage(eventId);
   const supabase = await createClient();
 
-  // Los atletas quedan: pueden estar en otro equipo, y borrarlos en cascada
-  // seria destruir datos que el organizador no pidio borrar.
-  const { error } = await supabase.from("teams").delete().eq("id", teamId);
+  // El borrado pasa por `delete_team`, no por un `.delete()` directo: un
+  // atleta que sigue en OTRO equipo se conserva, pero uno que se queda sin
+  // ninguno se borra de verdad -- sin eso, su correo y su DNI quedaban
+  // ocupados para siempre contra `athletes_email_unico` /
+  // `athletes_document_unico`, y volver a crearlo con los mismos datos
+  // chocaba con "ese correo ya fue registrado".
+  const { error } = await supabase.rpc("delete_team", { p_team_id: teamId });
   if (error) return { error: traducir(error) };
 
   refrescar(eventId);

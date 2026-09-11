@@ -27,9 +27,17 @@ import { Icono } from "./Icono";
  * ocupa un lugar en un `flex`/`grid` del llamador es el DIV —el select vive
  * adentro, en `position: relative`— asi que sin esto un `flex-1` pasado por
  * className nunca llegaba a estirar el contenedor real, solo un select que
- * ya no tenia de que ancho estirarse. Las clases de texto/padding que
- * tambien viajan en `className` (`py-3`, `text-sm`) no le hacen nada visible
- * a un div vacio, asi que aplicarlas dos veces es inofensivo.
+ * ya no tenia de que ancho estirarse.
+ *
+ * EL DIV SIEMPRE VA CON `!p-0`, SIN IMPORTAR QUE TRAIGA `className`. Un
+ * `py-3` pasado para igualar la altura del select a la de un `Field` (ver
+ * `CLASE_INPUT` en `SimpleForm.tsx`) tambien le caia AL DIV —que no tiene
+ * borde ni fondo propios, asi que el padding no se ve como caja, se ve como
+ * un corrimiento: el borde del select quedaba unos pixeles mas abajo que el
+ * de un `<input>` vecino en la misma fila de grilla, aunque las dos
+ * etiquetas midieran lo mismo. Bug real, reportado como "País y DNI no
+ * estan alineados" en `AltaDeAtleta`. El `!` fuerza que el div nunca tenga
+ * padding propio sin importar el orden de las clases en el string.
  */
 export function Selector({
   className = "",
@@ -44,7 +52,7 @@ export function Selector({
   error?: boolean;
 }) {
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative !p-0 ${className}`}>
       <select
         disabled={disabled}
         aria-invalid={error}

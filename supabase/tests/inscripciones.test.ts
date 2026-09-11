@@ -912,3 +912,83 @@ describe("set_team_approval: el toggle 'Estado' de /atletas", () => {
     });
   });
 });
+
+describe("delete_team: quitar un atleta libera su correo y su documento", () => {
+  async function crearConDocumento(documentId: string, email: string) {
+    let teamId = "";
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ id: string }>(
+        "select id from admin_create_registration($1, $2, $3::jsonb)",
+        [
+          s.divisionId,
+          null,
+          JSON.stringify([{
+            firstName: "T", lastName: documentId, email,
+            birthDate: "1990-01-01", country: "CO", documentId,
+          }]),
+        ],
+      );
+      teamId = res.rows[0].id;
+    });
+    return teamId;
+  }
+
+  it("borra al atleta huerfano, y el mismo correo/documento se puede volver a usar", async () => {
+    const teamId = await crearConDocumento("borrar-1", "borrar1@correo.com");
+
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query("select delete_team($1)", [teamId]);
+
+      const equipo = await s.db.query("select 1 from teams where id = $1", [teamId]);
+      expect(equipo.rows).toHaveLength(0);
+
+      const atleta = await s.db.query(
+        "select 1 from athletes where document_id = 'borrar-1'",
+      );
+      expect(atleta.rows).toHaveLength(0);
+    });
+
+    // El bug reportado: crear de nuevo con el mismo correo y documento
+    // chocaba con "ya fue registrado" porque la fila de athletes quedaba
+    // huerfana. Ahora tiene que poder recrearse sin error.
+    const nuevoTeamId = await crearConDocumento("borrar-1", "borrar1@correo.com");
+    expect(nuevoTeamId).toBeTruthy();
+    expect(nuevoTeamId).not.toBe(teamId);
+  });
+
+  it("no borra un atleta que sigue en OTRO equipo del mismo evento", async () => {
+    const primerEquipo = await crearConDocumento("compartido-1", "compartido1@correo.com");
+
+    let atletaId = "";
+    await asUser(s.db, s.users.owner, async () => {
+      atletaId = (
+        await s.db.query<{ id: string }>(
+          "select id from athletes where document_id = 'compartido-1'",
+        )
+      ).rows[0].id;
+
+      const segundoEquipo = await s.db.query<{ id: string }>(
+        `insert into teams (event_id, division_id, bib_number) values ($1, $2, 9999) returning id`,
+        [s.eventId, s.divisionId],
+      );
+      await s.db.query(
+        "insert into team_members (team_id, athlete_id, event_id) values ($1, $2, $3)",
+        [segundoEquipo.rows[0].id, atletaId, s.eventId],
+      );
+
+      await s.db.query("select delete_team($1)", [primerEquipo]);
+
+      const sigueExistiendo = await s.db.query("select 1 from athletes where id = $1", [
+        atletaId,
+      ]);
+      expect(sigueExistiendo.rows).toHaveLength(1);
+    });
+  });
+
+  it("un forastero no puede quitar un equipo", async () => {
+    const teamId = await crearConDocumento("forastero-quitar-1", "forastero.quitar@correo.com");
+    await asUser(s.db, s.users.forastero, () =>
+      expectDenied(() => s.db.query("select delete_team($1)", [teamId])),
+    );
+  });
+});

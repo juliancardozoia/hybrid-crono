@@ -340,7 +340,7 @@ function QuitarEquipo({
       <button
         type="button"
         onClick={() => setConfirmar(true)}
-        title="Quitar equipo"
+        title="Quitar atleta/equipo"
         className="flex h-11 w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
       >
         ✕
@@ -349,7 +349,7 @@ function QuitarEquipo({
       <Modal
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
-        titulo="Quitar equipo"
+        titulo="Quitar atleta/equipo"
         ancho="max-w-sm"
       >
         <div className="text-left">
@@ -361,10 +361,18 @@ function QuitarEquipo({
             <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
               Cancelar
             </Boton>
+            {/* La etiqueta del boton es CORTA a proposito, igual que
+                "Eliminar" en la confirmacion de categoria
+                (ParametrosDeCategoria.tsx): un texto largo aca comparte fila
+                con "Cancelar" en un modal angosto (max-w-sm) y la envolvia a
+                dos lineas, agrandando el contenido lo suficiente para
+                disparar el scroll vertical del Modal que ninguna otra
+                confirmacion corta activa. El titulo mas descriptivo va en
+                `titulo`/`title`, que viven en su propia linea. */}
             <FormularioDeEstado
               accion={alQuitar.bind(null, equipo.id)}
               estadoInicial={{ error: null }}
-              etiqueta="Quitar equipo"
+              etiqueta="Quitar"
               mensajeDeCarga="Quitando el equipo…"
               className={claseDeBoton({ variante: "destructive", compacto: true })}
             />
