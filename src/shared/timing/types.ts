@@ -121,6 +121,10 @@ export type AnomalyCode =
   // Llegó con elapsed >= el cap o la ventana: no cuenta para el resultado,
   // pero queda en el log para que se pueda auditar un reclamo.
   | "marca_despues_del_limite"
+  // Llegó durante un descanso obligatorio entre bloques de la misma prueba:
+  // no hay paso que cerrar, y contarla arruinaria el conteo del bloque
+  // siguiente.
+  | "marca_durante_descanso"
   // El juez escribió más unidades que el objetivo del paso (p. ej. 30 en un
   // movimiento de 21): se recorta al objetivo para no inflar el resultado, y
   // queda la anomalía para que se pueda auditar.

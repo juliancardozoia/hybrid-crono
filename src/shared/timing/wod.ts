@@ -75,6 +75,19 @@ export type WodBlock = {
   durationMs: number | null;
   restMs: number | null;
   movements: WodMovement[];
+  /**
+   * Tope de tiempo de ESTE bloque de trabajo, medido desde que el bloque
+   * arranca -no desde la largada del heat-. Solo tiene efecto en bloques que
+   * no son `descanso`, y solo cuando la parte tiene AL MENOS un bloque
+   * `descanso` (ver `reduceWodEvents`): es lo que permite "30 clean and jerk,
+   * cap 8 min, descanso 1 min, thruster por tiempo" como una sola prueba, en
+   * vez de partirla en dos partes con puntajes separados.
+   *
+   * Optativo (no `number | null` a secas) para no obligar a tocar cada
+   * fixture de test que ya construye un `WodBlock` a mano: ausente se trata
+   * igual que `null`.
+   */
+  capMs?: number | null;
 };
 
 export type WodStructure = {
@@ -183,7 +196,20 @@ export type WodResult = {
    */
   maxAttempts: number | null;
   noRepCount: number;
-  /** Se acabo el tiempo sin terminar la tarea. */
+  /**
+   * Se acabo el tiempo sin terminar la tarea.
+   *
+   * Con bloques de descanso (ver `reduceWodEvents`), esto queda en `true`
+   * para SIEMPRE en cuanto UN SOLO bloque de trabajo se cierra por su propio
+   * tope -aunque el atleta haya seguido y completado todo lo que vino
+   * despues-. Es la decision de producto explicita: si el bloque A no se
+   * completo a tiempo, la prueba ENTERA rankea como capeada, por las reps
+   * totales acumuladas (A + lo que se alcance a hacer despues), siempre
+   * detras de quien completo todo. `status` puede llegar a "finished" igual
+   * -significa que no queda nada mas que marcar-, y es `scoreFromWodResult`
+   * quien mira `capped` primero para traducirlo a "capeado" en vez de
+   * "valido".
+   */
   capped: boolean;
   /**
    * `capped` y el juez TODAVIA no reporto cuanto llevaba en el paso que quedo
@@ -196,6 +222,16 @@ export type WodResult = {
   awaitingFinalTally: boolean;
   /** Elapsed en el que el carril dejo de correr. Congela el reloj en pantalla. */
   stoppedAtMs: number | null;
+  /**
+   * El atleta esta en un descanso OBLIGATORIO entre bloques de esta misma
+   * prueba (no el descanso entre PARTES, ese lo maneja la pantalla). Mientras
+   * esto sea true, el juez no tiene nada que marcar: el reductor avanza solo
+   * al bloque siguiente en cuanto se cumple `descansoTerminaMs`, sin que
+   * nadie tenga que decidirlo.
+   */
+  enDescanso: boolean;
+  /** Elapsed en el que termina el descanso actual, o null si no hay ninguno activo. */
+  descansoTerminaMs: number | null;
   anomalies: Anomaly[];
 };
 
@@ -242,20 +278,45 @@ export function estiloDelPaso(
 }
 
 /**
- * Despliega la estructura en la lista ordenada de pasos que el atleta recorre.
+ * Un tramo de la prueba: o un bloque de trabajo (con el rango de pasos del
+ * plan que le pertenecen y su tope propio, si tiene), o un descanso
+ * obligatorio (sin pasos, con su duracion fija).
  *
- * Un chipper es un bloque de una ronda con diez movimientos; Fran es uno de
- * tres rondas con dos. Los dos salen de aca sin ningun caso especial.
+ * Vive separado de `WodStep` porque un descanso no es un paso -no hay nada
+ * que el juez marque- pero SI necesita representarse en la secuencia para que
+ * el reductor sepa cuando bloquear el avance y durante cuanto.
  */
-export function planDelWod(structure: WodStructure): WodStep[] {
+export type WodSegmento =
+  | { kind: "trabajo"; blockId: string; capMs: number | null; stepStart: number; stepEnd: number }
+  | { kind: "descanso"; blockId: string; durationMs: number | null };
+
+/**
+ * Arma en UNA sola pasada el plan de pasos Y la secuencia de segmentos.
+ *
+ * Las dos salen de la MISMA lista de bloques ordenados para que nunca puedan
+ * divergir: si `planDelWod` indexara los pasos por su cuenta y esto los
+ * recalculara aparte, un dia dejarian de coincidir y el reductor apuntaria al
+ * segmento equivocado para un paso dado.
+ */
+function construirPlanYSegmentos(structure: WodStructure): {
+  pasos: WodStep[];
+  segmentos: WodSegmento[];
+} {
   const pasos: WodStep[] = [];
+  const segmentos: WodSegmento[] = [];
 
   const bloques = [...structure.blocks].sort((a, b) => a.orderIndex - b.orderIndex);
 
   for (const bloque of bloques) {
-    // Un descanso no se marca: es tiempo que pasa, no trabajo que se cuenta.
-    if (bloque.kind === "descanso") continue;
+    if (bloque.kind === "descanso") {
+      // Un descanso no se marca: es tiempo que pasa, no trabajo que se
+      // cuenta. Igual entra a `segmentos`: ahi es donde el reductor sabe que
+      // tiene que bloquear el avance durante `durationMs`.
+      segmentos.push({ kind: "descanso", blockId: bloque.id, durationMs: bloque.durationMs });
+      continue;
+    }
 
+    const stepStart = pasos.length;
     const movimientos = [...bloque.movements].sort((a, b) => a.orderIndex - b.orderIndex);
     const totalRounds = Math.max(1, bloque.rounds);
 
@@ -279,9 +340,27 @@ export function planDelWod(structure: WodStructure): WodStep[] {
         });
       }
     }
+
+    segmentos.push({
+      kind: "trabajo",
+      blockId: bloque.id,
+      capMs: bloque.capMs ?? null,
+      stepStart,
+      stepEnd: pasos.length,
+    });
   }
 
-  return pasos;
+  return { pasos, segmentos };
+}
+
+/**
+ * Despliega la estructura en la lista ordenada de pasos que el atleta recorre.
+ *
+ * Un chipper es un bloque de una ronda con diez movimientos; Fran es uno de
+ * tres rondas con dos. Los dos salen de aca sin ningun caso especial.
+ */
+export function planDelWod(structure: WodStructure): WodStep[] {
+  return construirPlanYSegmentos(structure).pasos;
 }
 
 function numeroDelPayload(payload: Record<string, unknown>, clave: string): number | null {
@@ -306,6 +385,51 @@ export function reduceWodEvents(
    * contra el tope es la misma doctrina que el ancla del reloj — se deriva, no
    * se acumula.
    */
+  nowElapsedMs?: number,
+): WodResult {
+  // Con un bloque de descanso adentro, el problema cambia de forma: en vez de
+  // UN tope para toda la parte, cada bloque de trabajo puede tener el suyo,
+  // medido desde que ESE bloque arranca. `reduceWodEventsSimple` (sin tocar,
+  // es el unico codigo probado en competencia real) sigue cubriendo TODO lo
+  // demas -incluido un WOD "cap"/"libre" de un solo bloque de trabajo, que es
+  // la enorme mayoria de las pruebas ya cargadas-. Este branch es
+  // exclusivamente para el caso nuevo.
+  //
+  // OJO: no alcanza con "tiene algun bloque descanso". El patron heredado que
+  // arma WodJudgeScreen para el descanso ENTRE PARTES es exactamente "un
+  // bloque de trabajo + un descanso COLGANDO al final, sin nada despues" -la
+  // Parte B es una estructura APARTE, no otro bloque de esta misma-. Si ese
+  // patron entrara aca, el descanso nunca tendria a que bloque de trabajo
+  // volver: `stepIndex >= plan.length` se cumple igual (no hay mas pasos que
+  // marcar) y `status` daria "finished" AL MISMO TIEMPO que `enDescanso`
+  // fuera true, dos cosas contradictorias que la pantalla ya resuelve por su
+  // cuenta (el "Cerrado" con CAPEADO/TERMINO en el cuerpo, el countdown entre
+  // partes en el footer). Por eso el branch nuevo exige que ALGUN descanso
+  // tenga un bloque de trabajo REAL despues -sino, no hay nada que este
+  // reductor tenga que resolver que el de siempre no resuelva ya.
+  const { segmentos } = construirPlanYSegmentos(structure);
+  const hayTrabajoDespuesDeUnDescanso = segmentos.some(
+    (seg, i) => seg.kind === "descanso" && segmentos.slice(i + 1).some((s) => s.kind === "trabajo"),
+  );
+  const tieneDescansoIntermedio =
+    (structure.scheme === "cap" || structure.scheme === "libre") && hayTrabajoDespuesDeUnDescanso;
+
+  if (tieneDescansoIntermedio) {
+    return reduceWodEventsConDescanso(laneId, events, structure, nowElapsedMs);
+  }
+  return reduceWodEventsSimple(laneId, events, structure, nowElapsedMs);
+}
+
+/**
+ * El reductor de siempre: UN tope (cap/ventana) para toda la parte, sin
+ * bloques de descanso. Es el unico codigo probado en competencia real y no se
+ * toca al agregar la variante con descansos -esa vive aparte, en
+ * `reduceWodEventsConDescanso`.
+ */
+function reduceWodEventsSimple(
+  laneId: string,
+  events: TimingEvent[],
+  structure: WodStructure,
   nowElapsedMs?: number,
 ): WodResult {
   const anomalies: Anomaly[] = [];
@@ -628,6 +752,398 @@ export function reduceWodEvents(
     capped,
     awaitingFinalTally,
     stoppedAtMs,
+    // Este reductor no tiene bloques de descanso -esa es la variante de
+    // `reduceWodEventsConDescanso`-, asi que nunca esta descansando.
+    enDescanso: false,
+    descansoTerminaMs: null,
+    anomalies,
+  };
+}
+
+/**
+ * El reductor de un WOD con bloques de descanso OBLIGATORIO entre bloques de
+ * trabajo (ej: "30 clean and jerk, cap 8 min, descanso 1 min, thruster por
+ * tiempo, sin cap"). Solo lo llama el despachador de `reduceWodEvents` cuando
+ * la parte tiene al menos un bloque `descanso` y su esquema es `cap` o
+ * `libre`.
+ *
+ * Comparte la doctrina del reductor de siempre -puro, corre igual en cliente
+ * y servidor, nada se borra, las anomalias se reportan sin descartar datos-
+ * pero cambia el shape del problema: en vez de UN tope para toda la parte,
+ * cada bloque de trabajo tiene el suyo (o ninguno), medido desde que ESE
+ * bloque arranca -nunca desde la largada del heat-, y un bloque `descanso`
+ * bloquea el avance hasta que se cumple su duracion, sin que el juez decida
+ * nada: se deriva del reloj, igual que el cap de siempre.
+ *
+ * Decision de producto (confirmada, no inferida): si UN SOLO bloque de
+ * trabajo no llega a su objetivo antes de su propio tope, la prueba ENTERA
+ * queda "capeada" para siempre -aunque el atleta siga y complete todo lo que
+ * viene despues-, y el score final son las reps totales acumuladas en toda
+ * la prueba. Por eso `capped` es una bandera que una vez prendida no se
+ * apaga (`algunSegmentoCapeado`), independiente de que `status` mas adelante
+ * pueda llegar a "finished" -eso solo dice "no queda nada mas que marcar";
+ * es `scoreFromWodResult` quien mira `capped` primero.
+ */
+function reduceWodEventsConDescanso(
+  laneId: string,
+  events: TimingEvent[],
+  structure: WodStructure,
+  nowElapsedMs?: number,
+): WodResult {
+  const anomalies: Anomaly[] = [];
+  const { pasos: plan, segmentos } = construirPlanYSegmentos(structure);
+  const pasoPorMovimiento = new Set(plan.map((p) => p.movementId));
+
+  const mine = events.filter((e) => e.laneId === laneId);
+  const byId = new Map(mine.map((e) => [e.id, e]));
+
+  const superseded = new Set<string>();
+  for (const e of mine) {
+    if (!e.supersedesId) continue;
+    if (!byId.has(e.supersedesId)) {
+      anomalies.push({
+        code: "orphan_undo",
+        message: `El evento ${e.id} anula a ${e.supersedesId}, que no existe en este log.`,
+        eventId: e.id,
+      });
+      continue;
+    }
+    superseded.add(e.supersedesId);
+  }
+
+  const active = mine
+    .filter((e) => !e.voided && !superseded.has(e.id) && e.type !== "undo")
+    .sort((a, b) => a.elapsedMs - b.elapsedMs || a.seq - b.seq);
+
+  let stepIndex = 0;
+  let progress = 0;
+  let completedReps = 0;
+  const completedByUnit: Partial<Record<MovementUnit, number>> = {};
+  function sumarPorUnidad(unit: MovementUnit, unidades: number) {
+    completedByUnit[unit] = (completedByUnit[unit] ?? 0) + unidades;
+  }
+  let noRepCount = 0;
+  let tiebreakMs: number | null = null;
+  let ultimoCierreMs: number | null = null;
+  const unidadesCerradas: number[] = [];
+
+  // El estado del "cursor de segmento": en cual bloque estamos, desde cuando
+  // corre SU reloj propio, y si ya se uso el cierre final de ESE bloque.
+  let segmentIndex = 0;
+  let segmentStartMs = 0;
+  let cierreFinalUsadoDeSegmento = false;
+  // Una vez true, queda true para siempre: es la decision de producto de
+  // arriba, no se resetea aunque el atleta termine todo lo que sigue.
+  let algunSegmentoCapeado = false;
+
+  function segmentoActual() {
+    return segmentos[segmentIndex];
+  }
+
+  // Compatibilidad con el patron heredado (un solo bloque de trabajo seguido
+  // de un descanso, usado hasta ahora solo como el "descanso ENTRE partes"
+  // que arma la pantalla del juez -ver WodJudgeScreen-): ese bloque nunca
+  // declaro su propio `capMs`, confiaba en el `timeCapMs` de la PARTE. Sin
+  // este fallback, cualquier estructura asi -que ya existe en produccion-
+  // dejaria de capear porque el segmento no tiene tope propio.
+  //
+  // Solo aplica al PRIMER segmento de trabajo: es el unico caso real hoy
+  // (un bloque, un descanso, nada mas), y extenderlo a bloques posteriores
+  // inventaria un comportamiento sin ningun caso de uso que lo pida.
+  const primerSegmentoDeTrabajo = segmentos.findIndex((s) => s.kind === "trabajo");
+
+  function finDelSegmentoMs(): number | null {
+    const seg = segmentoActual();
+    if (!seg || seg.kind !== "trabajo") return null;
+    const cap =
+      seg.capMs ??
+      (segmentIndex === primerSegmentoDeTrabajo && structure.scheme === "cap"
+        ? structure.timeCapMs
+        : null);
+    if (cap === null) return null;
+    return segmentStartMs + cap;
+  }
+
+  /**
+   * Salta los descansos ya cumplidos a esta altura del reloj, en cadena -por
+   * si dos bloques `descanso` quedaran seguidos, o uno de duracion 0-. Un
+   * descanso no necesita ningun evento para terminar: se deriva del reloj,
+   * igual que el cap.
+   */
+  function avanzarDescansos(hastaMs: number) {
+    for (;;) {
+      const seg = segmentoActual();
+      if (!seg || seg.kind !== "descanso") return;
+      const fin = segmentStartMs + (seg.durationMs ?? 0);
+      if (hastaMs < fin) return;
+      segmentIndex += 1;
+      segmentStartMs = fin;
+      cierreFinalUsadoDeSegmento = false;
+    }
+  }
+
+  /** Cierra el segmento de trabajo actual (natural o forzado) y pasa al siguiente. */
+  function cerrarSegmento(elapsedMs: number) {
+    segmentIndex += 1;
+    segmentStartMs = elapsedMs;
+    cierreFinalUsadoDeSegmento = false;
+    avanzarDescansos(elapsedMs);
+  }
+
+  /** Cierra el paso actual, avanza, y si eso termino el bloque, lo cierra. */
+  function cerrarPaso(unidades: number, elapsedMs: number) {
+    const paso = plan[stepIndex];
+    if (!paso) return;
+    completedReps += unidades;
+    sumarPorUnidad(paso.unit, unidades);
+    unidadesCerradas[stepIndex] = unidades;
+    if (paso.isTiebreak) tiebreakMs = elapsedMs;
+    ultimoCierreMs = elapsedMs;
+    stepIndex += 1;
+    progress = 0;
+
+    const seg = segmentoActual();
+    if (seg && seg.kind === "trabajo" && stepIndex >= seg.stepEnd) {
+      cerrarSegmento(elapsedMs);
+    }
+  }
+
+  const hasStart = active.some((e) => e.type === "lane_start");
+  const dqEvent = active.find((e) => e.type === "dq");
+  const dnfEvent = active.find((e) => e.type === "dnf");
+
+  for (const evento of active) {
+    // Antes de interpretar el evento, corremos el reloj hasta su elapsed: si
+    // el descanso ya se cumplio para cuando esto llego, el evento se evalua
+    // contra el bloque SIGUIENTE, no contra el descanso que ya termino.
+    avanzarDescansos(evento.elapsedMs);
+
+    const segEnDescanso = segmentoActual();
+    if (segEnDescanso && segEnDescanso.kind === "descanso") {
+      // Nada que marcar durante un descanso: no hay paso que cerrar, y
+      // cualquier marca que llegue ahi es un error (del juez, o de la red
+      // reordenando eventos), no una repeticion valida.
+      if (
+        evento.type === "rep" ||
+        evento.type === "movement_done" ||
+        evento.type === "round_done" ||
+        evento.type === "no_rep" ||
+        evento.type === "tiebreak"
+      ) {
+        anomalies.push({
+          code: "marca_durante_descanso",
+          message: "La marca llegó durante un descanso obligatorio: no cuenta para el resultado.",
+          eventId: evento.id,
+        });
+      }
+      continue;
+    }
+
+    const paso = plan[stepIndex];
+    const tope = finDelSegmentoMs();
+
+    if (tope !== null && evento.elapsedMs >= tope) {
+      const esElCierreFinal = evento.type === "movement_done" && !cierreFinalUsadoDeSegmento;
+
+      if (!esElCierreFinal) {
+        if (
+          evento.type === "rep" ||
+          evento.type === "movement_done" ||
+          evento.type === "round_done" ||
+          evento.type === "tiebreak"
+        ) {
+          anomalies.push({
+            code: "marca_despues_del_limite",
+            message: "La marca llegó después del cap de este bloque: no cuenta para el resultado.",
+            eventId: evento.id,
+          });
+        }
+        continue;
+      }
+
+      cierreFinalUsadoDeSegmento = true;
+      algunSegmentoCapeado = true;
+      // Sigue al switch de abajo, que cierra el paso con la cantidad del
+      // payload -y `cerrarPaso` dispara `cerrarSegmento` sola al llegar a
+      // `stepEnd`-.
+    }
+
+    switch (evento.type) {
+      case "rep": {
+        if (!paso) {
+          anomalies.push({
+            code: "marca_sobrante",
+            message: "Marca de repetición cuando el WOD ya estaba completo.",
+            eventId: evento.id,
+          });
+          break;
+        }
+        const movimientoId = String(evento.payload.partMovementId ?? "");
+        if (movimientoId && !pasoPorMovimiento.has(movimientoId)) {
+          anomalies.push({
+            code: "movimiento_desconocido",
+            message: "La marca apunta a un movimiento que no está en esta prueba.",
+            eventId: evento.id,
+          });
+        }
+        progress += 1;
+        if (!paso.maxReps && paso.target > 0 && progress >= paso.target) {
+          cerrarPaso(paso.target, evento.elapsedMs);
+        }
+        break;
+      }
+
+      case "no_rep":
+        noRepCount += 1;
+        break;
+
+      case "movement_done": {
+        if (!paso) {
+          anomalies.push({
+            code: "marca_sobrante",
+            message: "Cierre de movimiento cuando el WOD ya estaba completo.",
+            eventId: evento.id,
+          });
+          break;
+        }
+        const cantidad = numeroDelPayload(evento.payload, "cantidad");
+        let unidades = cantidad !== null ? cantidad : Math.max(paso.target, progress);
+        if (!paso.maxReps && paso.target > 0 && unidades > paso.target) {
+          anomalies.push({
+            code: "cantidad_excede_objetivo",
+            message: `Se registraron ${unidades} en ${paso.name} pero el objetivo era ${paso.target}: se ajusta a ${paso.target}.`,
+            eventId: evento.id,
+          });
+          unidades = paso.target;
+        }
+        cerrarPaso(unidades, evento.elapsedMs);
+        break;
+      }
+
+      case "round_done": {
+        if (!paso) break;
+        const rondaActual = paso.round;
+        const bloqueActual = paso.blockId;
+        let destino = stepIndex;
+        while (
+          destino < plan.length &&
+          plan[destino].blockId === bloqueActual &&
+          plan[destino].round === rondaActual
+        ) {
+          destino += 1;
+        }
+        completedReps += progress;
+        sumarPorUnidad(paso.unit, progress);
+        ultimoCierreMs = evento.elapsedMs;
+        stepIndex = destino;
+        progress = 0;
+
+        const segRoundDone = segmentoActual();
+        if (segRoundDone && segRoundDone.kind === "trabajo" && stepIndex >= segRoundDone.stepEnd) {
+          cerrarSegmento(evento.elapsedMs);
+        }
+        break;
+      }
+
+      case "tiebreak":
+        tiebreakMs = evento.elapsedMs;
+        break;
+
+      default:
+        // lane_start, dnf, dq, note, time_cap: o ya se leyeron arriba, o no
+        // afectan el conteo. `lift` no aplica a este camino (es exclusivo de
+        // `sin_reloj`, que nunca llega aca).
+        break;
+    }
+  }
+
+  // Con el log ya recorrido, seguimos avanzando el reloj hasta "ahora": puede
+  // que el ultimo evento haya caido antes de que terminara un descanso, y sin
+  // esto la pantalla seguiria mostrando "descansando" con el tiempo ya
+  // cumplido, o el cap de un bloque sin marcajes nunca se detectaria.
+  const ultimoMarcaje = active.length > 0 ? active[active.length - 1].elapsedMs : 0;
+  const elapsedDeReferencia = nowElapsedMs ?? ultimoMarcaje;
+  avanzarDescansos(elapsedDeReferencia);
+
+  const segActual = segmentoActual();
+  const enDescanso = segActual?.kind === "descanso";
+  const descansoTerminaMs = enDescanso ? segmentStartMs + (segActual.durationMs ?? 0) : null;
+
+  const tope = finDelSegmentoMs();
+  const seAcaboElTiempoDelSegmento = tope !== null && hasStart && elapsedDeReferencia >= tope;
+
+  const awaitingFinalTally =
+    seAcaboElTiempoDelSegmento &&
+    !cierreFinalUsadoDeSegmento &&
+    !!segActual &&
+    segActual.kind === "trabajo" &&
+    stepIndex < segActual.stepEnd;
+
+  // Todo marcado y ningun bloque capeo en el camino: la unica forma de llegar
+  // a "valido" en vez de "capeado".
+  const completo = plan.length > 0 && stepIndex >= plan.length && !algunSegmentoCapeado;
+  const capped = algunSegmentoCapeado;
+
+  let status: LaneStatus;
+  if (dqEvent) status = "dq";
+  else if (dnfEvent) status = "dnf";
+  else if (!hasStart) status = "not_started";
+  // Todo marcado -capeo algun bloque o no-: no queda nada mas que el juez
+  // pueda tocar. `capped` es quien decide si esto puntua como "valido" o
+  // "capeado" mas adelante, en `scoreFromWodResult`.
+  else if (stepIndex >= plan.length) status = "finished";
+  else status = "running";
+
+  const { completedRounds, repsInRound, currentRoundBreakdown } = contarRondas(
+    plan,
+    stepIndex,
+    progress,
+    unidadesCerradas,
+  );
+
+  const finishedMs = completo ? ultimoCierreMs : null;
+
+  const stoppedAtMs =
+    status === "dq"
+      ? (dqEvent?.elapsedMs ?? null)
+      : status === "dnf"
+        ? (dnfEvent?.elapsedMs ?? null)
+        : status === "finished"
+          ? ultimoCierreMs
+          : null;
+
+  const completedByUnitFinal = { ...completedByUnit };
+  if (progress > 0 && stepIndex < plan.length) {
+    const unidadEnCurso = plan[stepIndex].unit;
+    completedByUnitFinal[unidadEnCurso] = (completedByUnitFinal[unidadEnCurso] ?? 0) + progress;
+  }
+
+  return {
+    laneId,
+    status,
+    completedReps: completedReps + progress,
+    completedByUnit: completedByUnitFinal,
+    completedRounds,
+    repsInRound,
+    currentRoundBreakdown,
+    currentStepIndex:
+      status === "running" || status === "not_started" || awaitingFinalTally
+        ? Math.min(stepIndex, plan.length)
+        : null,
+    currentStepProgress: progress,
+    finishedMs,
+    tiebreakMs,
+    // `sin_reloj` (carga maxima) nunca llega a este reductor: el despachador
+    // solo entra aca con esquema `cap` o `libre`.
+    bestLiftKg: null,
+    attempts: [],
+    maxAttempts: null,
+    noRepCount,
+    capped,
+    awaitingFinalTally,
+    stoppedAtMs,
+    enDescanso,
+    descansoTerminaMs,
     anomalies,
   };
 }

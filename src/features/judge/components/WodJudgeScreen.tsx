@@ -457,6 +457,19 @@ export function WodJudgeScreen({
                 })
               }
             />
+          ) : resultado.enDescanso ? (
+            // El bloque anterior ya cerro (a tiempo o por su cap, con el
+            // cierre final ya confirmado si hizo falta) y el reductor decidio
+            // SOLO que toca descansar: el juez no tiene nada que tocar, ni
+            // forma de arrancar el bloque siguiente antes de tiempo. Termina
+            // solo -sin ningun evento, se deriva del reloj- en cuanto se
+            // cumple `descansoTerminaMs`, y el proximo render ya lo va a
+            // mostrar como terminado.
+            <DescansoBloqueado
+              anchor={anchor}
+              terminaMs={resultado.descansoTerminaMs}
+              proximoMovimiento={paso}
+            />
           ) : terminado || !paso ? (
             <Cerrado resultado={resultado} esquema={esquema} plan={plan} />
           ) : (
@@ -1274,6 +1287,51 @@ function Cerrado({
  * gris neutro que tenia antes) es lo que la separa de un dato mas: es la
  * unica caja de toda la pantalla, aparte del marcador, que usa ese color.
  */
+/**
+ * El descanso OBLIGATORIO entre dos bloques de la MISMA prueba (distinto del
+ * descanso ENTRE PARTES, que vive mas abajo con su propio boton/cuenta
+ * regresiva). No hay nada que el juez pueda tocar: ni un boton para saltarlo,
+ * ni uno para arrancar el bloque siguiente antes de tiempo. Pasa solo -el
+ * reductor ya lo resuelve con el reloj, sin ningun evento- y el proximo
+ * render ya lo muestra terminado.
+ */
+function DescansoBloqueado({
+  anchor,
+  terminaMs,
+  proximoMovimiento,
+}: {
+  anchor: Parameters<typeof CuentaRegresiva>[0]["anchor"];
+  /** Elapsed absoluto (desde la largada del heat) en el que termina. */
+  terminaMs: number | null;
+  proximoMovimiento: WodStep | null;
+}) {
+  if (terminaMs === null) return null;
+
+  return (
+    <div className="mx-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 py-6">
+      <span className="text-xs font-semibold tracking-widest text-amber-300 uppercase">
+        Descanso obligatorio
+      </span>
+      {/* `duracionMs` recibe el ELAPSED ABSOLUTO en el que termina, no una
+          duracion relativa: `CuentaRegresiva` hace `duracionMs - elapsed`, y
+          como `elapsed` ya es absoluto desde la largada, pasarle el target
+          absoluto da la cuenta regresiva correcta sin inventar un segundo
+          ancla. Mismo truco que ya usa el descanso ENTRE partes. */}
+      <CuentaRegresiva
+        anchor={anchor}
+        duracionMs={terminaMs}
+        className="font-mono text-4xl font-bold text-amber-200"
+      />
+      {proximoMovimiento && (
+        <span className="text-xs text-neutral-500">
+          Después: {proximoMovimiento.maxReps ? "Máx" : proximoMovimiento.target}{" "}
+          {proximoMovimiento.name}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function CajaDeSiguiente({ siguiente }: { siguiente: WodStep | null }) {
   if (!siguiente) return null;
 

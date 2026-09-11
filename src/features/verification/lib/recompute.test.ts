@@ -56,6 +56,7 @@ function bloque(partId: string, id = `b-${partId}`): FilaDeBloque {
     repeticiones: 1,
     duracion_ms: null,
     descanso_ms: null,
+    cap_ms: null,
   };
 }
 

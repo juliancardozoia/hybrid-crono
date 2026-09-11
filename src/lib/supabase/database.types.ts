@@ -1173,6 +1173,7 @@ export type Database = {
       }
       part_blocks: {
         Row: {
+          cap_ms: number | null
           created_at: string
           descanso_ms: number | null
           duracion_ms: number | null
@@ -1186,6 +1187,7 @@ export type Database = {
           team_mode: Database["public"]["Enums"]["team_mode"] | null
         }
         Insert: {
+          cap_ms?: number | null
           created_at?: string
           descanso_ms?: number | null
           duracion_ms?: number | null
@@ -1199,6 +1201,7 @@ export type Database = {
           team_mode?: Database["public"]["Enums"]["team_mode"] | null
         }
         Update: {
+          cap_ms?: number | null
           created_at?: string
           descanso_ms?: number | null
           duracion_ms?: number | null

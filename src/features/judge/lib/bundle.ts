@@ -270,7 +270,7 @@ async function armarPartesDeWod(
   const [{ data: bloques }, { data: movimientos }] = await Promise.all([
     supabase
       .from("part_blocks")
-      .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms")
+      .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms, cap_ms")
       .in("part_id", partIds)
       .order("order_index"),
     supabase

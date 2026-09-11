@@ -1118,3 +1118,280 @@ describe("un buy-in de reps fijas mezclado con un movimiento abierto de otra uni
     expect(r.completedByUnit).toEqual({ reps: 10, calorias: 80 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bloques de descanso OBLIGATORIO dentro de un solo For Time.
+//
+// Es el caso real reportado: "30 clean and jerk, cap 8 min, descanso 1 min,
+// thruster por tiempo sin cap" como UNA sola prueba (un solo score, un solo
+// puesto), no partida en Parte A / Parte B -que tenia el reloj de la Parte B
+// midiendose desde la largada del heat, no desde que arrancaba esa parte-.
+// ---------------------------------------------------------------------------
+
+describe("un For Time con un bloque de descanso obligatorio en el medio", () => {
+  /**
+   * "30 Clean & Jerk, cap 8 min (480_000ms) - descanso 1 min (60_000ms) -
+   * Thruster por tiempo, sin cap propio."
+   */
+  function cleanJerkDescansoThruster(): WodStructure {
+    return {
+      scheme: "cap",
+      timeCapMs: null,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "bA",
+          orderIndex: 0,
+          kind: "trabajo",
+          rounds: 1,
+          durationMs: null,
+          restMs: null,
+          capMs: 480_000,
+          movements: [
+            {
+              id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps",
+              targetPerRound: [30], loadKg: null, loadUnit: "kg",
+              maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+            },
+          ],
+        },
+        {
+          id: "bR",
+          orderIndex: 1,
+          kind: "descanso",
+          rounds: 1,
+          durationMs: 60_000,
+          restMs: null,
+          movements: [],
+        },
+        {
+          id: "bB",
+          orderIndex: 2,
+          kind: "trabajo",
+          rounds: 1,
+          durationMs: null,
+          restMs: null,
+          capMs: null, // sin cap propio: corre hasta que termina.
+          movements: [
+            {
+              id: "th", orderIndex: 0, name: "Thruster", unit: "reps",
+              targetPerRound: [21], loadKg: null, loadUnit: "kg",
+              maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("completa las 30 reps de A antes del cap: descansa, y B corre normal sin nada capeado", () => {
+    reset();
+    const estructura = cleanJerkDescansoThruster();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 300_000, { cantidad: 30, partMovementId: "cj" }),
+    ];
+    // Todavia dentro del descanso (300_000 + 60_000 = 360_000).
+    const enDescanso = reduceWodEvents("c1", eventos, estructura, 320_000);
+    expect(enDescanso.enDescanso).toBe(true);
+    expect(enDescanso.descansoTerminaMs).toBe(360_000);
+    expect(enDescanso.capped).toBe(false);
+    expect(enDescanso.status).toBe("running");
+
+    // El descanso ya termino: el reductor avanzo SOLO al bloque B, sin que
+    // nadie emita ningun evento de "arranca B".
+    const terminoDescanso = reduceWodEvents("c1", eventos, estructura, 361_000);
+    expect(terminoDescanso.enDescanso).toBe(false);
+    expect(terminoDescanso.status).toBe("running");
+    expect(terminoDescanso.currentStepIndex).toBe(1); // el paso del Thruster.
+
+    // B se completa a las 21 reps, bien despues del descanso.
+    const eventosCompletos = [
+      ...eventos,
+      marcaje("movement_done", 700_000, { cantidad: 21, partMovementId: "th" }),
+    ];
+    const r = reduceWodEvents("c1", eventosCompletos, estructura, 700_000);
+    expect(r.status).toBe("finished");
+    expect(r.capped).toBe(false);
+    expect(r.finishedMs).toBe(700_000);
+    expect(r.completedReps).toBe(51); // 30 + 21.
+  });
+
+  it("NO completa las 30 de A a tiempo: pide el cierre final, y desde ahi el WOD entero queda capeado", () => {
+    reset();
+    const estructura = cleanJerkDescansoThruster();
+    const eventos = [marcaje("lane_start", 0)];
+
+    // Se cumplieron los 8 minutos del bloque A y el juez todavia no cerro.
+    const capeando = reduceWodEvents("c1", eventos, estructura, 480_000);
+    expect(capeando.awaitingFinalTally).toBe(true);
+    expect(capeando.enDescanso).toBe(false); // no se entra al descanso sin el cierre.
+    expect(capeando.currentStepIndex).toBe(0);
+
+    // El juez reporta que el atleta iba en 22 de 30.
+    const eventosConCierre = [
+      ...eventos,
+      marcaje("movement_done", 480_000, { cantidad: 22, partMovementId: "cj" }),
+    ];
+    const cerrado = reduceWodEvents("c1", eventosConCierre, estructura, 480_000);
+    expect(cerrado.awaitingFinalTally).toBe(false);
+    expect(cerrado.capped).toBe(true);
+    // El descanso arranca DESDE EL CIERRE (480_000), no desde el tope teorico
+    // -aunque en este caso coinciden porque el cierre se dio justo al tope-.
+    expect(cerrado.enDescanso).toBe(true);
+    expect(cerrado.descansoTerminaMs).toBe(540_000);
+
+    // Termina el descanso, y el atleta SIGUE: hace las 21 de B completas.
+    const eventosCompletos = [
+      ...eventosConCierre,
+      marcaje("movement_done", 800_000, { cantidad: 21, partMovementId: "th" }),
+    ];
+    const r = reduceWodEvents("c1", eventosCompletos, estructura, 800_000);
+
+    // La decision de producto: aunque el atleta termino TODO lo que seguia,
+    // la prueba entera queda capeada porque A no llego a tiempo. El score son
+    // las reps totales acumuladas (22 + 21), nunca un tiempo de llegada.
+    expect(r.status).toBe("finished"); // no queda nada mas que marcar...
+    expect(r.capped).toBe(true); // ...pero es capeado, no valido.
+    expect(r.finishedMs).toBeNull();
+    expect(r.completedReps).toBe(43); // 22 + 21.
+  });
+
+  it("si el juez cierra TARDE (el reloj ya avanzo bastante), el descanso igual arranca desde el cierre real", () => {
+    reset();
+    const estructura = cleanJerkDescansoThruster();
+    // El juez se distrajo: cierra recien a los 9 minutos, un minuto despues
+    // del cap de 8.
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 540_000, { cantidad: 25, partMovementId: "cj" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 545_000);
+    expect(r.capped).toBe(true);
+    expect(r.enDescanso).toBe(true);
+    // 540_000 (cuando de verdad cerro) + 60_000, no 480_000 + 60_000.
+    expect(r.descansoTerminaMs).toBe(600_000);
+  });
+
+  it("una marca que llega DURANTE el descanso no cuenta y queda como anomalia", () => {
+    reset();
+    const estructura = cleanJerkDescansoThruster();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 300_000, { cantidad: 30, partMovementId: "cj" }),
+      // Alguien tapea durante el descanso (300_000 a 360_000).
+      marcaje("rep", 330_000, { partMovementId: "th" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 330_000);
+    expect(r.enDescanso).toBe(true);
+    expect(r.completedReps).toBe(30); // el tap del descanso no sumo nada.
+    expect(r.anomalies.some((a) => a.code === "marca_durante_descanso")).toBe(true);
+  });
+
+  it("DNF durante el bloque B manda sobre todo lo demas", () => {
+    reset();
+    const estructura = cleanJerkDescansoThruster();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 300_000, { cantidad: 30, partMovementId: "cj" }),
+      marcaje("movement_done", 500_000, { cantidad: 10, partMovementId: "th" }),
+      marcaje("dnf", 500_000),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 500_000);
+    expect(r.status).toBe("dnf");
+    expect(r.stoppedAtMs).toBe(500_000);
+  });
+
+  it("sin ningun bloque de descanso, el esquema 'cap'/'libre' sigue el camino de siempre (cero cambio de comportamiento)", () => {
+    reset();
+    // Fran, tal cual, no tiene bloques de descanso: tiene que dar EXACTAMENTE
+    // lo mismo que antes de este cambio.
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("rep", 60_000, { round: 1, partMovementId: "m1" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, fran(), 60_000);
+    expect(r.enDescanso).toBe(false);
+    expect(r.descansoTerminaMs).toBeNull();
+    expect(r.status).toBe("running");
+  });
+
+  it("compatibilidad: un bloque de trabajo SIN capMs propio hereda el timeCapMs de la PARTE si es el primero", () => {
+    // Este es el patron que ya usaba WodJudgeScreen para el descanso ENTRE
+    // partes -Parte A con un solo bloque de trabajo mas un descanso, capeada
+    // por el `timeCapMs` de la parte, sin `capMs` en el bloque-. No puede
+    // dejar de funcionar: es el unico caso real en produccion hoy.
+    reset();
+    const estructura: WodStructure = {
+      scheme: "cap",
+      timeCapMs: 8_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          // Sin capMs: tiene que heredar los 8_000 de `timeCapMs`.
+          movements: [
+            { id: "m1", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "r1", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 30_000, restMs: null, movements: [] },
+      ],
+    };
+    const eventos = [marcaje("lane_start", 0)];
+    // Ya pasaron los 8s del cap heredado.
+    const r = reduceWodEvents("c1", eventos, estructura, 12_000);
+    expect(r.awaitingFinalTally).toBe(true);
+  });
+
+  it("tres bloques de trabajo con dos descansos: el segundo descanso arranca desde el cierre del segundo bloque", () => {
+    reset();
+    const estructura: WodStructure = {
+      scheme: "libre",
+      timeCapMs: null,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b1", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 120_000,
+          movements: [
+            { id: "m1", orderIndex: 0, name: "A", unit: "reps", targetPerRound: [10], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "r1", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 30_000, restMs: null, movements: [] },
+        {
+          id: "b2", orderIndex: 2, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 120_000,
+          movements: [
+            { id: "m2", orderIndex: 0, name: "B", unit: "reps", targetPerRound: [10], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "r2", orderIndex: 3, kind: "descanso", rounds: 1, durationMs: 15_000, restMs: null, movements: [] },
+        {
+          id: "b3", orderIndex: 4, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: null,
+          movements: [
+            { id: "m3", orderIndex: 0, name: "C", unit: "reps", targetPerRound: [10], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 100_000, { cantidad: 10, partMovementId: "m1" }), // b1 cierra a los 100s, antes del cap.
+      // r1: descansa hasta 130_000.
+      marcaje("movement_done", 200_000, { cantidad: 10, partMovementId: "m2" }), // b2 cierra a los 200s.
+      // r2: descansa hasta 215_000.
+      marcaje("movement_done", 260_000, { cantidad: 10, partMovementId: "m3" }),
+    ];
+
+    const r = reduceWodEvents("c1", eventos, estructura, 260_000);
+    expect(r.status).toBe("finished");
+    expect(r.capped).toBe(false);
+    expect(r.completedReps).toBe(30);
+    expect(r.finishedMs).toBe(260_000);
+  });
+});

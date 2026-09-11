@@ -184,6 +184,8 @@ describe("scoreFromWodResult", () => {
       capped: false,
       awaitingFinalTally: false,
       stoppedAtMs: 240_000,
+      enDescanso: false,
+      descansoTerminaMs: null,
       anomalies: [],
       ...parcial,
     };

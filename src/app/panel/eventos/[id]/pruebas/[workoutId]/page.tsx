@@ -494,6 +494,13 @@ function SeccionDeParte({
                       placeholder="solo intervalos"
                     />
                   </FieldRow>
+                  <Field
+                    label="Cap de este bloque (min)"
+                    name="capMinutos"
+                    type="number"
+                    placeholder="Vacío = sin tope propio. No aplica a Descanso."
+                    ayuda="Se mide desde que ARRANCA este bloque, no desde la largada del heat. Solo tiene efecto si la prueba tiene algún bloque de Descanso."
+                  />
                 </SimpleForm>
               </div>
             </details>

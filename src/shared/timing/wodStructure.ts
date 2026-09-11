@@ -38,6 +38,8 @@ export interface FilaDeBloque {
   repeticiones: number;
   duracion_ms: number | null;
   descanso_ms: number | null;
+  /** Tope de tiempo de este bloque, medido desde que arranca. Ver `WodBlock.capMs`. */
+  cap_ms: number | null;
 }
 
 export interface FilaDeMovimiento {
@@ -95,6 +97,7 @@ export function armarEstructuraDeWod(params: {
       rounds: b.repeticiones,
       durationMs: b.duracion_ms,
       restMs: b.descanso_ms,
+      capMs: b.cap_ms,
       movements: movimientos
         .filter((m) => m.block_id === b.id)
         .sort((x, y) => x.order_index - y.order_index)

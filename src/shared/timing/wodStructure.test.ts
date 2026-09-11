@@ -37,6 +37,7 @@ const BLOQUE: FilaDeBloque = {
   repeticiones: 3,
   duracion_ms: null,
   descanso_ms: null,
+  cap_ms: null,
 };
 
 const THRUSTER: FilaDeMovimiento = {

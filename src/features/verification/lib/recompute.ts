@@ -547,7 +547,7 @@ async function recalcularWod(params: {
   const [{ data: bloques }, { data: movimientos }, { data: heat }] = await Promise.all([
     service
       .from("part_blocks")
-      .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms")
+      .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms, cap_ms")
       .in("part_id", partIds),
     service
       .from("part_movements")

@@ -332,6 +332,7 @@ export async function agregarBloque(
   const repeticionesExplicitas = numeroOpcional(formData, "repeticiones");
   const duracionSegundos = numeroOpcional(formData, "duracionSegundos");
   const descansoSegundos = numeroOpcional(formData, "descansoSegundos");
+  const capMinutos = numeroOpcional(formData, "capMinutos");
 
   await requireManage(eventId);
 
@@ -355,6 +356,10 @@ export async function agregarBloque(
     repeticiones,
     duracion_ms: duracionSegundos ? duracionSegundos * 1000 : null,
     descanso_ms: descansoSegundos ? descansoSegundos * 1000 : null,
+    // Un descanso no tiene cap propio: su tiempo fijo es `duracion_ms`. La
+    // base ya lo rechazaria (constraint `cap_ms_no_en_descanso`), pero mejor
+    // no mandar un valor que el organizador nunca vio en un campo con sentido.
+    cap_ms: kind === "descanso" || !capMinutos ? null : capMinutos * 60_000,
   });
 
   if (error) return { error: traducir(error) };
@@ -715,6 +720,8 @@ export async function editarBloque(
   const repeticionesExplicitas = numeroOpcional(formData, "repeticiones");
   const duracionSegundos = numeroOpcional(formData, "duracionSegundos");
   const descansoSegundos = numeroOpcional(formData, "descansoSegundos");
+  const capMinutos = numeroOpcional(formData, "capMinutos");
+  const kind = String(formData.get("kind") ?? "trabajo") as BlockKind;
 
   await requireManage(eventId);
 
@@ -737,11 +744,12 @@ export async function editarBloque(
   const { error } = await supabase
     .from("part_blocks")
     .update({
-      kind: String(formData.get("kind") ?? "trabajo") as BlockKind,
+      kind,
       label: String(formData.get("label") ?? "").trim() || null,
       repeticiones,
       duracion_ms: duracionSegundos ? duracionSegundos * 1000 : null,
       descanso_ms: descansoSegundos ? descansoSegundos * 1000 : null,
+      cap_ms: kind === "descanso" || !capMinutos ? null : capMinutos * 60_000,
     })
     .eq("id", blockId);
 

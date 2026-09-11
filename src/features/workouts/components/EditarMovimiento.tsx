@@ -99,6 +99,17 @@ export function EditarBloque({
               placeholder="solo intervalos"
             />
           </FieldRow>
+
+          {bloque.kind !== "descanso" && (
+            <Field
+              label="Cap de este bloque (min)"
+              name="capMinutos"
+              type="number"
+              defaultValue={bloque.cap_ms === null ? "" : String(bloque.cap_ms / 60_000)}
+              placeholder="Vacío = sin tope propio"
+              ayuda="Se mide desde que ARRANCA este bloque, no desde la largada del heat. Solo tiene efecto si la prueba tiene algún bloque de Descanso: si no lo tiene, se ignora."
+            />
+          )}
         </form>
 
         <BotonesDeModal

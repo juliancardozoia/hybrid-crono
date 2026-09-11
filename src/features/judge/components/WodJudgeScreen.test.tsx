@@ -694,3 +694,80 @@ describe("el cierre de un AMRAP dice EN QUE MOVIMIENTO quedo, no solo un total",
   });
 
 });
+
+describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)", () => {
+  // Es el caso real reportado: "30 clean and jerk, cap 8 min, descanso 1 min,
+  // thruster por tiempo" como UNA sola prueba -un solo score, un solo puesto
+  // en el leaderboard- en vez de una Parte A y una Parte B con el reloj de la
+  // Parte B midiendose desde la largada del heat.
+  const LARGADA_LEJOS = Date.now() - 20 * 60_000; // 20 minutos atras: sobra para que el bloque A ya haya capeado.
+
+  function cleanJerkDescansoThruster(): WodStructure {
+    return {
+      scheme: "cap",
+      timeCapMs: null,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "bA", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 8_000, // 8 segundos: ya vencido, LARGADA_LEJOS es hace 20 minutos.
+          movements: [
+            { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        {
+          id: "bR", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 30_000, restMs: null,
+          movements: [],
+        },
+        {
+          id: "bB", orderIndex: 2, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          movements: [
+            { id: "th", orderIndex: 0, name: "Thruster", unit: "reps", targetPerRound: [21], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("pide el cierre final del bloque A y, al confirmarlo, bloquea la pantalla en descanso sin nada para saltarlo", async () => {
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: cleanJerkDescansoThruster() }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+
+    // Nada que tocar para saltar el descanso o arrancar el bloque siguiente:
+    // solo la ranura de deshacer (por si el juez se equivoco al cerrar el
+    // bloque A) y el DNF de siempre, que sigue disponible por si hace falta
+    // abortar.
+    const botones = screen.queryAllByRole("button").map((b) => b.textContent);
+    expect(
+      botones.every((t) => t?.includes("DESHACER") || t === "Marcar DNF"),
+    ).toBe(true);
+
+    // Dice que movimiento viene despues del descanso.
+    expect(screen.getByText(/Thruster/)).toBeTruthy();
+  });
+
+  it("una prueba sin ningun bloque de descanso no se ve afectada: sigue mostrando el marcador normal", async () => {
+    // Fran, de siempre, sin bloques de descanso -tiene que dar exactamente lo
+    // mismo que antes de este cambio.
+    await pintar({ targetPerRound: [21] });
+    await waitFor(() => expect(screen.getByText("Thruster", { selector: "p" })).toBeTruthy());
+    expect(screen.queryByText("Descanso obligatorio")).toBeNull();
+  });
+});
