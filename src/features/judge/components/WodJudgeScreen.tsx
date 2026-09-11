@@ -239,13 +239,20 @@ export function WodJudgeScreen({
   const marcar = useCallback(
     (type: Parameters<typeof markWod>[0]["type"], payload: Record<string, unknown> = {}) => {
       if (!parte) return;
+      // Segunda barrera, ademas de que la pantalla no ofrezca el boton: pase
+      // lo que pase en el render (un glitch, un boton que no se desmonto a
+      // tiempo), esta funcion es la unica puerta hacia `markWod`, y durante
+      // un descanso obligatorio no tiene que dejar pasar nada. El reductor
+      // YA descarta una marca asi (`marca_durante_descanso`) asi que esto no
+      // cambia ningun resultado -es una red mas, no la unica-.
+      if (resultado?.enDescanso) return;
       void markWod({ type, payload: { partId: parte.partId, ...payload } });
       // Un no-rep se SIENTE distinto. La confirmacion durante la accion no
       // puede depender de que el juez mire la pantalla: esta mirando al
       // atleta, y una rep valida y un no-rep vibraban igual.
       navigator.vibrate?.(type === "no_rep" ? [30, 50, 30] : 40);
     },
-    [markWod, parte],
+    [markWod, parte, resultado?.enDescanso],
   );
 
   const checkStart = useCallback(async () => {

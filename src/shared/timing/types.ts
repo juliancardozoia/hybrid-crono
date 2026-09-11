@@ -128,7 +128,13 @@ export type AnomalyCode =
   // El juez escribió más unidades que el objetivo del paso (p. ej. 30 en un
   // movimiento de 21): se recorta al objetivo para no inflar el resultado, y
   // queda la anomalía para que se pueda auditar.
-  | "cantidad_excede_objetivo";
+  | "cantidad_excede_objetivo"
+  // El cierre apunta a un movimiento DISTINTO del que le toca al paso actual.
+  // Pasa cuando una marca anterior se descarto (durante un descanso, o
+  // despues de un limite) sin avanzar el puntero: la marca real que llega
+  // despues, para el movimiento siguiente, no puede cerrar el paso viejo en
+  // su lugar -eso corrompe el conteo del movimiento que si se hizo-.
+  | "marca_de_otro_movimiento";
 
 export type Anomaly = {
   code: AnomalyCode;
