@@ -875,42 +875,53 @@ function reduceWodEventsConDescanso(
     return segmentos[segmentIndex];
   }
 
-  // Compatibilidad con el patron heredado (un solo bloque de trabajo seguido
-  // de un descanso, usado hasta ahora solo como el "descanso ENTRE partes"
-  // que arma la pantalla del juez -ver WodJudgeScreen-): ese bloque nunca
-  // declaro su propio `capMs`, confiaba en el `timeCapMs` de la PARTE. Sin
-  // este fallback, cualquier estructura asi -que ya existe en produccion-
-  // dejaria de capear porque el segmento no tiene tope propio.
-  //
-  // Solo aplica al PRIMER segmento de trabajo: es el unico caso real hoy
-  // (un bloque, un descanso, nada mas), y extenderlo a bloques posteriores
-  // inventaria un comportamiento sin ningun caso de uso que lo pida.
-  const primerSegmentoDeTrabajo = segmentos.findIndex((s) => s.kind === "trabajo");
+  /**
+   * El tope GENERAL de la prueba entera -"WOD con cap de 8 minutos", donde
+   * esos 8 minutos incluyen el bloque 1, el descanso Y el bloque 2, no solo
+   * el primero-. Es el `timeCapMs` de la PARTE, pero ya no como un fallback
+   * que solo alcanza al primer bloque: se aplica SIEMPRE, contra CUALQUIER
+   * segmento (de trabajo o de descanso), tomando el minimo con el tope propio
+   * de ese segmento si lo tiene. Sin esto, un WOD "cap 8" seguia corriendo
+   * mas alla de los 8 minutos apenas el ultimo bloque tenia su propio cap
+   * mas generoso -reportado en produccion-.
+   */
+  const topeGeneralMs = structure.scheme === "cap" ? structure.timeCapMs : null;
 
-  function finDelSegmentoMs(): number | null {
+  /**
+   * El limite del segmento ACTUAL, sea de trabajo (su `capMs`) o de descanso
+   * (su `durationMs`), acotado ademas por `topeGeneralMs` si existe. Cuando
+   * el tope general cae DENTRO de lo que seria un descanso o un bloque mas
+   * generoso, gana el tope general: nada corre mas alla del cap de la
+   * prueba entera.
+   */
+  function limiteDelSegmentoActual(): number | null {
     const seg = segmentoActual();
-    if (!seg || seg.kind !== "trabajo") return null;
-    const cap =
-      seg.capMs ??
-      (segmentIndex === primerSegmentoDeTrabajo && structure.scheme === "cap"
-        ? structure.timeCapMs
-        : null);
-    if (cap === null) return null;
-    return segmentStartMs + cap;
+    const propio =
+      seg?.kind === "trabajo" && seg.capMs !== null
+        ? segmentStartMs + seg.capMs
+        : seg?.kind === "descanso"
+          ? segmentStartMs + (seg.durationMs ?? 0)
+          : null;
+    if (topeGeneralMs === null) return propio;
+    if (propio === null) return topeGeneralMs;
+    return Math.min(propio, topeGeneralMs);
   }
 
   /**
    * Salta los descansos ya cumplidos a esta altura del reloj, en cadena -por
    * si dos bloques `descanso` quedaran seguidos, o uno de duracion 0-. Un
    * descanso no necesita ningun evento para terminar: se deriva del reloj,
-   * igual que el cap.
+   * igual que el cap. Si el tope GENERAL corta el descanso antes de su
+   * duracion propia, el segmento siguiente arranca ya con el reloj general
+   * encima -su propio limite tambien va a dar el tope general, asi que
+   * cualquier trabajo pendiente ahi pide su cierre final de inmediato-.
    */
   function avanzarDescansos(hastaMs: number) {
     for (;;) {
       const seg = segmentoActual();
       if (!seg || seg.kind !== "descanso") return;
-      const fin = segmentStartMs + (seg.durationMs ?? 0);
-      if (hastaMs < fin) return;
+      const fin = limiteDelSegmentoActual();
+      if (fin === null || hastaMs < fin) return;
       segmentIndex += 1;
       segmentStartMs = fin;
       cierreFinalUsadoDeSegmento = false;
@@ -975,7 +986,7 @@ function reduceWodEventsConDescanso(
     }
 
     const paso = plan[stepIndex];
-    const tope = finDelSegmentoMs();
+    const tope = limiteDelSegmentoActual();
 
     if (tope !== null && evento.elapsedMs >= tope) {
       const esElCierreFinal = evento.type === "movement_done" && !cierreFinalUsadoDeSegmento;
@@ -1041,6 +1052,24 @@ function reduceWodEventsConDescanso(
           });
           break;
         }
+        // El cierre tiene que ser DEL PASO QUE TOCA, no de cualquier cosa.
+        // Bug real: una marca legitima (p. ej. cerrar Handstand Push-up) que
+        // llegaba justo despues de que OTRA marca (Crossover) se descartara
+        // por caer en pleno descanso, terminaba cerrando el paso VIEJO
+        // -Crossover, que seguia siendo `plan[stepIndex]` porque la marca
+        // descartada nunca lo avanzo-. El juez veia una cosa en pantalla y el
+        // resultado oficial contaba otra. Solo se valida cuando el payload
+        // trae el movimiento -eventos viejos sin `partMovementId` siguen
+        // confiando en la posicion, como siempre-.
+        const movimientoDelCierre = String(evento.payload.partMovementId ?? "");
+        if (movimientoDelCierre && movimientoDelCierre !== paso.movementId) {
+          anomalies.push({
+            code: "marca_de_otro_movimiento",
+            message: `El cierre llegó para otro movimiento: en este momento tocaba "${paso.name}".`,
+            eventId: evento.id,
+          });
+          break;
+        }
         const cantidad = numeroDelPayload(evento.payload, "cantidad");
         let unidades = cantidad !== null ? cantidad : Math.max(paso.target, progress);
         if (!paso.maxReps && paso.target > 0 && unidades > paso.target) {
@@ -1102,9 +1131,12 @@ function reduceWodEventsConDescanso(
 
   const segActual = segmentoActual();
   const enDescanso = segActual?.kind === "descanso";
-  const descansoTerminaMs = enDescanso ? segmentStartMs + (segActual.durationMs ?? 0) : null;
+  // `limiteDelSegmentoActual()`, no `segmentStartMs + duracion` a secas: si
+  // el tope GENERAL de la prueba cae adentro de este descanso, la cuenta
+  // regresiva tiene que mostrar eso, no la duracion completa del descanso.
+  const descansoTerminaMs = enDescanso ? limiteDelSegmentoActual() : null;
 
-  const tope = finDelSegmentoMs();
+  const tope = limiteDelSegmentoActual();
   const seAcaboElTiempoDelSegmento = tope !== null && hasStart && elapsedDeReferencia >= tope;
 
   const awaitingFinalTally =
@@ -1119,6 +1151,16 @@ function reduceWodEventsConDescanso(
   const completo = plan.length > 0 && stepIndex >= plan.length && !algunSegmentoCapeado;
   const capped = algunSegmentoCapeado;
 
+  // El tope GENERAL ya se cumplio Y el unico cierre final permitido en el
+  // segmento donde quedo atrapado el reloj ya se uso: no importa que
+  // `stepIndex` no haya llegado al final del plan completo -los pasos que
+  // quedan (otro movimiento, otra ronda) ya no tienen tiempo real detras,
+  // asi que no hay nada mas que el juez pueda hacer. Sin esto, un WOD
+  // capeado por el tope GENERAL (no por el cap de un bloque puntual)
+  // quedaba "running" para siempre en vez de terminar de verdad.
+  const agotadoPorTopeGeneral =
+    topeGeneralMs !== null && elapsedDeReferencia >= topeGeneralMs && cierreFinalUsadoDeSegmento;
+
   let status: LaneStatus;
   if (dqEvent) status = "dq";
   else if (dnfEvent) status = "dnf";
@@ -1126,7 +1168,7 @@ function reduceWodEventsConDescanso(
   // Todo marcado -capeo algun bloque o no-: no queda nada mas que el juez
   // pueda tocar. `capped` es quien decide si esto puntua como "valido" o
   // "capeado" mas adelante, en `scoreFromWodResult`.
-  else if (stepIndex >= plan.length) status = "finished";
+  else if (stepIndex >= plan.length || agotadoPorTopeGeneral) status = "finished";
   else status = "running";
 
   const { completedRounds, repsInRound, currentRoundBreakdown } = contarRondas(

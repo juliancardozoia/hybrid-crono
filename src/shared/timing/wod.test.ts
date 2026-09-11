@@ -1459,3 +1459,173 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(terminoElDescanso.currentStepIndex).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// El tope GENERAL: "WOD con cap de 8 minutos" tiene que incluir el bloque 1,
+// el descanso Y el bloque 2 -no dejar que el conjunto se pase de los 8
+// minutos solo porque cada bloque respeta el suyo por separado-.
+// ---------------------------------------------------------------------------
+
+describe("el tope general de la prueba entera (bloque + descanso + bloque, todo dentro de un cap)", () => {
+  /** Bloque 1 cap 3 min, descanso 1 min, bloque 2 cap 4 min, TODO dentro de un cap general de 8 min. */
+  function conTopeGeneral(): WodStructure {
+    return {
+      scheme: "cap",
+      timeCapMs: 480_000, // 8 min: el techo de TODO el conjunto.
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b0", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 180_000, // 3 min.
+          movements: [
+            { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "b1", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 60_000, restMs: null, movements: [] }, // 1 min.
+        {
+          id: "b2", orderIndex: 2, kind: "trabajo", rounds: 3, durationMs: null, restMs: null,
+          capMs: 240_000, // 4 min propios -pero el tope general puede recortarlos-.
+          movements: [
+            { id: "cr", orderIndex: 0, name: "Crossover", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+            { id: "hs", orderIndex: 1, name: "Handstand Push-up", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("si todo va justo al tiempo (bloque 1 cierra EXACTO a los 3:00), el bloque 2 tiene sus 4 minutos completos", () => {
+    reset();
+    const estructura = conTopeGeneral();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 180_000, { cantidad: 28, partMovementId: "cj" }),
+    ];
+    // El descanso deberia terminar a los 240_000, sin recorte -3min+1min=4min,
+    // y el tope general (8min=480_000) todavia deja los 4 min completos de b2.
+    const r = reduceWodEvents("c1", eventos, estructura, 200_000);
+    expect(r.enDescanso).toBe(true);
+    expect(r.descansoTerminaMs).toBe(240_000);
+  });
+
+  it("BUG REAL: si el bloque 1 cierra TARDE (reaccion del juez), el bloque 2 NO puede quedarse con sus 4 minutos completos si eso pasa de los 8 totales", () => {
+    reset();
+    const estructura = conTopeGeneral();
+    // El juez tarda 7s en registrar el cierre del bloque 1 -exactamente como
+    // paso en produccion-: cierra a los 187_019, no a los 180_000 exactos.
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }),
+    ];
+    // Descanso: 187_019 a 247_019 (sin recorte, el tope general de 480_000 no
+    // llega tan lejos todavia).
+    const enDescanso = reduceWodEvents("c1", eventos, estructura, 200_000);
+    expect(enDescanso.descansoTerminaMs).toBe(247_019);
+
+    // Terminado el descanso, el bloque 2 "deberia" tener hasta 247_019+240_000
+    // = 487_019 con su propio cap -pero el tope GENERAL es 480_000, 7019ms
+    // antes-. Sin el fix, el reloj "seguia corriendo" mas alla de los 8
+    // minutos. Con el fix, el bloque 2 pide su cierre final justo a los
+    // 480_000, no a los 487_019.
+    const alTopeGeneral = reduceWodEvents("c1", eventos, estructura, 480_000);
+    expect(alTopeGeneral.enDescanso).toBe(false); // ya esta en el bloque 2.
+    expect(alTopeGeneral.awaitingFinalTally).toBe(true);
+    expect(alTopeGeneral.currentStepIndex).toBe(1); // Crossover, todavia nada marcado.
+
+    // Si nadie hubiera hecho nada, a los 487_019 (el cap "propio" del bloque
+    // 2, que ya paso el tope general) el cierre final YA tuvo que haberse
+    // pedido antes -no hay que esperar hasta ahi-.
+    const masAlla = reduceWodEvents("c1", eventos, estructura, 487_019);
+    expect(masAlla.awaitingFinalTally).toBe(true); // sigue esperando el cierre, no broto solo.
+  });
+
+  it("el juez SI puede cerrar el bloque 2 justo en el tope general, y ahi la prueba queda capeada con lo acumulado", () => {
+    reset();
+    const estructura = conTopeGeneral();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }),
+      // Cierra el bloque 2 (Crossover, la ronda 1 a medias) justo al tope general.
+      marcaje("movement_done", 480_000, { cantidad: 10, partMovementId: "cr" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 480_000);
+    expect(r.awaitingFinalTally).toBe(false);
+    expect(r.capped).toBe(true);
+    expect(r.completedReps).toBe(38); // 28 + 10.
+    expect(r.sinNadaMasQueMarcar).toBe(true); // el tope general no deja nada mas por delante.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Un cierre tiene que ser DEL MOVIMIENTO QUE TOCA, no de cualquiera.
+// ---------------------------------------------------------------------------
+
+describe("un movement_done que apunta a OTRO movimiento no cierra el paso actual", () => {
+  /** Reproduce EXACTO el bug real: Clean & Jerk (cap 3) - descanso 1 - Crossover+HSPU 15-12-9 (cap 4). */
+  function estructuraReal(): WodStructure {
+    return {
+      scheme: "cap",
+      timeCapMs: 480_000,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "b0", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 180_000,
+          movements: [
+            { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        { id: "b1", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 60_000, restMs: null, movements: [] },
+        {
+          id: "b2", orderIndex: 2, kind: "trabajo", rounds: 3, durationMs: null, restMs: null,
+          capMs: 240_000,
+          movements: [
+            { id: "cr", orderIndex: 0, name: "Crossover", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+            { id: "hs", orderIndex: 1, name: "Handstand Push-up", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("REGRESION de produccion: una marca descartada por descanso no deja que la SIGUIENTE marca legitima cierre el paso viejo", () => {
+    reset();
+    const estructura = estructuraReal();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }), // cierra bloque 1.
+      // Esta marca cae DENTRO del descanso (187_019 a 247_019): se descarta,
+      // y el puntero se queda en Crossover.
+      marcaje("movement_done", 208_099, { partMovementId: "cr" }),
+      // Esta es LEGITIMA -llega bien despues del descanso- pero apunta a
+      // Handstand Push-up, NO a Crossover, que es lo que sigue apuntando el
+      // puntero. Sin el fix, esto cerraba Crossover con las 15 completas.
+      marcaje("movement_done", 397_774, { partMovementId: "hs" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 397_774);
+
+    expect(r.anomalies.some((a) => a.code === "marca_durante_descanso")).toBe(true);
+    // La marca de HSPU se rechaza -no corrompe a Crossover- y queda auditable.
+    expect(r.anomalies.some((a) => a.code === "marca_de_otro_movimiento")).toBe(true);
+    // Crossover NO quedo cerrado con las 15 que nunca se marcaron de verdad.
+    expect(r.currentStepIndex).toBe(1); // sigue esperando Crossover.
+    expect(r.currentStepProgress).toBe(0);
+    expect(r.completedReps).toBe(28); // solo lo del bloque 1: nada de b2 todavia.
+  });
+
+  it("la marca correcta, con el partMovementId correcto, cierra sin problema", () => {
+    reset();
+    const estructura = estructuraReal();
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }),
+      marcaje("movement_done", 260_000, { partMovementId: "cr" }), // legitima, DESPUES del descanso, apunta bien.
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 260_000);
+    expect(r.anomalies.some((a) => a.code === "marca_de_otro_movimiento")).toBe(false);
+    expect(r.currentStepIndex).toBe(2); // avanzo a HSPU.
+    expect(r.completedReps).toBe(43); // 28 + 15 (Crossover completo).
+  });
+});
