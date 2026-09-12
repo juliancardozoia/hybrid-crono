@@ -439,6 +439,7 @@ function SeccionDeParte({
 
                     {canManage && !esDescanso && (
                       <details
+                        key={suyos.length}
                         className="mt-4 border-t border-neutral-800 pt-3"
                         open={suyos.length === 0}
                       >
@@ -471,8 +472,11 @@ function SeccionDeParte({
           )}
 
           {canManage && (
-            <details className="rounded-xl border border-neutral-800 p-4">
-              <summary className="cursor-pointer text-sm font-medium text-neutral-300">
+            <details key={blocks.length} className="rounded-xl border border-neutral-800 p-4">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-lime-400 select-none hover:text-lime-300">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-lime-400/10 text-xs">
+                  +
+                </span>
                 Agregar bloque
               </summary>
               <div className="mt-4">
