@@ -1183,12 +1183,35 @@ function reduceWodEventsConDescanso(
 
   const segActual = segmentoActual();
   const enDescansoReal = segActual?.kind === "descanso";
+  const esUltimoSegmento = segmentIndex === segmentos.length - 1;
+
+  // El ULTIMO tramo de la prueba ya uso su cierre final (se capeo, por su
+  // propio tope o por el general) sin llegar a cerrar todos sus pasos: no
+  // hay a donde avanzar el cursor -es el fin de la prueba-, asi que
+  // `avanzarSegmentosCumplidos` lo dejo quieto a proposito. Sin este chequeo,
+  // un WOD capeado en su ultimo bloque quedaba "running" para siempre en vez
+  // de terminar de verdad -`stepIndex` nunca llega a `plan.length` si el
+  // cierre final no alcanzo a cerrar TODOS los pasos que faltaban-.
+  const agotadoElUltimoSegmento =
+    !!segActual &&
+    segActual.kind === "trabajo" &&
+    esUltimoSegmento &&
+    cierreFinalUsadoDeSegmento &&
+    stepIndex < segActual.stepEnd;
+
   // Trabajo listo -termino antes de tiempo, o ya se capeo- pero todavia no
   // se cumplio el tope NOMINAL de su propio bloque: el juez tampoco tiene
   // nada que marcar aca, pero esto NO es el descanso real -ese todavia no
   // arranco-. Se bloquea igual (`enDescanso` cubre los dos casos para la
   // pantalla), pero sin mostrar ninguna cuenta regresiva: ver abajo.
-  const esperandoTopeNominalDelBloque = !!segActual && trabajoEstaListo(segActual);
+  //
+  // `!esUltimoSegmento` es la parte que faltaba: bug real reportado -si el
+  // bloque atascado es el ULTIMO de la prueba (`agotadoElUltimoSegmento`),
+  // no hay ningun bloque siguiente esperando, la prueba YA TERMINO. Sin este
+  // chequeo, la pantalla seguia mostrando "Descanso obligatorio" en vez del
+  // resumen de cierre (CAPEADO + las reps que alcanzo a hacer).
+  const esperandoTopeNominalDelBloque =
+    !!segActual && !esUltimoSegmento && trabajoEstaListo(segActual);
   const enDescanso = enDescansoReal || esperandoTopeNominalDelBloque;
   // El cronometro SOLO se muestra durante el descanso REAL, nunca antes.
   // Bug real reportado: un atleta que terminaba sus 30 reps en 2 minutos con
@@ -1212,20 +1235,6 @@ function reduceWodEventsConDescanso(
   // a "valido" en vez de "capeado".
   const completo = plan.length > 0 && stepIndex >= plan.length && !algunSegmentoCapeado;
   const capped = algunSegmentoCapeado;
-
-  // El ULTIMO tramo de la prueba ya uso su cierre final (se capeo, por su
-  // propio tope o por el general) sin llegar a cerrar todos sus pasos: no
-  // hay a donde avanzar el cursor -es el fin de la prueba-, asi que
-  // `avanzarSegmentosCumplidos` lo dejo quieto a proposito. Sin este chequeo,
-  // un WOD capeado en su ultimo bloque quedaba "running" para siempre en vez
-  // de terminar de verdad -`stepIndex` nunca llega a `plan.length` si el
-  // cierre final no alcanzo a cerrar TODOS los pasos que faltaban-.
-  const agotadoElUltimoSegmento =
-    !!segActual &&
-    segActual.kind === "trabajo" &&
-    segmentIndex === segmentos.length - 1 &&
-    cierreFinalUsadoDeSegmento &&
-    stepIndex < segActual.stepEnd;
 
   let status: LaneStatus;
   if (dqEvent) status = "dq";
@@ -1252,7 +1261,19 @@ function reduceWodEventsConDescanso(
       : status === "dnf"
         ? (dnfEvent?.elapsedMs ?? null)
         : status === "finished"
-          ? ultimoCierreMs
+          ? // `agotadoElUltimoSegmento`, no `ultimoCierreMs` a secas: si la
+            // prueba termino porque el ULTIMO bloque se capeo, el reloj
+            // congelado tiene que mostrar el CAP -el mismo numero que ya vio
+            // el juez mientras esperaba-, no "cap + lo que tardo en escribir
+            // el numero". Bug real reportado: el reloj seguia mostrando
+            // tiempo en vivo hasta el instante exacto del registro tardio,
+            // en vez de quedarse en el cap como el resto de la app ya hace.
+            // Una prueba que termina de verdad (sin capear nada al final)
+            // SI usa el cierre real -es su tiempo autentico, no hay cap que
+            // mostrar en su lugar-.
+            agotadoElUltimoSegmento
+            ? tope
+            : ultimoCierreMs
           : // Esperando que el juez escriba cuanto llevaba: el reloj se
             // congela en el TOPE, igual que ya hacia el reductor de siempre
             // (sin bloques). Bug real: acá seguía mostrando tiempo en vivo

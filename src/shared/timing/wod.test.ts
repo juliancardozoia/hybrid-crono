@@ -1628,6 +1628,34 @@ describe("el tope general de la prueba entera (bloque + descanso + bloque, todo 
     expect(r.capped).toBe(true);
     expect(r.completedReps).toBe(38); // 28 + 10.
     expect(r.sinNadaMasQueMarcar).toBe(true); // el tope general no deja nada mas por delante.
+    expect(r.status).toBe("finished");
+    // REGRESION real: esto NO es un descanso -es el ULTIMO bloque de la
+    // prueba, capeado, sin nada mas despues-. La pantalla tiene que mostrar
+    // el resumen de cierre (CAPEADO + las reps), nunca "Descanso obligatorio".
+    expect(r.enDescanso).toBe(false);
+    // El reloj congelado muestra el CAP (400_000), no "cap + lo que tardo el
+    // juez en escribir el numero" -en este caso coinciden porque el juez
+    // registro justo al tope, se prueba la demora abajo-.
+    expect(r.stoppedAtMs).toBe(400_000);
+  });
+
+  it("REGRESION: si el juez tarda en registrar el cierre del ULTIMO bloque, el reloj congelado muestra el CAP, no el momento real del registro", () => {
+    reset();
+    const estructura: WodStructure = {
+      ...conTopeGeneral(),
+      timeCapMs: 400_000,
+    };
+    const eventos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 180_000, { cantidad: 28, partMovementId: "cj" }),
+      // El juez tarda 12 segundos de mas en registrar el cierre del bloque 2.
+      marcaje("movement_done", 412_000, { cantidad: 10, partMovementId: "cr" }),
+    ];
+    const r = reduceWodEvents("c1", eventos, estructura, 412_000);
+    expect(r.status).toBe("finished");
+    expect(r.enDescanso).toBe(false); // resumen de cierre, no "Descanso obligatorio".
+    // 400_000 (el CAP), NUNCA 412_000 (cuando de verdad se registro).
+    expect(r.stoppedAtMs).toBe(400_000);
   });
 });
 
