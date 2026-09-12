@@ -273,12 +273,21 @@ describe("carga máxima", () => {
   });
 });
 
-describe("terminar antes del cap oculta la cuenta regresiva", () => {
-  it("deja de mostrar cuánto falta para el cap una vez que el atleta termina", async () => {
-    // Reportado como confuso: el atleta ya terminó y el reloj de "cuánto
-    // falta para el cap" seguía corriendo en pantalla, tanto para el juez
-    // como para el atleta que lo mira de reojo.
-    await pintar({ targetPerRound: [1], captureStyle: "tap" });
+describe("la cuenta regresiva del cap solo aparece cuando aprieta", () => {
+  it("con el cap lejos, no se muestra: el reloj de arriba ya alcanza", async () => {
+    // Reportado como dos relojes redundantes: transcurrido y "restante para
+    // el cap" son el mismo número leído al revés, y mostrar los dos todo el
+    // WOD (cap por defecto de 10 min, largada fija hace solo 60s) no aporta
+    // nada mientras falta mucho.
+    await pintar();
+    expect(screen.queryByText("para el cap")).toBeNull();
+  });
+
+  it("aparece en el último minuto, y desaparece si el atleta termina antes", async () => {
+    // Cap de 90s con la largada fija hace 60s: quedan 30s, dentro del último
+    // minuto -ahí sí hace falta el aviso, es la pieza que evita que alguien
+    // siga marcando después de la bocina sin darse cuenta.
+    await pintar({ targetPerRound: [1], captureStyle: "tap" }, { timeCapMs: 90_000 });
 
     expect(screen.getByText("para el cap")).toBeTruthy();
 
@@ -515,6 +524,10 @@ describe("la caja de 'Sigue' no sobrevive al cierre del WOD", () => {
     // El cap ya paso desde que la pantalla monto (LARGADA es hace 60s, cap de
     // 30s): arranca pidiendo el cierre final del primer movimiento.
     await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+    // Reportado en producción: la caja seguía anunciando "Sigue: Pull-up"
+    // mientras el juez estaba reportando cuánto llevaba del movimiento
+    // ACTUAL -no marcando el que viene-, mismo momento que la captura.
+    expect(screen.queryByText("Sigue")).toBeNull();
 
     const input = screen.getByRole("textbox") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "12" } });
@@ -764,11 +777,204 @@ describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)
       botones.every((t) => t?.includes("DESHACER") || t === "Marcar DNF"),
     ).toBe(true);
 
-    // Dice que movimiento viene despues del descanso -ahora aparece DOS
-    // veces: en la caja "Sigue" de siempre (que con el fix vuelve a
-    // mostrarse durante el descanso, `terminado` ya no la tapa) y en el
-    // "Despues:" del panel de descanso.
+    // Dice que movimiento viene despues del descanso -ahora aparece mas de
+    // una vez: en el resumen del bloque siguiente que muestra el panel de
+    // descanso, y en el resumen de abajo (`Progreso`), que sigue apuntando al
+    // paso actual mientras el WOD no termino de verdad.
     expect(screen.getAllByText(/Thruster/).length).toBeGreaterThan(0);
+  });
+
+  it("no muestra 'para el cap' mientras el atleta descansa, aunque el cap general esté cerca", async () => {
+    // Bug real: con un cap GENERAL de la parte configurado (no solo el cap
+    // del bloque A), el panel de arriba seguia mostrando "restante para el
+    // cap" ADEMAS de la cuenta regresiva del propio descanso -un tercer
+    // reloj en pantalla, exactamente lo reportado como confuso.
+    const estructuraConCapGeneral = { ...cleanJerkDescansoThruster(), timeCapMs: 50_000 };
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: estructuraConCapGeneral }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+    expect(screen.queryByText("para el cap")).toBeNull();
+  });
+
+  it("oculta la caja 'Sigue' de arriba durante el descanso: el panel de descanso ya dice qué sigue", async () => {
+    // Reportado en producción: la caja lima "SIGUE" (pegada al reloj) y el
+    // panel de descanso mostraban el mismo bloque siguiente al mismo tiempo,
+    // una encima de la otra. Fuera del descanso la caja de arriba sigue
+    // funcionando igual -no se la toca-, ver "la caja de 'Sigue' no
+    // sobrevive al cierre del WOD".
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: cleanJerkDescansoThruster() }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+
+    // Una sola "Sigue": la del panel de descanso. La caja lima de arriba
+    // quedaba diciendo lo mismo una segunda vez.
+    expect(screen.getAllByText("Sigue")).toHaveLength(1);
+  });
+
+  it("no muestra 'CAPEADO' junto al reloj mientras descansa: el WOD todavía no terminó", async () => {
+    // Reportado en producción: el bloque A capeaba (no llegó a sus 30 reps
+    // antes del tope) y la pantalla ya decía "transcurrido · CAPEADO" en
+    // pleno descanso, cuando en realidad todavía queda el bloque B por
+    // delante. `resultado.capped` queda en true para siempre -es la decisión
+    // de producto para el puntaje final- pero eso no significa que el WOD ya
+    // terminó de verdad.
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: cleanJerkDescansoThruster() }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+    expect(screen.queryByText(/CAPEADO/)).toBeNull();
+  });
+
+  it("tampoco la muestra al seguir trabajando el bloque siguiente, aunque el anterior ya haya capeado", async () => {
+    // Mismo bug, otro momento: con LARGADA tan lejos que el descanso (30s
+    // desde el cap nominal de 8s) ya pasó hace rato, cerrar el bloque A salta
+    // derecho al bloque B -el juez ya está marcando Thruster- y el badge
+    // seguía diciendo "CAPEADO" ahí también.
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: cleanJerkDescansoThruster() }]}
+        heatStartEpochMs={LARGADA}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Thruster", { selector: "p" })).toBeTruthy());
+    expect(screen.queryByText(/CAPEADO/)).toBeNull();
+  });
+
+  it("el reloj del descanso muestra segundos crudos, sin minutos ni centésimas", async () => {
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: cleanJerkDescansoThruster() }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+
+    // "MM:SS" tendria un ":" en algun lado de la caja; segundos crudos, no.
+    const caja = screen.getByText("Descanso obligatorio").closest("div");
+    expect(caja?.textContent).not.toMatch(/:/);
+  });
+
+  it("durante el descanso, muestra el BLOQUE completo que sigue, no un solo movimiento suelto", async () => {
+    // El caso real reportado: despues del descanso sigue una escalera
+    // 15-12-9 de dos movimientos, y el panel solo mostraba el primero de
+    // ellos con el objetivo de la primera ronda ("15 Thruster"), sin decir
+    // que son tres rondas ni que hay un segundo movimiento.
+    const estructuraConEscalera: WodStructure = {
+      scheme: "cap",
+      timeCapMs: null,
+      windowMs: null,
+      intervalMs: null,
+      blocks: [
+        {
+          id: "bA", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
+          capMs: 8_000,
+          movements: [
+            { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+        {
+          id: "bR", orderIndex: 1, kind: "descanso", rounds: 1, durationMs: 30_000, restMs: null,
+          movements: [],
+        },
+        {
+          id: "bB", orderIndex: 2, kind: "trabajo", rounds: 3, durationMs: null, restMs: null,
+          movements: [
+            { id: "th", orderIndex: 0, name: "Thruster", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+            { id: "du", orderIndex: 1, name: "Double Unders", unit: "reps", targetPerRound: [15, 12, 9], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
+          ],
+        },
+      ],
+    };
+
+    render(
+      <WodJudgeScreen
+        laneId="c1"
+        bib="101"
+        athlete="Ana Díaz"
+        partes={[{ partId: "p1", label: "", structure: estructuraConEscalera }]}
+        heatStartEpochMs={LARGADA_LEJOS}
+        recordedBy="juez-1"
+        transport={async () => ({ error: null })}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("SE ACABÓ EL TIEMPO")).toBeTruthy());
+
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: "REGISTRAR" }));
+
+    await waitFor(() => expect(screen.getByText("Descanso obligatorio")).toBeTruthy());
+
+    // Los DOS movimientos del bloque, cada uno con su escalera completa -no
+    // solo el objetivo de la primera ronda del primero.
+    expect(screen.getAllByText("15-12-9")).toHaveLength(2);
+    expect(screen.getByText("Double Unders")).toBeTruthy();
   });
 
   it("una prueba sin ningun bloque de descanso no se ve afectada: sigue mostrando el marcador normal", async () => {
@@ -777,5 +983,6 @@ describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)
     await pintar({ targetPerRound: [21] });
     await waitFor(() => expect(screen.getByText("Thruster", { selector: "p" })).toBeTruthy());
     expect(screen.queryByText("Descanso obligatorio")).toBeNull();
+    expect(screen.queryByText("para el cap")).toBeNull();
   });
 });

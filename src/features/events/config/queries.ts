@@ -129,6 +129,25 @@ type TeamEmbebido = {
   team_members: Array<{ athletes: { first_name: string; last_name: string } | null }>;
 };
 
+/**
+ * Compara "Heat 1", "Heat 2", ..., "Heat 10" por el NUMERO final, no
+ * alfabeticamente. Con nombres que no terminan en numero (heats viejos
+ * renombrados a mano) cae en `localeCompare`, asi que nunca lanza ni deja
+ * dos heats sin orden entre si.
+ */
+function compararNombresDeHeat(a: string | null, b: string | null): number {
+  const numeroA = /(\d+)\s*$/.exec(a ?? "");
+  const numeroB = /(\d+)\s*$/.exec(b ?? "");
+  if (numeroA && numeroB) {
+    const prefijoA = (a ?? "").slice(0, numeroA.index);
+    const prefijoB = (b ?? "").slice(0, numeroB.index);
+    if (prefijoA === prefijoB) {
+      return Number(numeroA[1]) - Number(numeroB[1]);
+    }
+  }
+  return (a ?? "").localeCompare(b ?? "");
+}
+
 export async function getHeats(eventId: string): Promise<HeatWithLanes[]> {
   const supabase = await createClient();
 
@@ -146,7 +165,24 @@ export async function getHeats(eventId: string): Promise<HeatWithLanes[]> {
 
   if (!data) return [];
 
-  return data.map((row) => {
+  // Postgres ordena "name" alfabeticamente: "Heat 10" queda antes de "Heat 2"
+  // porque compara caracter a caracter. `createHeat` numera "Heat 1", "Heat
+  // 2"... consecutivo, asi que a partir del heat 10 la lista se ve mezclada.
+  // Se reordena en JS respetando primero `scheduled_at` (igual que la
+  // consulta) y usando el NUMERO al final del nombre como desempate, en vez
+  // del alfabetico que trae Postgres.
+  const conNumero = [...data].sort((a, b) => {
+    const fechaA = (a as HeatRow).scheduled_at;
+    const fechaB = (b as HeatRow).scheduled_at;
+    if (fechaA !== fechaB) {
+      if (fechaA === null) return 1;
+      if (fechaB === null) return -1;
+      return fechaA < fechaB ? -1 : 1;
+    }
+    return compararNombresDeHeat(a.name, b.name);
+  });
+
+  return conNumero.map((row) => {
     const { lanes, ...heat } = row as unknown as HeatRow & {
       lanes: Array<LaneRow & { teams: TeamEmbebido | null }>;
     };

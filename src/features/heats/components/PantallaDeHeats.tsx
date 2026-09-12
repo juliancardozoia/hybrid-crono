@@ -209,25 +209,14 @@ export function PantallaDeHeats({
 
   return (
     <div className="flex flex-col gap-6">
-      {variasEtapas && (
-        <Pestanas
-          items={etapas.map((e) => ({ id: String(e), label: `Etapa ${e}` }))}
-          activa={String(etapaActiva)}
-          onCambiar={(id) => setEtapaActiva(Number(id))}
-          variante="principal"
-        />
-      )}
-
-      {variasPruebas && (
-        <Pestanas
-          items={pruebasDeEtapa.map((p) => ({ id: p.id, label: p.name }))}
-          activa={workoutId}
-          onCambiar={setWorkoutId}
-        />
-      )}
-
-      {/* Una sola fila, a todo el ancho: el filtro a la izquierda, las dos
-          acciones de alta a la derecha. En celular se apila. */}
+      {/* Nivel GENERAL de la pantalla: filtro de categoría y las dos acciones
+          de alta van ANTES de las pestañas de etapa/prueba, no debajo. Debajo
+          de las pestañas se leían como si pertenecieran al WOD seleccionado
+          —"Distribuir"/"Crear heat" para ESTE WOD—, cuando en realidad operan
+          sobre TODAS las pruebas de la etapa (el propio modal ofrece elegir
+          "todas las pruebas" o una en particular). Una sola fila, a todo el
+          ancho: el filtro a la izquierda, las dos acciones de alta a la
+          derecha. En celular se apila. */}
       <div className="flex w-full flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           {divisionesConHeat.length > 1 && (
@@ -256,6 +245,23 @@ export function PantallaDeHeats({
           </div>
         )}
       </div>
+
+      {variasEtapas && (
+        <Pestanas
+          items={etapas.map((e) => ({ id: String(e), label: `Etapa ${e}` }))}
+          activa={String(etapaActiva)}
+          onCambiar={(id) => setEtapaActiva(Number(id))}
+          variante="principal"
+        />
+      )}
+
+      {variasPruebas && (
+        <Pestanas
+          items={pruebasDeEtapa.map((p) => ({ id: p.id, label: p.name }))}
+          activa={workoutId}
+          onCambiar={setWorkoutId}
+        />
+      )}
 
       {heats.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-neutral-700 p-6 text-center text-sm text-neutral-500">

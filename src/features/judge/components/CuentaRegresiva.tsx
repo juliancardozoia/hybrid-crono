@@ -17,6 +17,7 @@ export function CuentaRegresiva({
   onLlegarACero,
   umbralAmbarMs,
   umbralRojoMs,
+  soloSegundos,
 }: {
   anchor: ClockAnchor | null;
   duracionMs: number;
@@ -31,6 +32,14 @@ export function CuentaRegresiva({
   umbralAmbarMs?: number;
   /** Debajo de este restante, el nodo suma `text-red-400` (pisa al ambar). */
   umbralRojoMs?: number;
+  /**
+   * Un descanso obligatorio dura tipicamente menos de un minuto: mostrar
+   * minutos:segundos.centesimas es precision de mas para "cuanto falta para
+   * volver a trabajar", y un numero de segundos a secas se lee mas rapido de
+   * reojo. Los relojes que SI son un resultado (transcurrido, el cap) siguen
+   * con `formatElapsed` -ahi la centesima puede desempatar un podio-.
+   */
+  soloSegundos?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const avisado = useRef(false);
@@ -42,19 +51,22 @@ export function CuentaRegresiva({
     callback.current = onLlegarACero;
   });
 
+  const formatear = (ms: number) =>
+    soloSegundos ? String(Math.ceil(Math.max(0, ms) / 1000)) : formatElapsed(Math.max(0, ms));
+
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
 
     if (!anchor) {
-      node.textContent = formatElapsed(duracionMs);
+      node.textContent = formatear(duracionMs);
       return;
     }
 
     let frame = 0;
     const tick = () => {
       const restante = duracionMs - elapsedFromAnchor(anchor, performance.now());
-      node.textContent = formatElapsed(Math.max(0, restante));
+      node.textContent = formatear(restante);
 
       if (umbralAmbarMs !== undefined || umbralRojoMs !== undefined) {
         const rojo = umbralRojoMs !== undefined && restante <= umbralRojoMs;
@@ -72,11 +84,12 @@ export function CuentaRegresiva({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [anchor, duracionMs, umbralAmbarMs, umbralRojoMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor, duracionMs, umbralAmbarMs, umbralRojoMs, soloSegundos]);
 
   return (
     <span ref={ref} className={className} suppressHydrationWarning>
-      {formatElapsed(duracionMs)}
+      {formatear(duracionMs)}
     </span>
   );
 }

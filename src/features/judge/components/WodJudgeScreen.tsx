@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
 import {
   planDelWod,
   reduceWodEvents,
   type CaptureStyle,
+  type LoadUnit,
   type WodStep,
   type WodStructure,
 } from "@/shared/timing/wod";
@@ -192,6 +194,19 @@ export function WodJudgeScreen({
   const paso: WodStep | null =
     resultado?.currentStepIndex != null ? (plan[resultado.currentStepIndex] ?? null) : null;
 
+  // Cuanto falta para el cap GENERAL de la parte (`structure.timeCapMs`, no el
+  // tope de un bloque suelto). Se recalcula una vez por segundo -mismo `tick`
+  // que ya fuerza el recalculo de `resultado`- para decidir si vale la pena
+  // mostrar el aviso de "para el cap": ver mas abajo, se muestra solo cuando
+  // aprieta, no todo el WOD.
+  const restanteParaCapMs = useMemo(() => {
+    if (!anchor || !parte || parte.structure.scheme !== "cap" || parte.structure.timeCapMs === null) {
+      return null;
+    }
+    return parte.structure.timeCapMs - currentElapsed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor, parte, tick]);
+
   const corriendo = resultado?.status === "running";
   useWakeLock(corriendo);
 
@@ -289,8 +304,26 @@ export function WodJudgeScreen({
   // `currentStepIndex` no se vuelve null cuando el estado real es "running"
   // con `capped = true` (un For Time capeado no cambia `status`, solo prende
   // la bandera).
+  //
+  // `!resultado.enDescanso` tambien se agrega: durante el descanso, el panel
+  // de `DescansoBloqueado` YA muestra el bloque completo que sigue (ver
+  // `proximoBloque` mas abajo), asi que esta caja quedaba diciendo lo mismo
+  // una segunda vez, arriba del todo -reportado como confuso-. Fuera del
+  // descanso sigue funcionando exactamente igual que siempre.
+  //
+  // `!resultado.awaitingFinalTally`: mismo problema, otro momento. Con
+  // `CierreDelTiempo` en pantalla ("SE ACABÓ EL TIEMPO, ¿cuántas hizo?"), el
+  // juez esta reportando lo que quedo a medias del paso ACTUAL -no marcando
+  // el que viene-, y la caja seguia anunciando el proximo movimiento como si
+  // el WOD siguiera corriendo normal. `awaitingFinalTally` no cierra
+  // `currentStepIndex` a null (la pantalla lo necesita para saber que paso
+  // mostrar en `CierreDelTiempo`), asi que sin este chequeo la caja de
+  // arriba no tenia forma de saber que ya no corresponde.
   const siguiente =
-    !terminado && resultado.currentStepIndex != null
+    !terminado &&
+    !resultado.enDescanso &&
+    !resultado.awaitingFinalTally &&
+    resultado.currentStepIndex != null
       ? (plan[resultado.currentStepIndex + 1] ?? null)
       : null;
 
@@ -319,9 +352,21 @@ export function WodJudgeScreen({
    * intervalos" (el descanso ENTRE repeticiones de un EMOM/Tabata, no la
    * duracion de un bloque tipo descanso). Usar el otro campo leeria un dato
    * que el organizador cargo para otra cosa.
+   *
+   * TIENE QUE SER EL ULTIMO BLOQUE, no "el primer descanso que aparezca" —
+   * `.find()` a secas encontraria tambien el descanso INTRA-parte (bloque +
+   * descanso + bloque, todo dentro de esta misma parte, resuelto por
+   * `reduceWodEventsConDescanso` en `wod.ts`) y lo tomaria por error como el
+   * descanso hacia la parte siguiente, mostrando una cuenta regresiva con la
+   * duracion equivocada -o una tercera, de mas- apenas la parte entera
+   * terminara. El patron real de "descanso entre partes" es exactamente un
+   * bloque de trabajo con un descanso COLGANDO al final, sin nada despues:
+   * por eso alcanza con mirar el ultimo bloque de la lista.
    */
+  const bloquesOrdenados = [...parte.structure.blocks].sort((a, b) => a.orderIndex - b.orderIndex);
+  const ultimoBloqueDeLaParte = bloquesOrdenados.at(-1) ?? null;
   const descansoDeLaParte =
-    parte.structure.blocks.find((b) => b.kind === "descanso")?.durationMs ?? null;
+    ultimoBloqueDeLaParte?.kind === "descanso" ? (ultimoBloqueDeLaParte.durationMs ?? null) : null;
   const finDelDescansoMs =
     terminado &&
     indiceParte < partes.length - 1 &&
@@ -329,6 +374,22 @@ export function WodJudgeScreen({
     resultado.stoppedAtMs !== null
       ? resultado.stoppedAtMs + descansoDeLaParte
       : null;
+
+  /**
+   * Los movimientos del bloque que sigue AL descanso obligatorio intra-parte,
+   * para mostrarle al juez algo mas util que un solo movimiento suelto.
+   *
+   * Antes `DescansoBloqueado` recibia `paso` (el primer WodStep del bloque
+   * siguiente) y mostraba SOLO ese, con el objetivo de esa unica ronda: una
+   * escalera "15-12-9" de Thruster + Double Unders se leia como "Despues: 15
+   * Thruster", sin decir que en realidad son tres rondas ni que despues sigue
+   * otro movimiento. `resumenDelBloque` agrupa por movimiento TODO el bloque
+   * -no solo el paso en curso- y arma el "15-12-9" tal como esta en la
+   * pizarra, reusando el `target` que `planDelWod` ya resolvio por ronda (la
+   * regla de "el ultimo valor se repite" ya esta aplicada ahi, no hace falta
+   * repetirla).
+   */
+  const proximoBloque = resultado.enDescanso && paso ? resumenDelBloque(plan, paso.blockId) : [];
 
   return (
     <main className="flex min-h-dvh flex-col bg-neutral-950 text-neutral-100">
@@ -407,31 +468,60 @@ export function WodJudgeScreen({
 
             <p className="mt-1 text-sm text-neutral-500">
               {esquema === "ventana" ? "restante" : "transcurrido"}
-              {resultado.capped && <span className="ml-2 text-amber-300">· CAPEADO</span>}
+              {/* SOLO cuando el WOD ya termino de verdad, no apenas
+                  `resultado.capped` se prende. Con bloques + descanso,
+                  `capped` queda en true PARA SIEMPRE en cuanto UN SOLO
+                  bloque no llega a tiempo -es la decision de producto de
+                  `WodResult.capped`, y sigue siendo asi para el puntaje
+                  final- pero mostrar el badge mientras el atleta todavia
+                  esta descansando o trabajando el bloque siguiente decia
+                  "CAPEADO" con el WOD lejos de terminar, algo que se
+                  reporto como confuso dos veces: durante el descanso y de
+                  nuevo al seguir trabajando. El titulo de `Cerrado`, mas
+                  abajo, ya dice "CAPEADO" en el momento correcto -cuando de
+                  verdad no queda nada mas que marcar-, asi que este badge
+                  alcanza con reflejar lo mismo que ese titulo. */}
+              {resultado.capped && terminado && (
+                <span className="ml-2 text-amber-300">· CAPEADO</span>
+              )}
             </p>
 
-            {/* Cuánto falta para el cap, SIEMPRE a la vista mientras corre —
-                es la pieza que faltaba: sin esto el reloj solo cuenta para
-                arriba y el juez tiene que restar de memoria cuánto queda,
-                que es justo lo que hace que alguien siga marcando después de
-                la bocina sin darse cuenta. Se apaga al terminar, capee o no:
-                un atleta que cerró ANTES del cap no necesita ver una cuenta
-                regresiva siguiendo corriendo en pantalla — es lo que se
-                reportó como confuso, tanto para el juez como para el atleta
-                que la mira de reojo. */}
-            {esquema === "cap" && parte.structure.timeCapMs !== null && !terminado && (
-              <p className="mt-1 font-mono text-lg font-semibold text-neutral-500">
-                <CuentaRegresiva
-                  anchor={anchor}
-                  duracionMs={parte.structure.timeCapMs}
-                  umbralAmbarMs={60_000}
-                  umbralRojoMs={10_000}
-                />
-                <span className="ml-1.5 font-sans text-sm font-normal text-neutral-600">
-                  para el cap
-                </span>
-              </p>
-            )}
+            {/* Cuánto falta para el cap — pero SOLO cuando aprieta (último
+                minuto), no todo el WOD: mostrarla siempre duplica el reloj de
+                arriba (transcurrido y restante son el mismo número leído al
+                revés) y se reportó como dos relojes redundantes. Mismo
+                criterio que ya usa la cuenta regresiva de inscripciones del
+                catálogo ("aparece solo cuando aprieta"). La pieza que SÍ hay
+                que conservar es la urgencia: sin ningún aviso el juez tiene
+                que restar de memoria cuánto queda, que es justo lo que hace
+                que alguien siga marcando después de la bocina sin darse
+                cuenta — por eso no se elimina del todo, solo se atrasa.
+                Tampoco se muestra durante un descanso obligatorio (ya hay
+                OTRA cuenta regresiva en pantalla, la del descanso, y esta
+                sería una tercera) ni mientras se espera el cierre final
+                (`awaitingFinalTally`: ahí ya se ve "SE ACABÓ EL TIEMPO", que
+                dice lo mismo). Se apaga al terminar, capee o no: un atleta
+                que cerró ANTES del cap no necesita ver una cuenta regresiva
+                siguiendo corriendo en pantalla. */}
+            {esquema === "cap" &&
+              parte.structure.timeCapMs !== null &&
+              !terminado &&
+              !resultado.enDescanso &&
+              !resultado.awaitingFinalTally &&
+              restanteParaCapMs !== null &&
+              restanteParaCapMs <= 60_000 && (
+                <p className="mt-1 font-mono text-lg font-semibold text-neutral-500">
+                  <CuentaRegresiva
+                    anchor={anchor}
+                    duracionMs={parte.structure.timeCapMs}
+                    umbralAmbarMs={60_000}
+                    umbralRojoMs={10_000}
+                  />
+                  <span className="ml-1.5 font-sans text-sm font-normal text-neutral-600">
+                    para el cap
+                  </span>
+                </p>
+              )}
           </section>
 
           <CajaDeSiguiente siguiente={siguiente} />
@@ -475,7 +565,7 @@ export function WodJudgeScreen({
             <DescansoBloqueado
               anchor={anchor}
               terminaMs={resultado.descansoTerminaMs}
-              proximoMovimiento={paso}
+              movimientos={proximoBloque}
             />
           ) : terminado || !paso ? (
             <Cerrado resultado={resultado} esquema={esquema} plan={plan} />
@@ -566,6 +656,20 @@ export function WodJudgeScreen({
               </div>
             )}
 
+            {/* La prueba entera terminó -no queda otra parte por delante-: el
+                juez ya no tiene nada mas que hacer en este carril y necesita
+                volver a la lista para tomar el siguiente. Mismo texto y mismo
+                destino que ya usa CarrilClient.tsx para "no se puede abrir el
+                carril": es el unico camino de vuelta que existe hoy. */}
+            {terminado && indiceParte >= partes.length - 1 && (
+              <Link
+                href="/juez"
+                className="block w-full rounded-xl border border-neutral-700 px-4 py-3 text-center text-sm font-semibold text-neutral-300"
+              >
+                Volver a mis carriles
+              </Link>
+            )}
+
             {terminado &&
               indiceParte < partes.length - 1 &&
               (finDelDescansoMs !== null ? (
@@ -576,6 +680,7 @@ export function WodJudgeScreen({
                   <CuentaRegresiva
                     anchor={anchor}
                     duracionMs={finDelDescansoMs}
+                    soloSegundos
                     className="font-mono text-3xl font-bold text-amber-200"
                     onLlegarACero={() => {
                       setIndiceParte(indiceParte + 1);
@@ -1302,16 +1407,58 @@ function Cerrado({
  * reductor ya lo resuelve con el reloj, sin ningun evento- y el proximo
  * render ya lo muestra terminado.
  */
+/** Un movimiento del bloque que sigue, con su esquema de rondas ya resuelto. */
+type ResumenMovimientoDelBloque = {
+  name: string;
+  /** "15-12-9" con varios valores, "21" con uno solo, "Máx" si no tiene objetivo. */
+  secuencia: string;
+  loadKg: number | null;
+  loadUnit: LoadUnit;
+};
+
+/**
+ * Los movimientos de UN bloque completo, agrupados y con su secuencia de
+ * rondas tal como se lee en la pizarra.
+ *
+ * Se arma desde el PLAN YA DESPLEGADO (`planDelWod`), no desde `WodBlock`
+ * crudo: cada `WodStep` ya trae el `target` resuelto para SU ronda -incluida
+ * la regla de "el ultimo valor se repite" cuando `targetPerRound` es mas
+ * corto que las rondas-, asi que no hace falta reimplementar esa cuenta aca.
+ * Reusar el plan es ademas lo que garantiza que esta vista previa jamas
+ * pueda mostrar algo distinto de lo que el juez va a marcar de verdad.
+ */
+function resumenDelBloque(plan: WodStep[], blockId: string): ResumenMovimientoDelBloque[] {
+  const pasosDelBloque = plan.filter((p) => p.blockId === blockId);
+  const vistos = new Set<string>();
+  const resumen: ResumenMovimientoDelBloque[] = [];
+  for (const paso of pasosDelBloque) {
+    if (vistos.has(paso.movementId)) continue;
+    vistos.add(paso.movementId);
+    const targets = pasosDelBloque
+      .filter((p) => p.movementId === paso.movementId)
+      .map((p) => p.target);
+    const unicos = new Set(targets);
+    const secuencia = paso.maxReps
+      ? "Máx"
+      : unicos.size <= 1
+        ? String(targets[0] ?? 0)
+        : targets.join("-");
+    resumen.push({ name: paso.name, secuencia, loadKg: paso.loadKg, loadUnit: paso.loadUnit });
+  }
+  return resumen;
+}
+
 function DescansoBloqueado({
   anchor,
   terminaMs,
-  proximoMovimiento,
+  movimientos,
 }: {
   anchor: Parameters<typeof CuentaRegresiva>[0]["anchor"];
   /** Elapsed absoluto (desde la largada del heat) en el que termina, o null
    *  si el descanso REAL todavia no arranco -ver abajo-. */
   terminaMs: number | null;
-  proximoMovimiento: WodStep | null;
+  /** El bloque completo que sigue al descanso, ya resumido por movimiento. */
+  movimientos: ResumenMovimientoDelBloque[];
 }) {
   return (
     <div className="mx-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 py-6">
@@ -1326,8 +1473,7 @@ function DescansoBloqueado({
         // cuando termina -por eso NO se ofrece ningun numero, solo el aviso
         // de que sigue bloqueado hasta que se cumpla el tiempo del bloque.
         <p className="max-w-[16rem] text-center text-sm text-amber-200/80">
-          Bloque anterior completado. El descanso arranca al cumplirse su
-          tiempo asignado.
+          Bloque anterior completado.
         </p>
       ) : (
         // `duracionMs` recibe el ELAPSED ABSOLUTO en el que termina, no una
@@ -1335,17 +1481,38 @@ function DescansoBloqueado({
         // como `elapsed` ya es absoluto desde la largada, pasarle el target
         // absoluto da la cuenta regresiva correcta sin inventar un segundo
         // ancla. Mismo truco que ya usa el descanso ENTRE partes.
+        //
+        // `soloSegundos`: un descanso obligatorio se mide en segundos, no en
+        // minutos:segundos.centesimas -esa precision es para un resultado
+        // (el transcurrido, el cap), no para "cuanto falta para volver a
+        // trabajar".
         <CuentaRegresiva
           anchor={anchor}
           duracionMs={terminaMs}
+          soloSegundos
           className="font-mono text-4xl font-bold text-amber-200"
         />
       )}
-      {proximoMovimiento && (
-        <span className="text-xs text-neutral-500">
-          Después: {proximoMovimiento.maxReps ? "Máx" : proximoMovimiento.target}{" "}
-          {proximoMovimiento.name}
-        </span>
+      {movimientos.length > 0 && (
+        // El bloque COMPLETO que sigue, no un solo movimiento suelto: una
+        // escalera 15-12-9 de Thruster + Double Unders se lee entera, para
+        // que el juez pueda avisarle al atleta o al corredor de material qué
+        // viene sin tener que abrir el constructor de la prueba.
+        <div className="mt-1 flex flex-col items-center gap-1">
+          <span className="text-[11px] font-bold tracking-widest text-neutral-500 uppercase">
+            Sigue
+          </span>
+          {movimientos.map((m, i) => (
+            <p key={i} className="text-sm text-neutral-300">
+              <span className="font-mono font-bold text-neutral-100">{m.secuencia}</span> {m.name}
+              {m.loadKg !== null && (
+                <span className="ml-1.5 font-mono text-xs text-neutral-500">
+                  {formatearCarga(m.loadKg, m.loadUnit)}
+                </span>
+              )}
+            </p>
+          ))}
+        </div>
       )}
     </div>
   );
