@@ -1308,27 +1308,39 @@ function DescansoBloqueado({
   proximoMovimiento,
 }: {
   anchor: Parameters<typeof CuentaRegresiva>[0]["anchor"];
-  /** Elapsed absoluto (desde la largada del heat) en el que termina. */
+  /** Elapsed absoluto (desde la largada del heat) en el que termina, o null
+   *  si el descanso REAL todavia no arranco -ver abajo-. */
   terminaMs: number | null;
   proximoMovimiento: WodStep | null;
 }) {
-  if (terminaMs === null) return null;
-
   return (
     <div className="mx-4 flex flex-col items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 py-6">
       <span className="text-xs font-semibold tracking-widest text-amber-300 uppercase">
         Descanso obligatorio
       </span>
-      {/* `duracionMs` recibe el ELAPSED ABSOLUTO en el que termina, no una
-          duracion relativa: `CuentaRegresiva` hace `duracionMs - elapsed`, y
-          como `elapsed` ya es absoluto desde la largada, pasarle el target
-          absoluto da la cuenta regresiva correcta sin inventar un segundo
-          ancla. Mismo truco que ya usa el descanso ENTRE partes. */}
-      <CuentaRegresiva
-        anchor={anchor}
-        duracionMs={terminaMs}
-        className="font-mono text-4xl font-bold text-amber-200"
-      />
+      {terminaMs === null ? (
+        // El bloque anterior ya termino su trabajo, pero el descanso
+        // TODAVIA NO ARRANCA: para la organizacion, el descanso siempre
+        // corresponde al cap del bloque anterior, nunca a cuando el atleta
+        // termino de verdad. Mostrar una cuenta regresiva aca mentiria sobre
+        // cuando termina -por eso NO se ofrece ningun numero, solo el aviso
+        // de que sigue bloqueado hasta que se cumpla el tiempo del bloque.
+        <p className="max-w-[16rem] text-center text-sm text-amber-200/80">
+          Bloque anterior completado. El descanso arranca al cumplirse su
+          tiempo asignado.
+        </p>
+      ) : (
+        // `duracionMs` recibe el ELAPSED ABSOLUTO en el que termina, no una
+        // duracion relativa: `CuentaRegresiva` hace `duracionMs - elapsed`, y
+        // como `elapsed` ya es absoluto desde la largada, pasarle el target
+        // absoluto da la cuenta regresiva correcta sin inventar un segundo
+        // ancla. Mismo truco que ya usa el descanso ENTRE partes.
+        <CuentaRegresiva
+          anchor={anchor}
+          duracionMs={terminaMs}
+          className="font-mono text-4xl font-bold text-amber-200"
+        />
+      )}
       {proximoMovimiento && (
         <span className="text-xs text-neutral-500">
           Después: {proximoMovimiento.maxReps ? "Máx" : proximoMovimiento.target}{" "}

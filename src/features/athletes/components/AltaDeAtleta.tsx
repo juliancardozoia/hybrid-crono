@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { crearRegistroManual, type FormState } from "../actions";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
 import { BotonAbrirModal } from "@/shared/components/BotonAbrirModal";
@@ -76,6 +76,20 @@ export function AltaDeAtleta({
   const division = divisiones.find((d) => d.id === divisionId);
   const teamSize = division?.teamSize ?? 1;
 
+  // NO va con `action={formAction}`. React 19 hace `form.reset()` NATIVO
+  // apenas la accion termina -- exito O ERROR, cualquiera de los dos-- y como
+  // estos campos son inputs no controlados eso los deja todos en blanco justo
+  // cuando el organizador mas los necesita: el error de "correo repetido" se
+  // veia, pero habia que volver a tipear los seis-doce campos del equipo
+  // entero. Invocando la accion a mano (mismo patron que `HeatCard.tsx`) el
+  // `<form>` nunca pasa por el camino de "form action" de React y ese reset
+  // automatico no se dispara.
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
     <>
       <BotonAbrirModal onClick={() => setAbierto(true)}>Crear atleta</BotonAbrirModal>
@@ -92,7 +106,7 @@ export function AltaDeAtleta({
         <form
           key={abierto ? "abierto" : "cerrado"}
           id="nuevo-registro"
-          action={formAction}
+          onSubmit={onSubmit}
           className="flex flex-col gap-4 text-left"
         >
           <input type="hidden" name="eventId" value={eventId} />

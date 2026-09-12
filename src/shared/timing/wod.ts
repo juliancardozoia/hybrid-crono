@@ -908,35 +908,92 @@ function reduceWodEventsConDescanso(
   }
 
   /**
-   * Salta los descansos ya cumplidos a esta altura del reloj, en cadena -por
-   * si dos bloques `descanso` quedaran seguidos, o uno de duracion 0-. Un
-   * descanso no necesita ningun evento para terminar: se deriva del reloj,
-   * igual que el cap. Si el tope GENERAL corta el descanso antes de su
-   * duracion propia, el segmento siguiente arranca ya con el reloj general
-   * encima -su propio limite tambien va a dar el tope general, asi que
-   * cualquier trabajo pendiente ahi pide su cierre final de inmediato-.
+   * El trabajo de este segmento ya no tiene nada pendiente: o se marcaron
+   * todos sus pasos, o ya se uso el unico cierre final que se le permite.
+   * NO dice si el SEGMENTO como franja horaria ya termino -eso depende
+   * ademas de si tiene un tope propio que todavia no se cumplio-.
    */
-  function avanzarDescansos(hastaMs: number) {
+  function trabajoEstaListo(seg: WodSegmento): boolean {
+    return seg.kind === "trabajo" && (stepIndex >= seg.stepEnd || cierreFinalUsadoDeSegmento);
+  }
+
+  /**
+   * Avanza el cursor de segmento hasta donde el reloj ya permite, en cadena.
+   * Dos casos SE UNIFICAN aca, a proposito, porque el juez no puede tocar
+   * nada en ninguno de los dos:
+   *
+   *   - Un DESCANSO: nunca necesita un evento para terminar, se deriva del
+   *     reloj apenas se cumple su duracion.
+   *   - Un bloque de TRABAJO cuyo trabajo YA esta listo (termino antes de
+   *     tiempo, o ya se capeo) pero que TIENE su propio tope: la franja
+   *     horaria de ese bloque no termina hasta el tope, aunque el atleta
+   *     haya terminado antes. Bug real reportado: un atleta que hacia las 30
+   *     reps en 2 minutos con un cap de 3 arrancaba el descanso YA, a los 2
+   *     minutos -para la organizacion, el descanso "corresponde" al bloque
+   *     siguiente y tiene que arrancar SIEMPRE al cumplirse el cap, nunca
+   *     antes, sea cual sea el momento en que el atleta termino de verdad-.
+   *
+   * La UNICA excepcion es el ULTIMO segmento de la prueba: si es el que
+   * cierra el WOD, terminar antes de tiempo termina la prueba antes de
+   * tiempo -es literalmente lo que "por tiempo" significa-, no hay una
+   * franja fija que esperar porque no hay nada agendado despues.
+   *
+   * Cuando el trabajo esta listo por haber usado su cierre final (el cap ya
+   * se cumplio), `hastaMs` ya es `>= tope` por definicion -es el elapsed del
+   * evento que disparo ese cierre-, asi que el avance es inmediato: el
+   * descanso arranca DESDE EL TOPE NOMINAL, nunca desde el momento real en
+   * que el juez termino de escribir el numero. Un juez que tarda unos
+   * segundos de mas en confirmar no le come tiempo al horario del bloque
+   * siguiente -le come, como mucho, unos segundos de SU PROPIO descanso-.
+   */
+  function avanzarSegmentosCumplidos(hastaMs: number) {
     for (;;) {
       const seg = segmentoActual();
-      if (!seg || seg.kind !== "descanso") return;
-      const fin = limiteDelSegmentoActual();
-      if (fin === null || hastaMs < fin) return;
+      if (!seg) return;
+
+      if (seg.kind === "descanso") {
+        const fin = limiteDelSegmentoActual();
+        if (fin === null || hastaMs < fin) return;
+        segmentIndex += 1;
+        segmentStartMs = fin;
+        cierreFinalUsadoDeSegmento = false;
+        continue;
+      }
+
+      // seg.kind === "trabajo"
+      if (!trabajoEstaListo(seg)) return;
+
+      const esElUltimoSegmento = segmentIndex === segmentos.length - 1;
+      const terminoTodosSusPasos = stepIndex >= seg.stepEnd;
+
+      if (esElUltimoSegmento && !terminoTodosSusPasos) {
+        // Es el ULTIMO tramo de la prueba, y quedo "listo" por el cierre
+        // final (se capeo) sin llegar a cerrar todos sus pasos -no por
+        // completar de verdad-. No hay a donde avanzar: esto YA es el fin de
+        // la prueba. Dejamos el cursor quieto -avanzarlo no tiene destino, y
+        // ademas borraria `cierreFinalUsadoDeSegmento`, la señal que usa
+        // `status` mas abajo para saber que no queda nada mas.
+        return;
+      }
+
+      if (seg.capMs === null || esElUltimoSegmento) {
+        // Sin tope propio, o es el ultimo tramo terminando TODOS sus pasos
+        // de verdad: nada agendado depende de esperar, asi que cierra de una.
+        segmentIndex += 1;
+        segmentStartMs = hastaMs;
+        cierreFinalUsadoDeSegmento = false;
+        continue;
+      }
+
+      const finNominal = limiteDelSegmentoActual();
+      if (finNominal === null || hastaMs < finNominal) return; // trabajo listo, pero la franja del bloque no se cumplio todavia.
       segmentIndex += 1;
-      segmentStartMs = fin;
+      segmentStartMs = finNominal;
       cierreFinalUsadoDeSegmento = false;
     }
   }
 
-  /** Cierra el segmento de trabajo actual (natural o forzado) y pasa al siguiente. */
-  function cerrarSegmento(elapsedMs: number) {
-    segmentIndex += 1;
-    segmentStartMs = elapsedMs;
-    cierreFinalUsadoDeSegmento = false;
-    avanzarDescansos(elapsedMs);
-  }
-
-  /** Cierra el paso actual, avanza, y si eso termino el bloque, lo cierra. */
+  /** Cierra el paso actual y avanza el cursor de segmento lo que el reloj ya permita. */
   function cerrarPaso(unidades: number, elapsedMs: number) {
     const paso = plan[stepIndex];
     if (!paso) return;
@@ -947,11 +1004,7 @@ function reduceWodEventsConDescanso(
     ultimoCierreMs = elapsedMs;
     stepIndex += 1;
     progress = 0;
-
-    const seg = segmentoActual();
-    if (seg && seg.kind === "trabajo" && stepIndex >= seg.stepEnd) {
-      cerrarSegmento(elapsedMs);
-    }
+    avanzarSegmentosCumplidos(elapsedMs);
   }
 
   const hasStart = active.some((e) => e.type === "lane_start");
@@ -960,15 +1013,18 @@ function reduceWodEventsConDescanso(
 
   for (const evento of active) {
     // Antes de interpretar el evento, corremos el reloj hasta su elapsed: si
-    // el descanso ya se cumplio para cuando esto llego, el evento se evalua
-    // contra el bloque SIGUIENTE, no contra el descanso que ya termino.
-    avanzarDescansos(evento.elapsedMs);
+    // el descanso -o la espera del tope nominal del bloque- ya se cumplio
+    // para cuando esto llego, el evento se evalua contra el bloque
+    // SIGUIENTE, no contra lo que ya termino.
+    avanzarSegmentosCumplidos(evento.elapsedMs);
 
-    const segEnDescanso = segmentoActual();
-    if (segEnDescanso && segEnDescanso.kind === "descanso") {
-      // Nada que marcar durante un descanso: no hay paso que cerrar, y
-      // cualquier marca que llegue ahi es un error (del juez, o de la red
-      // reordenando eventos), no una repeticion valida.
+    const segAlProcesar = segmentoActual();
+    // Nada que marcar durante un descanso NI mientras se espera que se
+    // cumpla el tope nominal de un bloque cuyo trabajo ya esta listo -en los
+    // dos casos no hay paso que cerrar, y cualquier marca que llegue ahi es
+    // un error (del juez, o de la red reordenando eventos), no una
+    // repeticion valida.
+    if (segAlProcesar && (segAlProcesar.kind === "descanso" || trabajoEstaListo(segAlProcesar))) {
       if (
         evento.type === "rep" ||
         evento.type === "movement_done" ||
@@ -1010,8 +1066,7 @@ function reduceWodEventsConDescanso(
       cierreFinalUsadoDeSegmento = true;
       algunSegmentoCapeado = true;
       // Sigue al switch de abajo, que cierra el paso con la cantidad del
-      // payload -y `cerrarPaso` dispara `cerrarSegmento` sola al llegar a
-      // `stepEnd`-.
+      // payload -y `cerrarPaso` avanza el segmento sola si corresponde-.
     }
 
     switch (evento.type) {
@@ -1102,10 +1157,7 @@ function reduceWodEventsConDescanso(
         stepIndex = destino;
         progress = 0;
 
-        const segRoundDone = segmentoActual();
-        if (segRoundDone && segRoundDone.kind === "trabajo" && stepIndex >= segRoundDone.stepEnd) {
-          cerrarSegmento(evento.elapsedMs);
-        }
+        avanzarSegmentosCumplidos(evento.elapsedMs);
         break;
       }
 
@@ -1127,14 +1179,47 @@ function reduceWodEventsConDescanso(
   // cumplido, o el cap de un bloque sin marcajes nunca se detectaria.
   const ultimoMarcaje = active.length > 0 ? active[active.length - 1].elapsedMs : 0;
   const elapsedDeReferencia = nowElapsedMs ?? ultimoMarcaje;
-  avanzarDescansos(elapsedDeReferencia);
+  avanzarSegmentosCumplidos(elapsedDeReferencia);
 
   const segActual = segmentoActual();
-  const enDescanso = segActual?.kind === "descanso";
-  // `limiteDelSegmentoActual()`, no `segmentStartMs + duracion` a secas: si
-  // el tope GENERAL de la prueba cae adentro de este descanso, la cuenta
-  // regresiva tiene que mostrar eso, no la duracion completa del descanso.
-  const descansoTerminaMs = enDescanso ? limiteDelSegmentoActual() : null;
+  const enDescansoReal = segActual?.kind === "descanso";
+  const esUltimoSegmento = segmentIndex === segmentos.length - 1;
+
+  // El ULTIMO tramo de la prueba ya uso su cierre final (se capeo, por su
+  // propio tope o por el general) sin llegar a cerrar todos sus pasos: no
+  // hay a donde avanzar el cursor -es el fin de la prueba-, asi que
+  // `avanzarSegmentosCumplidos` lo dejo quieto a proposito. Sin este chequeo,
+  // un WOD capeado en su ultimo bloque quedaba "running" para siempre en vez
+  // de terminar de verdad -`stepIndex` nunca llega a `plan.length` si el
+  // cierre final no alcanzo a cerrar TODOS los pasos que faltaban-.
+  const agotadoElUltimoSegmento =
+    !!segActual &&
+    segActual.kind === "trabajo" &&
+    esUltimoSegmento &&
+    cierreFinalUsadoDeSegmento &&
+    stepIndex < segActual.stepEnd;
+
+  // Trabajo listo -termino antes de tiempo, o ya se capeo- pero todavia no
+  // se cumplio el tope NOMINAL de su propio bloque: el juez tampoco tiene
+  // nada que marcar aca, pero esto NO es el descanso real -ese todavia no
+  // arranco-. Se bloquea igual (`enDescanso` cubre los dos casos para la
+  // pantalla), pero sin mostrar ninguna cuenta regresiva: ver abajo.
+  //
+  // `!esUltimoSegmento` es la parte que faltaba: bug real reportado -si el
+  // bloque atascado es el ULTIMO de la prueba (`agotadoElUltimoSegmento`),
+  // no hay ningun bloque siguiente esperando, la prueba YA TERMINO. Sin este
+  // chequeo, la pantalla seguia mostrando "Descanso obligatorio" en vez del
+  // resumen de cierre (CAPEADO + las reps que alcanzo a hacer).
+  const esperandoTopeNominalDelBloque =
+    !!segActual && !esUltimoSegmento && trabajoEstaListo(segActual);
+  const enDescanso = enDescansoReal || esperandoTopeNominalDelBloque;
+  // El cronometro SOLO se muestra durante el descanso REAL, nunca antes.
+  // Bug real reportado: un atleta que terminaba sus 30 reps en 2 minutos con
+  // un cap de 3 arrancaba a ver la cuenta regresiva del descanso YA, a los 2
+  // minutos -mintiendo sobre cuando termina de verdad el descanso, que para
+  // la organizacion siempre arranca al cumplirse el cap del bloque anterior,
+  // nunca antes-.
+  const descansoTerminaMs = enDescansoReal ? limiteDelSegmentoActual() : null;
 
   const tope = limiteDelSegmentoActual();
   const seAcaboElTiempoDelSegmento = tope !== null && hasStart && elapsedDeReferencia >= tope;
@@ -1151,16 +1236,6 @@ function reduceWodEventsConDescanso(
   const completo = plan.length > 0 && stepIndex >= plan.length && !algunSegmentoCapeado;
   const capped = algunSegmentoCapeado;
 
-  // El tope GENERAL ya se cumplio Y el unico cierre final permitido en el
-  // segmento donde quedo atrapado el reloj ya se uso: no importa que
-  // `stepIndex` no haya llegado al final del plan completo -los pasos que
-  // quedan (otro movimiento, otra ronda) ya no tienen tiempo real detras,
-  // asi que no hay nada mas que el juez pueda hacer. Sin esto, un WOD
-  // capeado por el tope GENERAL (no por el cap de un bloque puntual)
-  // quedaba "running" para siempre en vez de terminar de verdad.
-  const agotadoPorTopeGeneral =
-    topeGeneralMs !== null && elapsedDeReferencia >= topeGeneralMs && cierreFinalUsadoDeSegmento;
-
   let status: LaneStatus;
   if (dqEvent) status = "dq";
   else if (dnfEvent) status = "dnf";
@@ -1168,7 +1243,7 @@ function reduceWodEventsConDescanso(
   // Todo marcado -capeo algun bloque o no-: no queda nada mas que el juez
   // pueda tocar. `capped` es quien decide si esto puntua como "valido" o
   // "capeado" mas adelante, en `scoreFromWodResult`.
-  else if (stepIndex >= plan.length || agotadoPorTopeGeneral) status = "finished";
+  else if (stepIndex >= plan.length || agotadoElUltimoSegmento) status = "finished";
   else status = "running";
 
   const { completedRounds, repsInRound, currentRoundBreakdown } = contarRondas(
@@ -1186,8 +1261,27 @@ function reduceWodEventsConDescanso(
       : status === "dnf"
         ? (dnfEvent?.elapsedMs ?? null)
         : status === "finished"
-          ? ultimoCierreMs
-          : null;
+          ? // `agotadoElUltimoSegmento`, no `ultimoCierreMs` a secas: si la
+            // prueba termino porque el ULTIMO bloque se capeo, el reloj
+            // congelado tiene que mostrar el CAP -el mismo numero que ya vio
+            // el juez mientras esperaba-, no "cap + lo que tardo en escribir
+            // el numero". Bug real reportado: el reloj seguia mostrando
+            // tiempo en vivo hasta el instante exacto del registro tardio,
+            // en vez de quedarse en el cap como el resto de la app ya hace.
+            // Una prueba que termina de verdad (sin capear nada al final)
+            // SI usa el cierre real -es su tiempo autentico, no hay cap que
+            // mostrar en su lugar-.
+            agotadoElUltimoSegmento
+            ? tope
+            : ultimoCierreMs
+          : // Esperando que el juez escriba cuanto llevaba: el reloj se
+            // congela en el TOPE, igual que ya hacia el reductor de siempre
+            // (sin bloques). Bug real: acá seguía mostrando tiempo en vivo
+            // mientras el juez todavía no había registrado nada, en vez de
+            // detenerse en el cap como el resto de la app ya hace.
+            awaitingFinalTally
+            ? tope
+            : null;
 
   const completedByUnitFinal = { ...completedByUnit };
   if (progress > 0 && stepIndex < plan.length) {
