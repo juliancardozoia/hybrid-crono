@@ -700,7 +700,12 @@ describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)
   // thruster por tiempo" como UNA sola prueba -un solo score, un solo puesto
   // en el leaderboard- en vez de una Parte A y una Parte B con el reloj de la
   // Parte B midiendose desde la largada del heat.
-  const LARGADA_LEJOS = Date.now() - 20 * 60_000; // 20 minutos atras: sobra para que el bloque A ya haya capeado.
+  // CERCA del cap (8s), no lejos: con la regla nueva el descanso arranca
+  // SIEMPRE del cap NOMINAL del bloque (8_000), nunca de "ahora". Si la
+  // largada fuera de hace 20 minutos, para cuando el test confirma el cierre
+  // el descanso (30s desde el cap) ya habria quedado atras hace rato, y la
+  // pantalla ya estaria mostrando el bloque B en vez del descanso.
+  const LARGADA_LEJOS = Date.now() - 12_000;
 
   function cleanJerkDescansoThruster(): WodStructure {
     return {
@@ -711,7 +716,7 @@ describe("el descanso obligatorio DENTRO de una sola prueba (bloques, no partes)
       blocks: [
         {
           id: "bA", orderIndex: 0, kind: "trabajo", rounds: 1, durationMs: null, restMs: null,
-          capMs: 8_000, // 8 segundos: ya vencido, LARGADA_LEJOS es hace 20 minutos.
+          capMs: 8_000, // 8 segundos: ya vencido, LARGADA_LEJOS es hace 12 segundos.
           movements: [
             { id: "cj", orderIndex: 0, name: "Clean and Jerk", unit: "reps", targetPerRound: [30], loadKg: null, loadUnit: "kg", maxReps: false, isTiebreak: false, captureStyle: null, maxAttempts: 3 },
           ],

@@ -1185,23 +1185,36 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     };
   }
 
-  it("completa las 30 reps de A antes del cap: descansa, y B corre normal sin nada capeado", () => {
+  it("REGLA NUEVA: si A termina antes del cap, el descanso NO arranca ya -espera al cap nominal, sin mostrar cuenta regresiva-", () => {
+    // Reportado en produccion: un atleta que terminaba las 30 reps antes de
+    // tiempo hacia arrancar el descanso YA, con lo cual le sobraba descanso.
+    // Para la organizacion el descanso siempre corresponde al cap del bloque
+    // anterior (aca, el minuto 8 de A), nunca a cuando el atleta termino de
+    // verdad.
     reset();
-    const estructura = cleanJerkDescansoThruster();
+    const estructura = cleanJerkDescansoThruster(); // A: cap 480_000. Descanso: 60_000.
     const eventos = [
       marcaje("lane_start", 0),
-      marcaje("movement_done", 300_000, { cantidad: 30, partMovementId: "cj" }),
+      marcaje("movement_done", 300_000, { cantidad: 30, partMovementId: "cj" }), // termina en 5 min, bien antes del cap de 8.
     ];
-    // Todavia dentro del descanso (300_000 + 60_000 = 360_000).
-    const enDescanso = reduceWodEvents("c1", eventos, estructura, 320_000);
-    expect(enDescanso.enDescanso).toBe(true);
-    expect(enDescanso.descansoTerminaMs).toBe(360_000);
-    expect(enDescanso.capped).toBe(false);
-    expect(enDescanso.status).toBe("running");
+
+    // Bloqueado -no hay nada que marcar- pero SIN cuenta regresiva: el
+    // descanso real todavia no arranco.
+    const esperando = reduceWodEvents("c1", eventos, estructura, 320_000);
+    expect(esperando.enDescanso).toBe(true);
+    expect(esperando.descansoTerminaMs).toBeNull();
+    expect(esperando.capped).toBe(false);
+    expect(esperando.status).toBe("running");
+
+    // Recien al cumplirse el cap de A (480_000) arranca el descanso DE
+    // VERDAD, y ahi si aparece la cuenta regresiva: 480_000 + 60_000.
+    const enDescansoReal = reduceWodEvents("c1", eventos, estructura, 490_000);
+    expect(enDescansoReal.enDescanso).toBe(true);
+    expect(enDescansoReal.descansoTerminaMs).toBe(540_000);
 
     // El descanso ya termino: el reductor avanzo SOLO al bloque B, sin que
     // nadie emita ningun evento de "arranca B".
-    const terminoDescanso = reduceWodEvents("c1", eventos, estructura, 361_000);
+    const terminoDescanso = reduceWodEvents("c1", eventos, estructura, 541_000);
     expect(terminoDescanso.enDescanso).toBe(false);
     expect(terminoDescanso.status).toBe("running");
     expect(terminoDescanso.currentStepIndex).toBe(1); // el paso del Thruster.
@@ -1216,6 +1229,22 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(r.capped).toBe(false);
     expect(r.finishedMs).toBe(700_000);
     expect(r.completedReps).toBe(51); // 30 + 21.
+  });
+
+  it("REGLA NUEVA: mientras se espera el numero, el reloj se congela en el CAP -no sigue corriendo en vivo-", () => {
+    // Reportado en produccion: la pantalla seguia mostrando tiempo en vivo
+    // mientras esperaba que el juez escribiera cuanto habia hecho, en vez de
+    // congelarse en el cap como ya hace el reductor de un solo bloque.
+    reset();
+    const estructura = cleanJerkDescansoThruster(); // A: cap 480_000.
+    const eventos = [marcaje("lane_start", 0)];
+
+    // Pasaron 30 segundos desde que se cumplio el cap y el juez todavia no
+    // registro nada.
+    const esperando = reduceWodEvents("c1", eventos, estructura, 510_000);
+    expect(esperando.awaitingFinalTally).toBe(true);
+    // Se congela en el CAP (480_000), no en el elapsed "en vivo" (510_000).
+    expect(esperando.stoppedAtMs).toBe(480_000);
   });
 
   it("NO completa las 30 de A a tiempo: pide el cierre final, y desde ahi el WOD entero queda capeado", () => {
@@ -1266,9 +1295,15 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(r.sinNadaMasQueMarcar).toBe(true);
   });
 
-  it("si el juez cierra TARDE (el reloj ya avanzo bastante), el descanso igual arranca desde el cierre real", () => {
+  it("REGLA NUEVA: si el juez cierra TARDE (reaccion), el descanso arranca desde el CAP NOMINAL, no desde cuando de verdad cerro", () => {
+    // El descanso "corresponde" al bloque anterior: siempre arranca al
+    // cumplirse SU cap, nunca despues -ni cuando el atleta termina antes, ni
+    // cuando el juez tarda de mas en registrar el cierre forzado-. Sin esto,
+    // la demora de reaccion del juez le come minutos al horario del bloque
+    // siguiente en vez de comerle, como mucho, unos segundos a SU PROPIO
+    // descanso.
     reset();
-    const estructura = cleanJerkDescansoThruster();
+    const estructura = cleanJerkDescansoThruster(); // A: cap 480_000.
     // El juez se distrajo: cierra recien a los 9 minutos, un minuto despues
     // del cap de 8.
     const eventos = [
@@ -1277,9 +1312,26 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     ];
     const r = reduceWodEvents("c1", eventos, estructura, 545_000);
     expect(r.capped).toBe(true);
-    expect(r.enDescanso).toBe(true);
-    // 540_000 (cuando de verdad cerro) + 60_000, no 480_000 + 60_000.
-    expect(r.descansoTerminaMs).toBe(600_000);
+    // El descanso (480_000 a 540_000) YA TERMINO para cuando el juez cerro
+    // -cerro justo en el segundo 540_000, el mismo instante en que el
+    // descanso nominal se acaba- asi que a esta altura ya esta en el bloque
+    // B, no en descanso.
+    expect(r.enDescanso).toBe(false);
+    expect(r.descansoTerminaMs).toBeNull();
+    expect(r.currentStepIndex).toBe(1); // Thruster, ya habilitado.
+
+    // Con una demora mas corta, el descanso SI se alcanza a ver: cierra a
+    // los 8:03 (483_000, 3s de demora), bien dentro del descanso nominal
+    // 480_000-540_000.
+    reset();
+    const eventosCortos = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 483_000, { cantidad: 25, partMovementId: "cj" }),
+    ];
+    const r2 = reduceWodEvents("c1", eventosCortos, estructura, 485_000);
+    expect(r2.enDescanso).toBe(true);
+    // 480_000 (el CAP NOMINAL) + 60_000, no 483_000 (cuando de verdad cerro).
+    expect(r2.descansoTerminaMs).toBe(540_000);
   });
 
   it("una marca que llega DURANTE el descanso no cuenta y queda como anomalia", () => {
@@ -1353,7 +1405,7 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     expect(r.awaitingFinalTally).toBe(true);
   });
 
-  it("tres bloques de trabajo con dos descansos: el segundo descanso arranca desde el cierre del segundo bloque", () => {
+  it("tres bloques de trabajo con dos descansos: cada descanso arranca del CAP NOMINAL del bloque anterior, no de cuando cerro de verdad", () => {
     reset();
     const estructura: WodStructure = {
       scheme: "libre",
@@ -1387,20 +1439,32 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
       ],
     };
 
+    // b1: cap 120_000, cierra ANTES (100_000) -> r1 arranca en el NOMINAL
+    // 120_000, no en 100_000, y dura hasta 150_000.
+    // b2: unlocked en 150_000, cap propio 120_000 -> su nominal es
+    // 150_000+120_000=270_000. Cierra antes (200_000) -> r2 arranca en
+    // 270_000 (NOMINAL), dura 15_000, hasta 285_000.
+    // b3: sin cap, ultimo segmento -> unlocked en 285_000, cierra apenas se
+    // marca, sin esperar nada mas.
     const eventos = [
       marcaje("lane_start", 0),
-      marcaje("movement_done", 100_000, { cantidad: 10, partMovementId: "m1" }), // b1 cierra a los 100s, antes del cap.
-      // r1: descansa hasta 130_000.
-      marcaje("movement_done", 200_000, { cantidad: 10, partMovementId: "m2" }), // b2 cierra a los 200s.
-      // r2: descansa hasta 215_000.
-      marcaje("movement_done", 260_000, { cantidad: 10, partMovementId: "m3" }),
+      marcaje("movement_done", 100_000, { cantidad: 10, partMovementId: "m1" }),
+      marcaje("movement_done", 200_000, { cantidad: 10, partMovementId: "m2" }),
+      marcaje("movement_done", 300_000, { cantidad: 10, partMovementId: "m3" }),
     ];
 
-    const r = reduceWodEvents("c1", eventos, estructura, 260_000);
+    // A los 110_000 -b1 ya cerro (100_000) pero su cap nominal (120_000)
+    // todavia no se cumplio-: bloqueado, pero SIN cuenta regresiva todavia
+    // -el descanso real de r1 ni arranco-.
+    const antesDeHora = reduceWodEvents("c1", eventos.slice(0, 2), estructura, 110_000);
+    expect(antesDeHora.enDescanso).toBe(true);
+    expect(antesDeHora.descansoTerminaMs).toBeNull(); // todavia esperando el cap nominal de b1 (120_000).
+
+    const r = reduceWodEvents("c1", eventos, estructura, 300_000);
     expect(r.status).toBe("finished");
     expect(r.capped).toBe(false);
     expect(r.completedReps).toBe(30);
-    expect(r.finishedMs).toBe(260_000);
+    expect(r.finishedMs).toBe(300_000);
   });
 
   it("REGRESION de produccion: bloque 1 capea con DOS movimientos en el bloque 2 (15-12-9 de dos ejercicios) — no queda 'atascado'", () => {
@@ -1444,7 +1508,9 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     const justoDespues = reduceWodEvents("c1", eventos, estructura, 191_000);
     expect(justoDespues.capped).toBe(true);
     expect(justoDespues.enDescanso).toBe(true);
-    expect(justoDespues.descansoTerminaMs).toBe(190_747 + 60_000);
+    // El descanso arranca del CAP NOMINAL (180_000), no de cuando el juez
+    // de verdad registro el cierre (190_747): 180_000 + 60_000 = 240_000.
+    expect(justoDespues.descansoTerminaMs).toBe(240_000);
     // ESTO es lo que estaba mal: sin el fix, esto daba `true` y el score
     // quedaba "capeado" (terminal) mientras el atleta todavia tenia que
     // descansar y hacer el Crossover/HSPU.
@@ -1452,7 +1518,7 @@ describe("un For Time con un bloque de descanso obligatorio en el medio", () => 
     // Apunta al primer paso del bloque 2 (Crossover, ronda 1), no a null.
     expect(justoDespues.currentStepIndex).toBe(1);
 
-    const terminoElDescanso = reduceWodEvents("c1", eventos, estructura, 190_747 + 61_000);
+    const terminoElDescanso = reduceWodEvents("c1", eventos, estructura, 241_000);
     expect(terminoElDescanso.enDescanso).toBe(false);
     expect(terminoElDescanso.sinNadaMasQueMarcar).toBe(false); // sigue sin terminar: falta marcar el Crossover.
     expect(terminoElDescanso.status).toBe("running");
@@ -1509,47 +1575,55 @@ describe("el tope general de la prueba entera (bloque + descanso + bloque, todo 
     expect(r.descansoTerminaMs).toBe(240_000);
   });
 
-  it("BUG REAL: si el bloque 1 cierra TARDE (reaccion del juez), el bloque 2 NO puede quedarse con sus 4 minutos completos si eso pasa de los 8 totales", () => {
+  it("MISCONFIGURACION: si el cap general declarado es MENOR que la suma de los bloques, el tope general manda igual", () => {
+    // Con la regla nueva -cada bloque arranca siempre en el cap NOMINAL del
+    // anterior- la demora de reaccion del juez ya no le come minutos al
+    // horario (ver el describe de "cierra TARDE" mas arriba). El tope
+    // general sigue haciendo falta para el caso en que el organizador
+    // declaro un cap general que NO alcanza para lo que sus propios bloques
+    // suman: 3 min + 1 min + 4 min = 8 min, pero si el cap general quedo
+    // cargado en, por ejemplo, 6:40 (400_000ms), eso tiene que ganar.
     reset();
-    const estructura = conTopeGeneral();
-    // El juez tarda 7s en registrar el cierre del bloque 1 -exactamente como
-    // paso en produccion-: cierra a los 187_019, no a los 180_000 exactos.
+    const estructura: WodStructure = {
+      ...conTopeGeneral(),
+      timeCapMs: 400_000, // mal cargado: los bloques suman 480_000.
+    };
     const eventos = [
       marcaje("lane_start", 0),
-      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }),
+      marcaje("movement_done", 180_000, { cantidad: 28, partMovementId: "cj" }), // cierra justo al cap propio.
     ];
-    // Descanso: 187_019 a 247_019 (sin recorte, el tope general de 480_000 no
-    // llega tan lejos todavia).
+    // Descanso 180_000-240_000: el tope general (400_000) no llega tan lejos
+    // todavia, asi que corre completo.
     const enDescanso = reduceWodEvents("c1", eventos, estructura, 200_000);
-    expect(enDescanso.descansoTerminaMs).toBe(247_019);
+    expect(enDescanso.descansoTerminaMs).toBe(240_000);
 
-    // Terminado el descanso, el bloque 2 "deberia" tener hasta 247_019+240_000
-    // = 487_019 con su propio cap -pero el tope GENERAL es 480_000, 7019ms
-    // antes-. Sin el fix, el reloj "seguia corriendo" mas alla de los 8
-    // minutos. Con el fix, el bloque 2 pide su cierre final justo a los
-    // 480_000, no a los 487_019.
-    const alTopeGeneral = reduceWodEvents("c1", eventos, estructura, 480_000);
+    // El bloque 2 "deberia" tener hasta 240_000+240_000=480_000 con su propio
+    // cap -pero el tope GENERAL es 400_000, bastante antes-. Ahi tiene que
+    // pedir su cierre final, no a los 480_000.
+    const alTopeGeneral = reduceWodEvents("c1", eventos, estructura, 400_000);
     expect(alTopeGeneral.enDescanso).toBe(false); // ya esta en el bloque 2.
     expect(alTopeGeneral.awaitingFinalTally).toBe(true);
     expect(alTopeGeneral.currentStepIndex).toBe(1); // Crossover, todavia nada marcado.
 
-    // Si nadie hubiera hecho nada, a los 487_019 (el cap "propio" del bloque
-    // 2, que ya paso el tope general) el cierre final YA tuvo que haberse
-    // pedido antes -no hay que esperar hasta ahi-.
-    const masAlla = reduceWodEvents("c1", eventos, estructura, 487_019);
+    // Si nadie hace nada, a los 480_000 (el cap "propio" del bloque 2, que ya
+    // paso el tope general) el cierre final YA tuvo que haberse pedido antes.
+    const masAlla = reduceWodEvents("c1", eventos, estructura, 480_000);
     expect(masAlla.awaitingFinalTally).toBe(true); // sigue esperando el cierre, no broto solo.
   });
 
   it("el juez SI puede cerrar el bloque 2 justo en el tope general, y ahi la prueba queda capeada con lo acumulado", () => {
     reset();
-    const estructura = conTopeGeneral();
+    const estructura: WodStructure = {
+      ...conTopeGeneral(),
+      timeCapMs: 400_000,
+    };
     const eventos = [
       marcaje("lane_start", 0),
-      marcaje("movement_done", 187_019, { cantidad: 28, partMovementId: "cj" }),
+      marcaje("movement_done", 180_000, { cantidad: 28, partMovementId: "cj" }),
       // Cierra el bloque 2 (Crossover, la ronda 1 a medias) justo al tope general.
-      marcaje("movement_done", 480_000, { cantidad: 10, partMovementId: "cr" }),
+      marcaje("movement_done", 400_000, { cantidad: 10, partMovementId: "cr" }),
     ];
-    const r = reduceWodEvents("c1", eventos, estructura, 480_000);
+    const r = reduceWodEvents("c1", eventos, estructura, 400_000);
     expect(r.awaitingFinalTally).toBe(false);
     expect(r.capped).toBe(true);
     expect(r.completedReps).toBe(38); // 28 + 10.
