@@ -47,6 +47,9 @@ interface DatosDelAtleta {
   phone: string;
   shirtSize: string;
   country: string;
+  documentId: string;
+  stateProvince: string;
+  box: string;
   acceptTerms: boolean;
   answers: Record<string, string>;
 }
@@ -62,6 +65,9 @@ function datosDelFormulario(formData: FormData): DatosDelAtleta | { error: strin
     phone: String(formData.get("phone") ?? "").trim(),
     shirtSize: String(formData.get("shirtSize") ?? "").trim(),
     country: String(formData.get("country") ?? "").trim().toUpperCase(),
+    documentId: String(formData.get("documentId") ?? "").trim(),
+    stateProvince: String(formData.get("stateProvince") ?? "").trim(),
+    box: String(formData.get("box") ?? "").trim(),
     acceptTerms: formData.get("acceptTerms") === "on",
     // Los campos extra del organizador viajan juntos: son datos, no columnas.
     answers: Object.fromEntries(

@@ -399,6 +399,9 @@ function MisDatos({
           phone: miembro.phone,
           shirtSize: miembro.shirt_size,
           country: miembro.country,
+          documentId: miembro.document_id,
+          stateProvince: miembro.state_province,
+          box: miembro.box,
           answers: miembro.answers as Record<string, string> | null,
           aceptado: miembro.accepted_terms_at !== null,
         }}

@@ -23,6 +23,10 @@ export interface Perfil {
   country: string | null;
   city: string | null;
   instagram: string | null;
+  /** Unico por PLATAFORMA (no por competencia, a diferencia de `athletes.document_id`). */
+  documentId: string | null;
+  stateProvince: string | null;
+  box: string | null;
 }
 
 export async function getPerfil(): Promise<Perfil | null> {
@@ -35,7 +39,9 @@ export async function getPerfil(): Promise<Perfil | null> {
 
   const { data } = await supabase
     .from("profiles")
-    .select("id, email, full_name, avatar_url, phone_country, phone, birth_date, country, city, instagram")
+    .select(
+      "id, email, full_name, avatar_url, phone_country, phone, birth_date, country, city, instagram, document_id, state_province, box",
+    )
     .eq("id", user.id)
     .maybeSingle();
 
@@ -50,6 +56,9 @@ export async function getPerfil(): Promise<Perfil | null> {
     country: data?.country ?? null,
     city: data?.city ?? null,
     instagram: data?.instagram ?? null,
+    documentId: data?.document_id ?? null,
+    stateProvince: data?.state_province ?? null,
+    box: data?.box ?? null,
   };
 }
 

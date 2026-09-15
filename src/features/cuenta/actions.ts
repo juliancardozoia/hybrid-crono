@@ -47,10 +47,20 @@ export async function guardarPerfil(
       city: texto("city"),
       // Se guarda sin arroba: la pantalla lo pinta y asi no quedan "@@juan".
       instagram: texto("instagram")?.replace(/^@/, "") ?? null,
+      document_id: texto("documentId"),
+      state_province: texto("stateProvince"),
+      box: texto("box"),
     })
     .eq("id", user.id);
 
-  if (error) return { error: error.message || "No se pudo guardar." };
+  if (error) {
+    // Unico por PLATAFORMA (`profiles_documento_unico`): distinto del unico
+    // por competencia que ya existia en `athletes`.
+    if (error.code === "23505") {
+      return { error: "Ese documento ya está registrado con otra cuenta." };
+    }
+    return { error: error.message || "No se pudo guardar." };
+  }
 
   revalidatePath("/panel/perfil");
   revalidatePath("/", "layout");

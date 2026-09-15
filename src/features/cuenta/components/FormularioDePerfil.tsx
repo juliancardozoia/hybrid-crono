@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { guardarPerfil, type FormState } from "../actions";
 import { PAISES } from "@/shared/utils/paises";
+import { etiquetaSubdivision } from "@/shared/utils/subdivision";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
 import { useNotificaciones, useToastDeEstado } from "@/shared/components/Notificaciones";
@@ -54,6 +55,8 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
     }
   }, [state, exito]);
 
+  const [pais, setPais] = useState(perfil.country ?? "");
+
   const key = [
     perfil.fullName,
     perfil.phoneCountry,
@@ -62,6 +65,9 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
     perfil.country,
     perfil.city,
     perfil.instagram,
+    perfil.documentId,
+    perfil.stateProvince,
+    perfil.box,
   ].join("|");
 
   return (
@@ -135,7 +141,8 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
           <span className="text-sm font-medium">País</span>
           <Selector
             name="country"
-            defaultValue={perfil.country ?? ""}
+            value={pais}
+            onChange={(e) => setPais(e.target.value)}
             className={selector}
           >
             <option value="">—</option>
@@ -152,6 +159,36 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
           <input
             name="city"
             defaultValue={perfil.city ?? ""}
+            className={campo}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">{etiquetaSubdivision(pais)}</span>
+          <input
+            name="stateProvince"
+            defaultValue={perfil.stateProvince ?? ""}
+            className={campo}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Documento (DNI)</span>
+          <input
+            name="documentId"
+            defaultValue={perfil.documentId ?? ""}
+            className={campo}
+          />
+          <span className="text-xs text-neutral-600">
+            Único por cuenta: no puede repetirse en otro perfil de Scora.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Box (opcional)</span>
+          <input
+            name="box"
+            defaultValue={perfil.box ?? ""}
             className={campo}
           />
         </label>

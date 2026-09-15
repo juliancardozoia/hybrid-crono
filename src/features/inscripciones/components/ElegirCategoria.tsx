@@ -160,10 +160,14 @@ export function ElegirCategoria({
               birthDate: perfil?.birthDate ?? null,
               phone: perfil?.phone ?? null,
               country: perfil?.country ?? null,
+              documentId: perfil?.documentId ?? null,
+              stateProvince: perfil?.stateProvince ?? null,
+              box: perfil?.box ?? null,
             }}
             tallas={tallas}
             campos={camposDeLaCategoria}
             documentos={documentos}
+            soloEsenciales
           />
         </div>
       )}

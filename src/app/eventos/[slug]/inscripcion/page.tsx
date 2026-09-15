@@ -44,7 +44,7 @@ export default async function InscripcionPage({
   if (divisionIds.length > 0) {
     const { data: existente } = await (await createClient())
       .from("registrations")
-      .select("id")
+      .select("id, status")
       .in("division_id", divisionIds)
       .eq("created_by", usuario.id)
       .neq("status", "cancelada")
@@ -52,7 +52,13 @@ export default async function InscripcionPage({
       .limit(1)
       .maybeSingle();
 
-    if (existente) redirect(`/inscripcion/${existente.id}`);
+    if (existente) {
+      // Confirmada ya no es un tramite: el atleta no tiene nada que completar
+      // ahi. Lo manda al panel, que es donde ve su inscripcion junto con todo
+      // lo demas que hace con esta cuenta.
+      if (existente.status === "confirmada") redirect("/panel");
+      redirect(`/inscripcion/${existente.id}`);
+    }
   }
 
   const abiertas = form.divisions.filter((d) => d.abierta);

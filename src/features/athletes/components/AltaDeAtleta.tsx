@@ -8,26 +8,10 @@ import { Selector } from "@/shared/components/Selector";
 import { CampoBase, Field, Select } from "@/shared/components/SimpleForm";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import { PAISES } from "@/shared/utils/paises";
+import { etiquetaSubdivision } from "@/shared/utils/subdivision";
 
 const subtitulo =
   "text-xs font-medium tracking-wide text-neutral-500 uppercase";
-
-// Como se le llama a la subdivision segun el pais. Es cosmetico —el dato se
-// guarda igual en `state_province` sea cual sea la etiqueta— pero "Provincia"
-// en un formulario mexicano o "Estado" en uno argentino lee raro.
-const ETIQUETA_SUBDIVISION: Record<string, string> = {
-  AR: "Provincia",
-  MX: "Estado",
-  US: "Estado",
-  BR: "Estado",
-  CA: "Provincia",
-  CO: "Departamento",
-  PE: "Departamento",
-  BO: "Departamento",
-  UY: "Departamento",
-  CR: "Provincia",
-  ES: "Provincia",
-};
 
 export interface DivisionParaAlta {
   id: string;
@@ -194,8 +178,7 @@ function BloqueDeIntegrante({
   tallas: string[];
 }) {
   const [pais, setPais] = useState("");
-  const etiquetaSubdivision =
-    ETIQUETA_SUBDIVISION[pais] ?? "Estado / Provincia";
+  const etiquetaDeSubdivision = etiquetaSubdivision(pais);
 
   return (
     <div className={soloUno ? "" : "rounded-xl border border-neutral-800 p-4"}>
@@ -251,7 +234,7 @@ function BloqueDeIntegrante({
           <p className={subtitulo}>Campos opcionales</p>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={etiquetaSubdivision} name={`stateProvince_${indice}`} />
+            <Field label={etiquetaDeSubdivision} name={`stateProvince_${indice}`} />
             <Select
               label="Sexo"
               name={`gender_${indice}`}

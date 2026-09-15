@@ -1502,43 +1502,52 @@ export type Database = {
         Row: {
           avatar_url: string | null
           birth_date: string | null
+          box: string | null
           city: string | null
           country: string | null
           created_at: string
+          document_id: string | null
           email: string | null
           full_name: string | null
           id: string
           instagram: string | null
           phone: string | null
           phone_country: string | null
+          state_province: string | null
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           birth_date?: string | null
+          box?: string | null
           city?: string | null
           country?: string | null
           created_at?: string
+          document_id?: string | null
           email?: string | null
           full_name?: string | null
           id: string
           instagram?: string | null
           phone?: string | null
           phone_country?: string | null
+          state_province?: string | null
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           birth_date?: string | null
+          box?: string | null
           city?: string | null
           country?: string | null
           created_at?: string
+          document_id?: string | null
           email?: string | null
           full_name?: string | null
           id?: string
           instagram?: string | null
           phone?: string | null
           phone_country?: string | null
+          state_province?: string | null
           updated_at?: string
         }
         Relationships: []
