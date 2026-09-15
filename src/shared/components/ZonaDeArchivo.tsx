@@ -31,6 +31,7 @@ export function ZonaDeArchivo({
   etiqueta,
   onSubido,
   bucket = "eventos",
+  privado = false,
   className = "",
 }: {
   /** Prefijo de la ruta dentro del bucket. La politica lo usa para decidir. */
@@ -41,6 +42,12 @@ export function ZonaDeArchivo({
   etiqueta: string;
   onSubido: (url: string, nombre: string) => void | Promise<void>;
   bucket?: string;
+  /**
+   * El bucket es PRIVADO: no hay URL publica que armar (devolveria 403). Se
+   * pasa la RUTA cruda dentro del bucket, y quien la use pide una URL firmada
+   * server-side, donde RLS puede decidir si esa persona la puede ver.
+   */
+  privado?: boolean;
   /** Para alinear la caja con lo que tenga al lado. */
   className?: string;
 }) {
@@ -78,8 +85,12 @@ export function ZonaDeArchivo({
         return;
       }
 
-      const { data } = supabase.storage.from(bucket).getPublicUrl(ruta);
-      await onSubido(data.publicUrl, archivo.name);
+      if (privado) {
+        await onSubido(ruta, archivo.name);
+      } else {
+        const { data } = supabase.storage.from(bucket).getPublicUrl(ruta);
+        await onSubido(data.publicUrl, archivo.name);
+      }
     } finally {
       setSubiendo(false);
     }

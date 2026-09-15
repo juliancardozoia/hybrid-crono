@@ -23,6 +23,20 @@ export interface PostulacionState {
 }
 
 /**
+ * `apply_as_judge` levanta sus errores de negocio con `raise exception` sin
+ * codigo propio (quedan como P0001) y en español ya legible para quien se
+ * postula -- esos se muestran tal cual. Cualquier otro codigo es un error de
+ * infraestructura (conexion, constraint) que Postgres no escribio pensando en
+ * quien esta llenando este formulario, y ahi conviene un mensaje generico en
+ * vez de mostrar texto tecnico a un desconocido en el portal publico.
+ */
+function traducir(error: { code?: string; message?: string } | null): string {
+  if (!error) return "No se pudo enviar la postulación.";
+  if (error.code === "P0001" || !error.code) return error.message ?? "No se pudo enviar la postulación.";
+  return "No se pudo enviar la postulación. Intenta de nuevo.";
+}
+
+/**
  * Se postula como juez de la competencia. Queda pendiente de aprobación: es
  * `apply_as_judge` quien decide todo -- login exigido, evento publicado, y
  * que no haya ya una fila de este correo -- esta acción solo traduce el error.
@@ -35,7 +49,7 @@ export async function postularseComoJuez(
   const supabase = await createClient();
   const { error } = await supabase.rpc("apply_as_judge", { p_public_slug: slug });
 
-  if (error) return { error: error.message, enviada: false };
+  if (error) return { error: traducir(error), enviada: false };
 
   revalidatePath(`/eventos/${slug}`);
   return { error: null, enviada: true };

@@ -102,6 +102,7 @@ export function PanelDeInscripcion({
           registrationId={registro.id}
           orden={pago.orden}
           medios={pago.medios}
+          intentos={pago.intentos}
         />
       )}
 
@@ -397,6 +398,7 @@ function MisDatos({
           gender: miembro.gender,
           phone: miembro.phone,
           shirtSize: miembro.shirt_size,
+          country: miembro.country,
           answers: miembro.answers as Record<string, string> | null,
           aceptado: miembro.accepted_terms_at !== null,
         }}

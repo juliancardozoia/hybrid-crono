@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { armarOrden } from "../actions";
+import { armarOrden, reportarPagoManual } from "../actions";
 import { ADAPTADORES, montoLegible } from "../adapters";
 import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
+import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
-import type { MedioDePago } from "../queries";
+import { ZonaDeArchivo } from "@/shared/components/ZonaDeArchivo";
+import type { IntentoDePago, MedioDePago } from "../queries";
 import type { OrderRow, PaymentProvider } from "@/lib/supabase/types";
 
 /**
@@ -20,10 +22,12 @@ export function BloqueDePago({
   registrationId,
   orden,
   medios,
+  intentos,
 }: {
   registrationId: string;
   orden: OrderRow | null;
   medios: MedioDePago[];
+  intentos: IntentoDePago[];
 }) {
   const [codigo, setCodigo] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +95,15 @@ export function BloqueDePago({
 
       {!pagada && (
         <>
+          {intentos.length > 0 && (
+            <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+              Reportaste un comprobante el{" "}
+              {new Date(intentos[0].createdAt).toLocaleDateString()}. La
+              organización lo está revisando — si necesitás corregirlo, podés
+              subir otro más abajo.
+            </p>
+          )}
+
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               value={codigo}
@@ -163,10 +176,10 @@ export function BloqueDePago({
                           ))}
                         </ul>
                         {info.requiereConfirmacionManual && (
-                          <p className="mt-3 text-xs text-neutral-500">
-                            Cuando pagues, la organización lo confirma y tu
-                            inscripción queda lista.
-                          </p>
+                          <ReportarComprobante
+                            orderId={orden.id}
+                            registrationId={registrationId}
+                          />
                         )}
                       </div>
                     )}
@@ -178,5 +191,64 @@ export function BloqueDePago({
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * El atleta sube el comprobante y, opcionalmente, una referencia.
+ *
+ * Deja la orden EXACTAMENTE como estaba: nunca marca nada como pagado -- solo
+ * deja evidencia para que el organizador la revise con `ConfirmarPago`.
+ */
+function ReportarComprobante({
+  orderId,
+  registrationId,
+}: {
+  orderId: string;
+  registrationId: string;
+}) {
+  const [referencia, setReferencia] = useState("");
+  const [enviado, setEnviado] = useState(false);
+  const [pendiente, startTransition] = useTransition();
+  const { exito, error: avisarError } = useNotificaciones();
+  useCargaMientras(pendiente, "Enviando el comprobante…");
+
+  function reportar(ruta: string) {
+    startTransition(async () => {
+      const r = await reportarPagoManual(orderId, registrationId, ruta, referencia);
+      if (r.error) {
+        avisarError(r.error);
+        return;
+      }
+      setEnviado(true);
+      exito("Comprobante enviado. La organización lo va a revisar.");
+    });
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-neutral-800 pt-3">
+      <p className="text-xs text-neutral-500">
+        Cuando pagues, subí el comprobante acá. La organización lo revisa y
+        confirma tu inscripción.
+      </p>
+
+      <input
+        value={referencia}
+        onChange={(e) => setReferencia(e.target.value)}
+        placeholder="Referencia de la transferencia (opcional)"
+        className="rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
+      />
+
+      <ZonaDeArchivo
+        bucket="comprobantes"
+        carpeta={registrationId}
+        privado
+        tipos={["image/jpeg", "image/png", "image/webp", "application/pdf"]}
+        maximoMb={10}
+        etiqueta={enviado ? "Subir otro comprobante" : "Subir comprobante de pago"}
+        ayuda="JPG, PNG, WebP o PDF. Hasta 10 MB."
+        onSubido={reportar}
+      />
+    </div>
   );
 }

@@ -1359,6 +1359,7 @@ export type Database = {
           order_id: string
           provider: Database["public"]["Enums"]["payment_provider"]
           raw: Json
+          receipt_url: string | null
           status: string
         }
         Insert: {
@@ -1370,6 +1371,7 @@ export type Database = {
           order_id: string
           provider: Database["public"]["Enums"]["payment_provider"]
           raw?: Json
+          receipt_url?: string | null
           status: string
         }
         Update: {
@@ -1381,6 +1383,7 @@ export type Database = {
           order_id?: string
           provider?: Database["public"]["Enums"]["payment_provider"]
           raw?: Json
+          receipt_url?: string | null
           status?: string
         }
         Relationships: [
@@ -3327,6 +3330,34 @@ export type Database = {
       reorder_workouts: {
         Args: { p_event_id: string; p_ordered_ids: string[] }
         Returns: undefined
+      }
+      reportar_pago_manual: {
+        Args: {
+          p_order_id: string
+          p_receipt_url: string
+          p_referencia?: string
+        }
+        Returns: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          discount_cents: number
+          discount_code_id: string | null
+          event_id: string
+          id: string
+          paid_at: string | null
+          provider: Database["public"]["Enums"]["payment_provider"] | null
+          registration_id: string
+          status: Database["public"]["Enums"]["order_status"]
+          total_cents: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       save_member_data: {
         Args: { p_datos: Json; p_member_id: string }

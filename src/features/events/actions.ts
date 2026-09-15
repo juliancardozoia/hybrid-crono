@@ -7,6 +7,7 @@ import { slugWithSuffix } from "@/shared/utils/slug";
 import { pasoSiguiente } from "@/features/events/lib/asistente";
 import { instanteEnZona } from "@/shared/utils/fecha";
 import { requireManage } from "@/features/events/lib/access";
+import { esLimiteDePlan } from "@/features/planes/lib/errores";
 import type { EventFormat, EventType } from "@/lib/supabase/types";
 import { TALLAS } from "./lib/tallas";
 
@@ -93,12 +94,21 @@ function validar(campos: ReturnType<typeof camposDeLaFicha>, formData: FormData)
   return null;
 }
 
+/**
+ * Antes descartaba `error.message` en el fallback: cualquier error que no
+ * fuera 23505/23514/42501 —incluido `PL001`, el limite del plan gratuito—
+ * salia como el string fijo "No se pudo guardar.", sin ningun rastro del
+ * motivo real. Mismo bug que ya se habia corregido en
+ * `events/config/actions.ts`, pero que se escapo en este archivo hermano.
+ */
 function traducir(error: { code?: string; message?: string } | null): string {
   if (!error) return "No se pudo guardar.";
+  // Un limite del plan trae su propio mensaje, escrito para el organizador.
+  if (esLimiteDePlan(error)) return error.message ?? "Esto es del plan Pro.";
   if (error.code === "23505") return "Ya existe una competencia con ese nombre.";
   if (error.code === "23514") return "Algún dato está fuera de rango.";
   if (error.code === "42501") return "No tienes permiso para esta operación.";
-  return "No se pudo guardar.";
+  return error.message || "No se pudo guardar.";
 }
 
 export async function createEvent(_prev: FormState, formData: FormData): Promise<FormState> {

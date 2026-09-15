@@ -125,6 +125,14 @@ export default async function PanelPage() {
                         Ver resultados
                       </Link>
                     )}
+                    {i.status === "esperando_pago" && (
+                      <Link
+                        href={`/inscripcion/${i.id}`}
+                        className="text-sm font-medium text-lime-400 hover:underline"
+                      >
+                        Completar pago
+                      </Link>
+                    )}
                     <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${estado.clase}`}>
                       {estado.texto}
                     </span>

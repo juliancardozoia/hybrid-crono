@@ -46,6 +46,7 @@ interface DatosDelAtleta {
   gender: string;
   phone: string;
   shirtSize: string;
+  country: string;
   acceptTerms: boolean;
   answers: Record<string, string>;
 }
@@ -60,6 +61,7 @@ function datosDelFormulario(formData: FormData): DatosDelAtleta | { error: strin
     gender: String(formData.get("gender") ?? "").trim(),
     phone: String(formData.get("phone") ?? "").trim(),
     shirtSize: String(formData.get("shirtSize") ?? "").trim(),
+    country: String(formData.get("country") ?? "").trim().toUpperCase(),
     acceptTerms: formData.get("acceptTerms") === "on",
     // Los campos extra del organizador viajan juntos: son datos, no columnas.
     answers: Object.fromEntries(
@@ -71,6 +73,9 @@ function datosDelFormulario(formData: FormData): DatosDelAtleta | { error: strin
 
   if (!datos.firstName || !datos.lastName) {
     return { error: "El nombre y el apellido son obligatorios." };
+  }
+  if (!datos.country) {
+    return { error: "Elige tu país." };
   }
   if (!datos.acceptTerms) {
     return { error: "Hay que aceptar los términos para poder competir." };
@@ -96,17 +101,23 @@ async function backfillPerfil(
 ) {
   const { data: perfil } = await supabase
     .from("profiles")
-    .select("full_name, phone, birth_date")
+    .select("full_name, phone, birth_date, country")
     .eq("id", userId)
     .maybeSingle();
 
-  const cambios: { full_name?: string; phone?: string; birth_date?: string } = {};
+  const cambios: {
+    full_name?: string;
+    phone?: string;
+    birth_date?: string;
+    country?: string;
+  } = {};
   if (!perfil?.full_name) {
     const nombreCompleto = [datos.firstName, datos.lastName].filter(Boolean).join(" ");
     if (nombreCompleto) cambios.full_name = nombreCompleto;
   }
   if (!perfil?.phone && datos.phone) cambios.phone = datos.phone;
   if (!perfil?.birth_date && datos.birthDate) cambios.birth_date = datos.birthDate;
+  if (!perfil?.country && datos.country) cambios.country = datos.country;
 
   if (Object.keys(cambios).length > 0) {
     await supabase.from("profiles").update(cambios).eq("id", userId);

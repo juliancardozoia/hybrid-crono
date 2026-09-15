@@ -181,6 +181,41 @@ export async function armarOrden(
   return OK;
 }
 
+/**
+ * El atleta reporta que ya pagó una transferencia, con su comprobante.
+ *
+ * EL ARCHIVO NO PASA POR ACA: el navegador ya lo subió directo al bucket
+ * privado `comprobantes`, con su propia sesión (mismo patrón que la foto de
+ * perfil). Lo que llega es la RUTA dentro del bucket, y se valida que caiga
+ * en LA CARPETA DE ESTA INSCRIPCION — sin eso, cualquiera podría reportar
+ * como comprobante la ruta de un archivo ajeno.
+ *
+ * Nunca marca la orden como pagada: eso sigue siendo exclusivo del
+ * organizador (`confirmarPagoManual`) o del webhook con firma verificada.
+ */
+export async function reportarPagoManual(
+  orderId: string,
+  registrationId: string,
+  receiptPath: string,
+  referencia?: string,
+): Promise<FormState> {
+  if (!receiptPath.startsWith(`${registrationId}/`)) {
+    return { error: "Ese comprobante no es válido." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reportar_pago_manual", {
+    p_order_id: orderId,
+    p_receipt_url: receiptPath,
+    p_referencia: referencia || undefined,
+  });
+
+  if (error) return { error: error.message || "No se pudo reportar el pago." };
+
+  revalidatePath(`/inscripcion/${registrationId}`);
+  return OK;
+}
+
 /** La organización marca una transferencia como recibida. */
 export async function confirmarPagoManual(
   orderId: string,

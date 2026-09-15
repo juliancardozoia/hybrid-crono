@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { guardarPerfil, type FormState } from "../actions";
 import { PAISES } from "@/shared/utils/paises";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { Selector } from "@/shared/components/Selector";
-import { MensajeDeError } from "@/shared/components/MensajeDeError";
+import { useNotificaciones, useToastDeEstado } from "@/shared/components/Notificaciones";
 import type { Perfil } from "../queries";
 
 const initial: FormState = { error: null, message: null };
@@ -29,12 +29,43 @@ const selector = "w-full py-3";
  * Va dentro de un `<form action={...}>` a proposito, al reves que la grilla de
  * scores: aqui no hay nada que conservar tras guardar —los valores vuelven del
  * servidor ya actualizados— asi que el reset de React 19 no molesta.
+ *
+ * PERO el `key` del formulario es necesario igual. `defaultValue` solo fija
+ * el valor de un input UNCONTROLADO al MONTARLO — un input ya montado no
+ * vuelve a leer `defaultValue` aunque el prop `perfil` cambie con datos
+ * frescos del servidor tras guardar. Sin el `key`, React 19 hace
+ * `form.reset()` de vuelta al `defaultValue` que el input tenia en el
+ * momento del reset (el VIEJO, porque el nuevo `perfil` todavia no llego o
+ * ya no se vuelve a aplicar), y el formulario parecia "no guardar" hasta que
+ * se refrescaba la pagina a mano. Un `key` derivado de los propios campos
+ * fuerza a React a tirar el DOM viejo y montar uno nuevo con los valores
+ * frescos apenas el server-component padre los trae.
  */
 export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
   const [state, formAction] = useActionState(guardarPerfil, initial);
+  useToastDeEstado(state);
+
+  const { exito } = useNotificaciones();
+  const anterior = useRef<FormState | null>(null);
+  useEffect(() => {
+    if (state !== anterior.current) {
+      if (state.message) exito(state.message);
+      anterior.current = state;
+    }
+  }, [state, exito]);
+
+  const key = [
+    perfil.fullName,
+    perfil.phoneCountry,
+    perfil.phone,
+    perfil.birthDate,
+    perfil.country,
+    perfil.city,
+    perfil.instagram,
+  ].join("|");
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <form key={key} action={formAction} className="flex flex-col gap-5">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 sm:col-span-2">
           <span className="text-sm font-medium">Nombre completo</span>
@@ -135,18 +166,6 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
           />
         </label>
       </div>
-
-      {state.error && (
-        <MensajeDeError>{state.error}</MensajeDeError>
-      )}
-      {state.message && (
-        <p
-          role="status"
-          className="rounded-xl border border-lime-500/40 bg-lime-500/10 p-3 text-sm text-lime-300"
-        >
-          {state.message}
-        </p>
-      )}
 
       <BotonDeEnvio
         pendienteTexto="Guardando…"

@@ -1,11 +1,22 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { claimLane } from "@/features/judge/actions";
-import { getJudgeLanes, type JudgeLane, type LanesResult } from "@/features/judge/queries";
+import { getJudgeLanes, puedeJuzgar, type JudgeLane, type LanesResult } from "@/features/judge/queries";
 import { ClaimButton } from "@/features/judge/components/ClaimButton";
 
 export const metadata = { title: "Carriles — Scora" };
 
+/**
+ * `puedeJuzgar()` ya gatea el link "Juzgar" del menu (`MenuDeCuenta`,
+ * `MenuLateral`) — sin esto, entrar por URL directa quedaba fuera de esa
+ * misma garantia: nada rompia porque `judge_visible_lanes()` ya filtra por
+ * RLS, pero una cuenta sin ningun rol de staff veia esta pantalla vacia en
+ * vez de ser redirigida, igual que cualquier otra pantalla del panel sin
+ * acceso (`requireEventAccess`).
+ */
 export default async function JuezPage() {
+  if (!(await puedeJuzgar())) redirect("/panel");
+
   const { mios, libres, motivo } = await getJudgeLanes();
 
   // Separados en DOS secciones, no una: un juez que se sale de la app o la

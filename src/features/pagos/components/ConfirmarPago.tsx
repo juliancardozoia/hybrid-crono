@@ -5,6 +5,7 @@ import { confirmarPagoManual } from "../actions";
 import { confirmarInscripcion } from "@/features/inscripciones/actions";
 import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
+import type { IntentoDePago } from "../queries";
 
 /**
  * La organizacion marca un pago como recibido.
@@ -21,18 +22,44 @@ export function ConfirmarPago({
   orderId,
   registrationId,
   eventId,
+  intentos = [],
 }: {
   orderId: string | null;
   registrationId: string;
   eventId: string;
+  /** Lo que el atleta ya reportó, con su comprobante firmado — el más reciente primero. */
+  intentos?: IntentoDePago[];
 }) {
-  const [referencia, setReferencia] = useState("");
+  const [referencia, setReferencia] = useState(intentos[0]?.referencia ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pendiente, startTransition] = useTransition();
   useCargaMientras(pendiente, "Confirmando el pago…");
 
   return (
     <div className="flex flex-col gap-2">
+      {intentos.length > 0 && (
+        <ul className="flex flex-col gap-1 text-xs text-neutral-400">
+          {intentos.map((i) => (
+            <li key={i.id}>
+              Reportado el {new Date(i.createdAt).toLocaleString()}
+              {i.receiptUrl && (
+                <>
+                  {" — "}
+                  <a
+                    href={i.receiptUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-lime-400 hover:underline"
+                  >
+                    Ver comprobante
+                  </a>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {orderId && (
           <input

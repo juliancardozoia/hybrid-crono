@@ -1,4 +1,5 @@
 import { Selector } from "@/shared/components/Selector";
+import { PAISES } from "@/shared/utils/paises";
 import type { CampoDelFormulario } from "../queries";
 
 const campo =
@@ -29,6 +30,7 @@ export function CamposDeAtleta({
     gender?: string | null;
     phone?: string | null;
     shirtSize?: string | null;
+    country?: string | null;
     answers?: Record<string, string> | null;
     aceptado?: boolean;
   };
@@ -60,6 +62,24 @@ export function CamposDeAtleta({
           />
         </label>
       </div>
+
+      {/* Pais: sin esto, la bandera de la grilla del organizador (y de la
+          lista de largada / leaderboard publico) nunca puede mostrarse para
+          nadie que se inscriba solo -- antes solo lo pedia el alta manual del
+          organizador. */}
+      <label className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium">País</span>
+        <Selector name="country" required defaultValue={valores?.country ?? ""} className={selector}>
+          <option value="" disabled>
+            Elige un país…
+          </option>
+          {PAISES.map((p) => (
+            <option key={p.codigo} value={p.codigo}>
+              {p.nombre}
+            </option>
+          ))}
+        </Selector>
+      </label>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5">

@@ -48,3 +48,6 @@ next-env.d.ts
 
 # estado local del CLI de Supabase: ref del proyecto, org y versiones
 supabase/.temp/
+
+.vercel
+.env*

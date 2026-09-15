@@ -159,6 +159,7 @@ export function ElegirCategoria({
               ...separarNombre(perfil?.fullName ?? null),
               birthDate: perfil?.birthDate ?? null,
               phone: perfil?.phone ?? null,
+              country: perfil?.country ?? null,
             }}
             tallas={tallas}
             campos={camposDeLaCategoria}

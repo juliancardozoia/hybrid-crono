@@ -2,7 +2,7 @@ import { requireEventAccess } from "@/features/events/lib/access";
 import { getInscripcionesDelEvento } from "@/features/inscripciones/queries";
 import { ConfiguracionDeInscripciones } from "@/features/inscripciones/components/ConfiguracionDeInscripciones";
 import { ConfirmarPago } from "@/features/pagos/components/ConfirmarPago";
-import { getOrdenesDelEvento } from "@/features/pagos/queries";
+import { getIntentosPendientesDelEvento, getOrdenesDelEvento } from "@/features/pagos/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +36,10 @@ export default async function InscripcionesPage({ params }: { params: Promise<{ 
     );
   }
 
-  const [inscripciones, ordenes] = await Promise.all([
+  const [inscripciones, ordenes, intentosPorOrden] = await Promise.all([
     getInscripcionesDelEvento(id),
     getOrdenesDelEvento(id),
+    getIntentosPendientesDelEvento(id),
   ]);
 
   const confirmadas = inscripciones.filter((i) => i.status === "confirmada").length;
@@ -95,6 +96,11 @@ export default async function InscripcionesPage({ params }: { params: Promise<{ 
                       orderId={ordenes.get(i.id)?.id ?? null}
                       registrationId={i.id}
                       eventId={id}
+                      intentos={
+                        ordenes.get(i.id)
+                          ? intentosPorOrden.get(ordenes.get(i.id)!.id)
+                          : undefined
+                      }
                     />
                   )}
                 </li>
