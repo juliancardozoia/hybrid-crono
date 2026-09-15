@@ -8,6 +8,10 @@ import { sanitizeReturnPath } from "./lib/redirect";
 export interface AuthState {
   error: string | null;
   message?: string | null;
+  /** El correo ya tiene una cuenta confirmada: no se le puede decir "revisa tu correo". */
+  yaRegistrado?: boolean;
+  /** El enlace del correo (recuperar clave) vencio o ya se uso. */
+  enlaceVencido?: boolean;
 }
 
 /**
@@ -47,12 +51,18 @@ export async function signIn(_prev: AuthState, formData: FormData): Promise<Auth
 export async function signUp(_prev: AuthState, formData: FormData): Promise<AuthState> {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const password2 = String(formData.get("password2") ?? "");
+  // Saneado: `volver` viaja en la URL, asi que lo controla quien arme el link.
+  const volver = sanitizeReturnPath(String(formData.get("volver") ?? ""));
 
   if (!email || !password) {
     return { error: "Completa email y contraseña." };
   }
   if (password.length < 8) {
     return { error: "La contraseña tiene que tener al menos 8 caracteres." };
+  }
+  if (password !== password2) {
+    return { error: "Las dos contraseñas no coinciden." };
   }
 
   const supabase = await createClient();
@@ -68,6 +78,16 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
 
   if (error) return { error: traducir(error.message) };
 
+  // Supabase no devuelve error cuando el correo ya tiene una cuenta
+  // CONFIRMADA: responde 200 con un usuario "fantasma" de identidades
+  // vacias, sin mandar ningun correo. Sin este chequeo, esa persona veia
+  // "te mandamos un email" y se quedaba esperando uno que nunca llega.
+  // (Un correo registrado pero SIN confirmar toma la rama de abajo: Supabase
+  // le reenvia la confirmacion como si fuera un alta nueva, que es correcto.)
+  if (data.user && data.user.identities && data.user.identities.length === 0) {
+    return { error: null, yaRegistrado: true };
+  }
+
   // Con confirmacion por email activada no viene sesion todavia.
   if (!data.session) {
     return {
@@ -76,7 +96,7 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
     };
   }
 
-  redirect("/panel");
+  redirect(volver);
 }
 
 /**
@@ -135,9 +155,16 @@ export async function requestPasswordReset(
   if (!email) return { error: "Escribe tu email." };
 
   const supabase = await createClient();
-  await supabase.auth.resetPasswordForEmail(email, {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: absoluteUrl("/auth/callback?volver=/nueva-clave"),
   });
+
+  // Solo se muestra un error cuando NO delata si la cuenta existe (limite de
+  // envios, por ejemplo). Para cualquier otro caso la respuesta es siempre
+  // la misma, exista o no esa cuenta.
+  if (error && /rate limit/i.test(error.message)) {
+    return { error: traducir(error.message) };
+  }
 
   return {
     error: null,
@@ -172,7 +199,8 @@ export async function updatePassword(
 
   if (!user) {
     return {
-      error: "El enlace venció o ya se usó. Pide uno nuevo desde “Olvidé mi contraseña”.",
+      error: "El enlace venció o ya se usó.",
+      enlaceVencido: true,
     };
   }
 

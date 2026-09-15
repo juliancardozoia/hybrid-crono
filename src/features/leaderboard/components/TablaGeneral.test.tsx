@@ -190,11 +190,11 @@ function datosConCorte(): Datos {
 }
 
 describe("una categoria con corte confirmado (varias etapas)", () => {
-  it("muestra una sola tabla, sin pestana por etapa", async () => {
+  it("muestra una sola tabla, sin filtro por etapa", async () => {
     render(<TablaGeneral slug="copa-test" inicial={datosConCorte()} />);
 
-    // Una sola categoria: no hay pestanas, ni siquiera con dos etapas.
-    expect(screen.queryByRole("button", { name: "Rx" })).toBeNull();
+    // Una sola categoria: no hay filtro, ni siquiera con dos etapas.
+    expect(screen.queryByRole("combobox")).toBeNull();
     // Los dos equipos, activo y eliminado, en la MISMA tabla.
     expect(screen.getByText("Ana Perez")).toBeTruthy();
     expect(screen.getByText("Beto Gomez")).toBeTruthy();
@@ -218,8 +218,10 @@ describe("una categoria con corte confirmado (varias etapas)", () => {
 
     render(<TablaGeneral slug="copa-test" inicial={dos} />);
 
-    expect(screen.getByRole("button", { name: "Rx" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Scaled" })).toBeTruthy();
+    const selector = screen.getByRole("combobox");
+    expect(selector).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Rx" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Scaled" })).toBeTruthy();
   });
 });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import type { AuthState } from "../actions";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
@@ -22,11 +23,14 @@ export function FormularioSimpleDeCuenta({
   submitLabel,
   esperando,
   children,
+  enlaceSiVencido,
 }: {
   action: (prev: AuthState, formData: FormData) => Promise<AuthState>;
   submitLabel: string;
   esperando: string;
   children: React.ReactNode;
+  /** Se muestra junto al error solo cuando la accion marca `enlaceVencido`. */
+  enlaceSiVencido?: { href: string; texto: string };
 }) {
   const [state, formAction] = useActionState(action, initial);
 
@@ -46,7 +50,17 @@ export function FormularioSimpleDeCuenta({
       {children}
 
       {state.error && (
-        <MensajeDeError>{state.error}</MensajeDeError>
+        <div className="flex flex-col gap-2">
+          <MensajeDeError>{state.error}</MensajeDeError>
+          {state.enlaceVencido && enlaceSiVencido && (
+            <Link
+              href={enlaceSiVencido.href}
+              className="self-start text-sm font-medium text-lime-400 hover:underline"
+            >
+              {enlaceSiVencido.texto}
+            </Link>
+          )}
+        </div>
       )}
 
       <BotonDeEnvio

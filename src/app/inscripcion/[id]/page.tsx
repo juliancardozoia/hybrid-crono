@@ -56,9 +56,16 @@ export default async function InscripcionDetallePage({
             {inscripcion.registro.team_name ?? inscripcion.categoria.name}
           </h1>
           <p className="mt-1 text-sm text-neutral-400">
-            {inscripcion.categoria.name}
-            {inscripcion.categoria.teamSize > 1 &&
-              ` · equipo de ${inscripcion.categoria.teamSize}`}
+            {inscripcion.registro.team_name
+              ? `${inscripcion.categoria.name}${
+                  inscripcion.categoria.teamSize > 1
+                    ? ` · equipo de ${inscripcion.categoria.teamSize}`
+                    : ""
+                }`
+              : // Individual: el titulo ya dice la categoria (no hay nombre de
+                // equipo). Repetirla en el subtitulo era ruido -- el correo
+                // identifica DE QUIEN es este tramite, que es lo que faltaba.
+                user.email}
           </p>
         </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import {
   cancelarInscripcion,
   enviarInscripcion,
@@ -20,7 +20,7 @@ import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
-import { Selector } from "@/shared/components/Selector";
+import { CamposDeAtleta } from "./CamposDeAtleta";
 
 /**
  * El panel del trámite: quién falta, qué falta y el botón de enviar.
@@ -53,7 +53,6 @@ const ESTADO: Record<
 
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400";
-const selector = "w-full py-3";
 
 export function PanelDeInscripcion({
   registro,
@@ -178,6 +177,12 @@ export function PanelDeInscripcion({
           tallas={tallas}
           campos={campos}
           documentos={documentos}
+          // En individual el capitan ES el unico integrante: guardar sus datos
+          // y enviar la inscripcion son el mismo paso para el atleta, y
+          // separarlos en dos botones es lo que confundia. En equipo siguen
+          // siendo dos pasos distintos porque el capitan no puede enviar hasta
+          // que TODOS completen los suyos.
+          confirmarAlGuardar={teamSize === 1 && soyCapitan}
         />
       )}
 
@@ -187,7 +192,29 @@ export function PanelDeInscripcion({
         </p>
       )}
 
-      {soyCapitan && !cerrada && (
+      {teamSize === 1 && soyCapitan && !cerrada && (
+        <button
+          type="button"
+          disabled={pendiente}
+          onClick={() =>
+            startTransition(async () => {
+              activar("Cancelando la inscripción…");
+              try {
+                const r = await cancelarInscripcion(registro.id);
+                if (r.error) avisarError(r.error);
+                else exito("Inscripción cancelada.");
+              } finally {
+                desactivar();
+              }
+            })
+          }
+          className="self-start text-sm text-neutral-600 hover:text-red-400"
+        >
+          Cancelar inscripción
+        </button>
+      )}
+
+      {teamSize > 1 && soyCapitan && !cerrada && (
         <div className="flex flex-wrap items-center gap-3 border-t border-neutral-800 pt-6">
           <Boton
             disabled={!equipoCompleto}
@@ -299,21 +326,60 @@ function MisDatos({
   tallas,
   campos,
   documentos,
+  confirmarAlGuardar,
 }: {
   registrationId: string;
   miembro: RegistrationMemberRow;
   tallas: string[];
   campos: CampoDelFormulario[];
   documentos: Array<{ name: string; url: string; requiresAcceptance: boolean }>;
+  confirmarAlGuardar: boolean;
 }) {
-  const [state, formAction] = useActionState(guardarMisDatos, {
-    error: null,
-  } as FormState);
-  const respuestas = (miembro.answers ?? {}) as Record<string, string>;
+  // NO usa `<form action={formAction}>`: React 19 llama a form.reset() nativo
+  // apenas la accion termina -incluso si termina en error- y eso borraba todo
+  // lo tipeado con solo olvidar tildar "acepto los terminos". Se invoca la
+  // accion a mano, mismo patron que "Enviar inscripcion"/"Cancelar
+  // inscripcion" en el panel padre.
+  const [pendiente, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const { activar, desactivar } = useCarga();
+  const { exito, error: avisarError } = useNotificaciones();
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setError(null);
+
+    startTransition(async () => {
+      activar(confirmarAlGuardar ? "Confirmando la inscripción…" : "Guardando tus datos…");
+      try {
+        const r = await guardarMisDatos({ error: null }, formData);
+        if (r.error) {
+          setError(r.error);
+          avisarError(r.error);
+          return;
+        }
+
+        if (confirmarAlGuardar) {
+          const r2 = await enviarInscripcion(registrationId);
+          if (r2.error) {
+            setError(r2.error);
+            avisarError(r2.error);
+            return;
+          }
+          exito("Inscripción confirmada.");
+        } else {
+          exito("Datos guardados.");
+        }
+      } finally {
+        desactivar();
+      }
+    });
+  }
 
   return (
     <form
-      action={formAction}
+      onSubmit={onSubmit}
       className="flex flex-col gap-4 border-t border-neutral-800 pt-6"
     >
       <input type="hidden" name="registrationId" value={registrationId} />
@@ -323,158 +389,33 @@ function MisDatos({
         Mis datos
       </h2>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Nombre</span>
-          <input
-            name="firstName"
-            required
-            defaultValue={miembro.first_name ?? ""}
-            className={campo}
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Apellido</span>
-          <input
-            name="lastName"
-            required
-            defaultValue={miembro.last_name ?? ""}
-            className={campo}
-          />
-        </label>
-      </div>
+      <CamposDeAtleta
+        valores={{
+          firstName: miembro.first_name,
+          lastName: miembro.last_name,
+          birthDate: miembro.birth_date,
+          gender: miembro.gender,
+          phone: miembro.phone,
+          shirtSize: miembro.shirt_size,
+          answers: miembro.answers as Record<string, string> | null,
+          aceptado: miembro.accepted_terms_at !== null,
+        }}
+        tallas={tallas}
+        campos={campos}
+        documentos={documentos}
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Fecha de nacimiento</span>
-          <input
-            name="birthDate"
-            type="date"
-            defaultValue={miembro.birth_date ?? ""}
-            className={campo}
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Sexo</span>
-          <Selector
-            name="gender"
-            defaultValue={miembro.gender ?? ""}
-            className={selector}
-          >
-            <option value="">Sin especificar</option>
-            <option value="male">Masculino</option>
-            <option value="female">Femenino</option>
-            <option value="other">Otro</option>
-          </Selector>
-        </label>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Teléfono</span>
-          <input
-            name="phone"
-            defaultValue={miembro.phone ?? ""}
-            className={campo}
-          />
-        </label>
-
-        {/* Sin tallas configuradas el evento no entrega remera: no se pregunta. */}
-        {tallas.length > 0 && (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Talla de remera</span>
-            <Selector
-              name="shirtSize"
-              defaultValue={miembro.shirt_size ?? ""}
-              className={selector}
-            >
-              <option value="">Elegir…</option>
-              {tallas.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Selector>
-          </label>
-        )}
-      </div>
-
-      {campos.map((c) => (
-        <label key={c.key} className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{c.label}</span>
-          {c.type === "seleccion" ? (
-            <Selector
-              name={`campo-${c.key}`}
-              required={c.required}
-              defaultValue={respuestas[c.key] ?? ""}
-              className={selector}
-            >
-              <option value="">Elegir…</option>
-              {c.options.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
-            </Selector>
-          ) : (
-            <input
-              name={`campo-${c.key}`}
-              required={c.required}
-              type={
-                c.type === "numero"
-                  ? "number"
-                  : c.type === "fecha"
-                    ? "date"
-                    : "text"
-              }
-              defaultValue={respuestas[c.key] ?? ""}
-              className={campo}
-            />
-          )}
-        </label>
-      ))}
-
-      <label className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          name="acceptTerms"
-          defaultChecked={miembro.accepted_terms_at !== null}
-          className="mt-1 accent-lime-400"
-        />
-        <span className="text-sm">
-          Acepto los términos de la competencia
-          {documentos.length > 0 && (
-            <span className="mt-0.5 block text-xs text-neutral-500">
-              {documentos.map((d, i) => (
-                <span key={d.url}>
-                  {i > 0 && " · "}
-                  <a
-                    href={d.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="underline hover:text-neutral-300"
-                  >
-                    {d.name}
-                  </a>
-                </span>
-              ))}
-            </span>
-          )}
-        </span>
-      </label>
-
-      {state.error && (
-        <MensajeDeError>{state.error}</MensajeDeError>
-      )}
+      {error && <MensajeDeError>{error}</MensajeDeError>}
 
       <div>
-        <BotonDeEnvio
-          pendienteTexto="Guardando…"
-          mensajeDeCarga="Guardando tus datos…"
-          className={claseDeBoton({ variante: "primary" })}
+        <Boton
+          type="submit"
+          cargando={pendiente}
+          textoCargando={confirmarAlGuardar ? "Confirmando…" : "Guardando…"}
+          variante="primary"
         >
-          Guardar mis datos
-        </BotonDeEnvio>
+          {confirmarAlGuardar ? "Confirmar inscripción" : "Guardar mis datos"}
+        </Boton>
       </div>
     </form>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { signOut } from "@/features/auth/actions";
+import { puedeJuzgar } from "@/features/judge/queries";
 import { MenuDeCuenta } from "./MenuDeCuenta";
 import { SelectorDeIdioma } from "@/shared/components/SelectorDeIdioma";
 import { elegirIdioma } from "@/shared/i18n/acciones";
@@ -27,6 +28,8 @@ export async function EncabezadoPublico() {
   const nombre =
     (usuario?.user_metadata?.full_name as string | undefined)?.trim() || null;
 
+  const mostrarJuzgar = usuario ? await puedeJuzgar() : false;
+
   return (
     <header className="safe-top sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3">
@@ -49,6 +52,7 @@ export async function EncabezadoPublico() {
                 juzgar: t("cuenta.juzgar"),
                 salir: t("cuenta.salir"),
               }}
+              puedeJuzgar={mostrarJuzgar}
             />
           ) : (
             <Link

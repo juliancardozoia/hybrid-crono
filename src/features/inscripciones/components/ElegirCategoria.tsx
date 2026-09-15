@@ -1,11 +1,22 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { empezarInscripcion, type FormState } from "../actions";
-import { claseDeBoton } from "@/shared/components/Boton";
-import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { useState, useTransition } from "react";
+import { confirmarInscripcionIndividual, empezarInscripcion, type FormState } from "../actions";
+import { Boton } from "@/shared/components/Boton";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
-import type { CategoriaParaInscribirse } from "../queries";
+import { CamposDeAtleta } from "./CamposDeAtleta";
+import type { CampoDelFormulario, CategoriaParaInscribirse } from "../queries";
+import type { Perfil } from "@/features/cuenta/queries";
+
+/** "Julian Cardozo" -> {firstName: "Julian", lastName: "Cardozo"}. Heuristica
+ * simple: el perfil guarda un solo campo de nombre y el tramite de inscripcion
+ * pide nombre y apellido por separado. Es una PRECARGA, no una copia atada: el
+ * atleta puede corregirla antes de confirmar. */
+function separarNombre(fullName: string | null): { firstName: string; lastName: string } {
+  const partes = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return { firstName: "", lastName: "" };
+  return { firstName: partes[0], lastName: partes.slice(1).join(" ") };
+}
 
 /**
  * El primer paso de la inscripcion: elegir categoria.
@@ -14,41 +25,61 @@ import type { CategoriaParaInscribirse } from "../queries";
  * nombre de equipo, cuantos integrantes, cuanto sale y que campos se preguntan.
  * Un formulario que pide los datos antes de saber la categoria tiene que
  * adivinar, y adivina mal.
+ *
+ * INDIVIDUAL Y EQUIPO SON DOS FORMULARIOS DISTINTOS, A PROPOSITO:
+ *
+ * - Individual: el capitan ES el unico integrante. Elegir categoria, cargar
+ *   los propios datos y enviar son, para esa persona, UN SOLO GESTO — antes
+ *   eran tres pantallas (elegir categoria -> pantalla de "mis datos" ->
+ *   "enviar inscripcion") para completar algo que un atleta hace de una
+ *   sentada. Se fusiona todo en `confirmarInscripcionIndividual`.
+ * - Equipo: el capitan necesita el ID de la inscripcion YA CREADO para poder
+ *   invitar a sus compañeros por correo, y eso pasa en otro momento, no en la
+ *   misma visita. Ahi se mantiene el paso minimo (categoria + nombre de
+ *   equipo) seguido de la redireccion a `/inscripcion/[id]`.
  */
-
-const SEXO: Record<string, string> = {
-  male: "Masculino",
-  female: "Femenino",
-  mixed: "Mixta",
-  any: "Abierta",
-};
-
-function precio(cents: number | null, moneda: string): string {
-  if (cents === null || cents === 0) return "Sin costo";
-  // Sin decimales: los pesos de la region no los usan en un precio de
-  // inscripcion, y "150.000" se lee mejor que "150.000,00".
-  return `${new Intl.NumberFormat("es", { style: "currency", currency: moneda, maximumFractionDigits: 0 }).format(cents / 100)}`;
-}
-
 export function ElegirCategoria({
   categorias,
+  tallas,
+  campos,
+  documentos,
+  perfil,
 }: {
   categorias: CategoriaParaInscribirse[];
+  tallas: string[];
+  campos: CampoDelFormulario[];
+  documentos: Array<{ name: string; url: string; requiresAcceptance: boolean }>;
+  perfil: Perfil | null;
 }) {
-  const [state, formAction] = useActionState(empezarInscripcion, {
-    error: null,
-  } as FormState);
   const [elegida, setElegida] = useState<string>("");
+  const [pendiente, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const categoria = categorias.find((c) => c.id === elegida) ?? null;
   const esEquipo = (categoria?.teamSize ?? 1) > 1;
+  const esIndividual = categoria !== null && !esEquipo;
+
+  const camposDeLaCategoria = campos.filter(
+    (c) => c.scope === "integrante" && (c.divisionId === null || c.divisionId === elegida),
+  );
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setError(null);
+
+    startTransition(async () => {
+      const accion = esIndividual ? confirmarInscripcionIndividual : empezarInscripcion;
+      const r: FormState = await accion({ error: null }, formData);
+      if (r.error) setError(r.error);
+    });
+  }
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <form onSubmit={onSubmit} className="flex flex-col gap-5">
       <ul className="flex flex-col gap-2">
         {categorias.map((c) => {
-          const sinCupo =
-            c.cuposDisponibles !== null && c.cuposDisponibles <= 0;
+          const sinCupo = c.cuposDisponibles !== null && c.cuposDisponibles <= 0;
           const seleccionada = c.id === elegida;
 
           return (
@@ -118,20 +149,51 @@ export function ElegirCategoria({
         </label>
       )}
 
-      {state.error && (
-        <MensajeDeError>{state.error}</MensajeDeError>
+      {esIndividual && (
+        <div className="flex flex-col gap-4 border-t border-neutral-800 pt-6">
+          <h2 className="text-sm font-semibold text-neutral-400 uppercase">
+            Tus datos
+          </h2>
+          <CamposDeAtleta
+            valores={{
+              ...separarNombre(perfil?.fullName ?? null),
+              birthDate: perfil?.birthDate ?? null,
+              phone: perfil?.phone ?? null,
+            }}
+            tallas={tallas}
+            campos={camposDeLaCategoria}
+            documentos={documentos}
+          />
+        </div>
       )}
 
+      {error && <MensajeDeError>{error}</MensajeDeError>}
+
       <div>
-        <BotonDeEnvio
-          pendienteTexto="Creando…"
-          mensajeDeCarga="Empezando la inscripción…"
+        <Boton
+          type="submit"
           disabled={!elegida}
-          className={claseDeBoton({ variante: "primary" })}
+          cargando={pendiente}
+          textoCargando={esIndividual ? "Confirmando…" : "Creando…"}
+          variante="primary"
         >
-          Continuar
-        </BotonDeEnvio>
+          {esIndividual ? "Confirmar inscripción" : "Continuar"}
+        </Boton>
       </div>
     </form>
   );
+}
+
+const SEXO: Record<string, string> = {
+  male: "Masculino",
+  female: "Femenino",
+  mixed: "Mixta",
+  any: "Abierta",
+};
+
+function precio(cents: number | null, moneda: string): string {
+  if (cents === null || cents === 0) return "Sin costo";
+  // Sin decimales: los pesos de la region no los usan en un precio de
+  // inscripcion, y "150.000" se lee mejor que "150.000,00".
+  return `${new Intl.NumberFormat("es", { style: "currency", currency: moneda, maximumFractionDigits: 0 }).format(cents / 100)}`;
 }

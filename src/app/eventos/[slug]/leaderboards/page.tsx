@@ -1,7 +1,5 @@
 import { MarcoDelEvento } from "@/features/catalogo/components/MarcoDelEvento";
-import { ListaDeLargada } from "@/features/catalogo/components/ListaDeLargada";
-import { LeaderboardLive } from "@/features/leaderboard/components/LeaderboardLive";
-import { TablaGeneral } from "@/features/leaderboard/components/TablaGeneral";
+import { LeaderboardsTab } from "@/features/leaderboard/components/LeaderboardsTab";
 import { getLeaderboard, getTablaGeneral } from "@/features/leaderboard/queries";
 import { getEventoPublico, getInscritos } from "@/features/catalogo/queries";
 
@@ -33,22 +31,17 @@ export default async function LeaderboardsPage({
     getInscritos(slug),
   ]);
 
-  const hayResultados = leaderboard.rows.length > 0 || general.divisiones.length > 0;
-
   return (
     <MarcoDelEvento slug={slug} activa="leaderboards">
-      {(evento) =>
-        hayResultados ? (
-          <div className="flex flex-col gap-4">
-            <LeaderboardLive slug={slug} inicial={leaderboard} eventName={evento.name} compacto />
-            {/* Se esconde sola solo cuando es redundante con el leaderboard de
-                tiempos de arriba: una sola prueba y ademas de circuito. */}
-            <TablaGeneral slug={slug} inicial={general} />
-          </div>
-        ) : inscritos ? (
-          <ListaDeLargada datos={inscritos} />
-        ) : null
-      }
+      {(evento) => (
+        <LeaderboardsTab
+          slug={slug}
+          eventName={evento.name}
+          leaderboard={leaderboard}
+          general={general}
+          inscritos={inscritos}
+        />
+      )}
     </MarcoDelEvento>
   );
 }

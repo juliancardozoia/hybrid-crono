@@ -5,6 +5,7 @@ import type { Idioma } from "@/shared/i18n/idiomas";
 import { PostularseComoJuez } from "./PostularseComoJuez";
 import { formatearCarga } from "@/shared/unidades/carga";
 import { yaPaso } from "./MarcoDelEvento";
+import { nombreDePais } from "@/shared/utils/paises";
 
 /**
  * La pestaña de informacion: descripcion, categorias con precio, y los enlaces.
@@ -56,7 +57,7 @@ export function PanelDeInformacion({
 
       {(enlaces || evento.address) && (
         <section className="flex flex-col gap-4 border-t border-neutral-800 pt-8">
-          <h2 className="text-lg font-semibold">Documentos y dirección</h2>
+          <h2 className="text-lg font-semibold">Documentos y Dirección</h2>
 
           {evento.address && (
             <p className="flex items-start gap-2.5 text-sm text-neutral-400">
@@ -96,7 +97,77 @@ export function PanelDeInformacion({
       )}
 
       <PostularseComoJuez slug={evento.slug} yaPaso={yaPaso(evento)} />
+
+      <Ubicacion evento={evento} />
     </div>
+  );
+}
+
+/**
+ * El mapa, AL FINAL de la pestaña. Un atleta que ya decidio inscribirse
+ * termina de leer la ficha con "¿y como llego?" -- lo mismo que ya sabe la
+ * direccion en texto, pero como llegar desde el celular.
+ *
+ * SIN LAT/LNG PROPIOS. El evento solo guarda la direccion como texto
+ * (`venue`, `address`, `city`, `state`, `country`); no hay un picker de
+ * coordenadas en el asistente. Google y Waze geocodifican esa misma cadena,
+ * asi que la precision depende de que tan bien escrita este la direccion --
+ * para una sede conocida alcanza, una direccion incompleta puede aterrizar
+ * cerca y no exacto. Si algun dia hace falta precision exacta, ahi si hace
+ * falta agregar `lat`/`lng` al evento.
+ *
+ * EL EMBED NO USA API KEY. `google.com/maps?q=...&output=embed` es la URL
+ * clasica de Maps, no la API paga -- alcanza con la direccion como texto.
+ *
+ * LOS BOTONES SON LINKS, NO JAVASCRIPT. En el celular, si el atleta tiene la
+ * app instalada, el sistema operativo intercepta el link universal de Google
+ * Maps o de Waze y abre la app directo ahi en vez del navegador.
+ */
+function Ubicacion({ evento }: { evento: EventoPublico }) {
+  const lugar = [evento.city, evento.state].filter(Boolean).join(", ");
+  const consulta = [evento.venue, evento.address, lugar, nombreDePais(evento.country)]
+    .filter(Boolean)
+    .join(", ");
+
+  if (!consulta) return null;
+
+  const codificada = encodeURIComponent(consulta);
+
+  return (
+    <section className="flex flex-col gap-4 border-t border-neutral-800 pt-8">
+      <h2 className="text-lg font-semibold">Ubicación</h2>
+
+      <div className="overflow-hidden rounded-2xl border border-neutral-800">
+        <iframe
+          title="Ubicación de la competencia"
+          src={`https://www.google.com/maps?q=${codificada}&output=embed`}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          className="h-64 w-full sm:h-80"
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${codificada}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex items-center gap-2 rounded-xl border border-neutral-800 px-4 py-2.5 text-sm transition-colors hover:border-neutral-700 hover:bg-neutral-900"
+        >
+          <Icono nombre="lugar" className="h-4 w-4 shrink-0 text-neutral-500" />
+          Abrir en Google Maps
+        </a>
+        <a
+          href={`https://waze.com/ul?q=${codificada}&navigate=yes`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex items-center gap-2 rounded-xl border border-neutral-800 px-4 py-2.5 text-sm transition-colors hover:border-neutral-700 hover:bg-neutral-900"
+        >
+          <Icono nombre="flecha" className="h-4 w-4 shrink-0 text-neutral-500" />
+          Abrir en Waze
+        </a>
+      </div>
+    </section>
   );
 }
 

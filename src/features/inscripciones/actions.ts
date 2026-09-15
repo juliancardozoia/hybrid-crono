@@ -39,6 +39,85 @@ function refrescar(registrationId: string) {
   revalidatePath("/mis-inscripciones");
 }
 
+interface DatosDelAtleta {
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+  gender: string;
+  phone: string;
+  shirtSize: string;
+  acceptTerms: boolean;
+  answers: Record<string, string>;
+}
+
+/** Lee y valida los campos de "mis datos". Compartido por guardarMisDatos y
+ * confirmarInscripcionIndividual: son el mismo formulario en dos pantallas. */
+function datosDelFormulario(formData: FormData): DatosDelAtleta | { error: string } {
+  const datos: DatosDelAtleta = {
+    firstName: String(formData.get("firstName") ?? "").trim(),
+    lastName: String(formData.get("lastName") ?? "").trim(),
+    birthDate: String(formData.get("birthDate") ?? "").trim(),
+    gender: String(formData.get("gender") ?? "").trim(),
+    phone: String(formData.get("phone") ?? "").trim(),
+    shirtSize: String(formData.get("shirtSize") ?? "").trim(),
+    acceptTerms: formData.get("acceptTerms") === "on",
+    // Los campos extra del organizador viajan juntos: son datos, no columnas.
+    answers: Object.fromEntries(
+      [...formData.entries()]
+        .filter(([k]) => k.startsWith("campo-"))
+        .map(([k, v]) => [k.slice(6), String(v)]),
+    ),
+  };
+
+  if (!datos.firstName || !datos.lastName) {
+    return { error: "El nombre y el apellido son obligatorios." };
+  }
+  if (!datos.acceptTerms) {
+    return { error: "Hay que aceptar los términos para poder competir." };
+  }
+
+  return datos;
+}
+
+/**
+ * Si el atleta todavia no completo /cuenta, aprovecha lo que acaba de tipear
+ * en ESTA inscripcion para dejarle el perfil precargado la proxima vez.
+ *
+ * NUNCA pisa un dato que la persona ya haya guardado a mano en /cuenta -- ahi
+ * es donde vive la version que ella eligio dejar. Es la mitad que faltaba de
+ * la precarga: `/eventos/[slug]/inscripcion` ya lee el perfil para sugerir
+ * estos mismos campos (ver ElegirCategoria), y sin este paso el perfil nunca
+ * se terminaba de completar solo con la inscripcion.
+ */
+async function backfillPerfil(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  datos: DatosDelAtleta,
+) {
+  const { data: perfil } = await supabase
+    .from("profiles")
+    .select("full_name, phone, birth_date")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const cambios: { full_name?: string; phone?: string; birth_date?: string } = {};
+  if (!perfil?.full_name) {
+    const nombreCompleto = [datos.firstName, datos.lastName].filter(Boolean).join(" ");
+    if (nombreCompleto) cambios.full_name = nombreCompleto;
+  }
+  if (!perfil?.phone && datos.phone) cambios.phone = datos.phone;
+  if (!perfil?.birth_date && datos.birthDate) cambios.birth_date = datos.birthDate;
+
+  if (Object.keys(cambios).length > 0) {
+    await supabase.from("profiles").update(cambios).eq("id", userId);
+    revalidatePath("/panel/perfil");
+    // El aviso de "completa tu perfil" tambien vive en /panel, que es donde
+    // esto termina redirigiendo -- sin esto quedaria mostrando el aviso
+    // viejo con los datos que se acaban de completar.
+    revalidatePath("/panel");
+  }
+}
+
 export async function empezarInscripcion(
   _prev: FormState,
   formData: FormData,
@@ -91,28 +170,8 @@ export async function guardarMisDatos(
   const registrationId = String(formData.get("registrationId") ?? "");
   const memberId = String(formData.get("memberId") ?? "");
 
-  const datos = {
-    firstName: String(formData.get("firstName") ?? "").trim(),
-    lastName: String(formData.get("lastName") ?? "").trim(),
-    birthDate: String(formData.get("birthDate") ?? "").trim(),
-    gender: String(formData.get("gender") ?? "").trim(),
-    phone: String(formData.get("phone") ?? "").trim(),
-    shirtSize: String(formData.get("shirtSize") ?? "").trim(),
-    acceptTerms: formData.get("acceptTerms") === "on",
-    // Los campos extra del organizador viajan juntos: son datos, no columnas.
-    answers: Object.fromEntries(
-      [...formData.entries()]
-        .filter(([k]) => k.startsWith("campo-"))
-        .map(([k, v]) => [k.slice(6), String(v)]),
-    ),
-  };
-
-  if (!datos.firstName || !datos.lastName) {
-    return { error: "El nombre y el apellido son obligatorios." };
-  }
-  if (!datos.acceptTerms) {
-    return { error: "Hay que aceptar los términos para poder competir." };
-  }
+  const datos = datosDelFormulario(formData);
+  if ("error" in datos) return datos;
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("save_member_data", {
@@ -122,8 +181,88 @@ export async function guardarMisDatos(
 
   if (error) return { error: traducir(error) };
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) await backfillPerfil(supabase, user.id, datos);
+
   refrescar(registrationId);
   return OK;
+}
+
+/**
+ * Elegir categoria + cargar datos + enviar, en un solo paso -- SOLO para
+ * categorias individuales.
+ *
+ * En equipo esto no se puede fusionar: el capitan necesita el id de la
+ * inscripcion YA CREADO para invitar a sus compañeros por correo, y esa
+ * invitacion pasa por otra pantalla en otro momento. En individual el
+ * capitan ES el unico integrante, asi que start_registration +
+ * save_member_data + submit_registration son, para el atleta, un solo gesto:
+ * separarlos en pantallas distintas era lo que confundia.
+ *
+ * Si algo falla a mitad de camino, la inscripcion ya creada en 'borrador'
+ * no se pierde: `/eventos/[slug]/inscripcion` detecta el tramite existente y
+ * manda ahi directo, donde "Confirmar inscripcion" (el mismo botón fusionado,
+ * ver `MisDatos`) permite retomarlo sin perder lo ya guardado.
+ */
+export async function confirmarInscripcionIndividual(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const divisionId = String(formData.get("divisionId") ?? "");
+  if (!divisionId) return { error: "Elige una categoría." };
+
+  const datos = datosDelFormulario(formData);
+  if ("error" in datos) return datos;
+
+  const supabase = await createClient();
+
+  const { data: registroData, error: errorInicio } = await supabase.rpc("start_registration", {
+    p_division_id: divisionId,
+  });
+  if (errorInicio || !registroData) return { error: traducir(errorInicio) };
+
+  const registro = registroData as unknown as { id: string };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: miembro, error: errorMiembro } = await supabase
+    .from("registration_members")
+    .select("id")
+    .eq("registration_id", registro.id)
+    .eq("profile_id", user?.id ?? "")
+    .maybeSingle();
+
+  if (errorMiembro || !miembro) {
+    return {
+      error:
+        "Tu inscripción quedó creada, pero hubo un problema al cargar tus datos. Volvé a intentar desde la ficha del evento.",
+    };
+  }
+
+  const { error: errorDatos } = await supabase.rpc("save_member_data", {
+    p_member_id: miembro.id,
+    p_datos: datos as never,
+  });
+  if (errorDatos) return { error: traducir(errorDatos) };
+
+  if (user) await backfillPerfil(supabase, user.id, datos);
+
+  const { error: errorEnvio } = await supabase.rpc("submit_registration", {
+    p_registration_id: registro.id,
+  });
+  if (errorEnvio) return { error: traducir(errorEnvio) };
+
+  // A diferencia de `empezarInscripcion` (equipo), aca no queda nada pendiente
+  // que ver en /inscripcion/[id]: se guardo y se envio de un solo gesto, asi
+  // que el destino util es el panel -- el punto de entrada unico de la
+  // cuenta -- y no una pantalla de "tramite completo" que el atleta tiene
+  // que abandonar por su cuenta.
+  revalidatePath("/panel");
+  redirect("/panel");
 }
 
 export async function enviarInscripcion(
@@ -164,13 +303,16 @@ export async function cancelarInscripcion(
 export async function reclamarLugar(
   registrationId: string,
 ): Promise<FormState> {
+  // Se llama desde el render de /inscripcion/[id], no como respuesta a una
+  // accion del usuario: revalidatePath() ahi esta prohibido por Next ("used
+  // revalidatePath during render"). La pagina ya hace force-dynamic y trae los
+  // datos frescos en el mismo request, asi que no hace falta invalidar nada.
   const supabase = await createClient();
   const { error } = await supabase.rpc("claim_membership", {
     p_registration_id: registrationId,
   });
   if (error) return { error: error.message || traducir(error) };
 
-  refrescar(registrationId);
   return OK;
 }
 

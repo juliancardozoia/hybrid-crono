@@ -4,10 +4,12 @@ import { Fragment, useEffect, useState } from "react";
 import { Badge } from "@/shared/components/Badge";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
+import { Selector } from "@/shared/components/Selector";
 import type { ScoreboardPart } from "@/shared/scoring/scoreboard";
 import type { PartPlacement, RoundBreakdownStep } from "@/shared/scoring/types";
 import { formatElapsed } from "@/shared/timing/clock";
 import { getTablaGeneral, type TablaGeneral as Datos } from "../queries";
+import { EstadoOficial } from "./LeaderboardLive";
 
 /** 🥇🥈🥉 para el podio, y nada para el resto -- no hay medalla de cuarto puesto. */
 const MEDALLAS = ["🥇", "🥈", "🥉"];
@@ -123,9 +125,23 @@ function formatearUnidad(unidad: string, valor: number): string {
  */
 const REFRESCO_MS = 8_000;
 
-export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }) {
+export function TablaGeneral({
+  slug,
+  inicial,
+  categoria,
+}: {
+  slug: string;
+  inicial: Datos;
+  /**
+   * Categoria CONTROLADA desde afuera, por nombre (mismo criterio que
+   * `LeaderboardLive`). Con esta prop presente no se dibuja el selector
+   * propio: lo maneja quien incrusta el componente.
+   */
+  categoria?: string;
+}) {
   const [data, setData] = useState(inicial);
   const [division, setDivision] = useState<string | null>(null);
+  const controlado = categoria !== undefined;
   // El detalle se despliega EN EL LUGAR, no en un modal -- mismo patron que
   // `GrillaDeAtletas` en /atletas. Un solo id abierto a la vez.
   const [expandido, setExpandido] = useState<string | null>(null);
@@ -170,8 +186,9 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
   }
   const divisionesUnicas = [...gruposPorDivision.values()].map((lista) => lista[0].division);
 
-  const divisionElegidaId =
-    divisionesUnicas.find((d) => d.id === division)?.id ?? divisionesUnicas[0]?.id ?? "";
+  const divisionElegidaId = controlado
+    ? (divisionesUnicas.find((d) => d.name === categoria)?.id ?? divisionesUnicas[0]?.id ?? "")
+    : (divisionesUnicas.find((d) => d.id === division)?.id ?? divisionesUnicas[0]?.id ?? "");
   const gruposOrdenados = [...(gruposPorDivision.get(divisionElegidaId) ?? [])].sort(
     (a, b) => a.stage - b.stage,
   );
@@ -232,42 +249,38 @@ export function TablaGeneral({ slug, inicial }: { slug: string; inicial: Datos }
     <section className="mt-10">
       {/* Sin titulo propio: la pantalla que la incrusta (panel o publica) ya
           puso "Leaderboard" arriba -- un segundo titulo "Tabla general" era el
-          mismo concepto repetido dos veces en la misma pantalla. */}
+          mismo concepto repetido dos veces en la misma pantalla.
+
+          El indicador de oficial/no oficial es el MISMO componente que usa
+          LeaderboardLive (`EstadoOficial`), reusado en vez de reescrito:
+          tenia su propia pastilla con "OFICIAL"/"NO OFICIAL" en mayusculas
+          literales, un texto y un estilo distintos para decir lo mismo en la
+          misma pestaña. */}
       <div className="flex flex-wrap items-baseline justify-end gap-3">
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium ${
-            data.official
-              ? "bg-lime-400/15 text-lime-300"
-              : "bg-amber-400/15 text-amber-300"
-          }`}
-        >
-          {data.official ? "OFICIAL" : "NO OFICIAL"}
-        </span>
+        <EstadoOficial official={data.official} />
       </div>
 
-      {/* Un solo boton de pestana por CATEGORIA, nunca por etapa: el filtro
-          tiene que aparecer apenas hay mas de una categoria, sin importar
-          cuantas etapas tenga cada una. */}
-      {divisionesUnicas.length > 1 && (
-        <nav className="tabs-scroll mt-4 flex gap-1 border-b border-neutral-800">
-          {divisionesUnicas.map((d) => {
-            const activa = d.id === divisionElegida.id;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => setDivision(d.id)}
-                className={`-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors ${
-                  activa
-                    ? "border-lime-400 font-medium text-neutral-100"
-                    : "border-transparent text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
+      {/* UN COMBO, NO PESTAÑAS -- mismo criterio y mismo componente que ya
+          usan LeaderboardLive y ListaDeLargada para filtrar por categoria.
+          Antes esto era una fila de botones-pestaña: con seis categorias o
+          mas se desborda o se vuelve horizontal-scroll, y ademas era un
+          tercer widget distinto para el mismo filtro que las otras dos
+          pantallas de la misma pestaña ya resuelven con un `<select>`. */}
+      {!controlado && divisionesUnicas.length > 1 && (
+        <label className="mt-4 flex items-center gap-2 text-sm">
+          <span className="text-neutral-500">Categoría</span>
+          <Selector
+            value={divisionElegida.id}
+            onChange={(e) => setDivision(e.target.value)}
+            className="min-w-0 flex-1 py-2 text-sm sm:flex-none"
+          >
+            {divisionesUnicas.map((d) => (
+              <option key={d.id} value={d.id}>
                 {d.name}
-              </button>
-            );
-          })}
-        </nav>
+              </option>
+            ))}
+          </Selector>
+        </label>
       )}
 
       <div className="mt-4 overflow-x-auto">

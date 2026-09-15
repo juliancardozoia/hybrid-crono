@@ -1,22 +1,27 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { signOut } from "@/features/auth/actions";
-import { asegurarOrganizacion } from "@/features/org/asegurar";
 import { getPerfil } from "@/features/cuenta/queries";
 import { listEvents } from "@/features/events/queries";
+import { puedeJuzgar } from "@/features/judge/queries";
 import { MenuLateral } from "@/features/panel/components/MenuLateral";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { traduccion } from "@/shared/i18n/servidor";
 import { elegirIdioma } from "@/shared/i18n/acciones";
 
 /**
- * El panel del organizador.
+ * El panel: el punto de encuentro de toda cuenta, sea atleta, organizador o
+ * juez -- ver "Un solo punto de entrada" en `panel/page.tsx`.
  *
- * AQUI SE CREA LA ORGANIZACION, SIN PREGUNTAR. Antes este layout dejaba pasar y
- * la pagina mostraba un "crea tu organizacion" que bloqueaba todo. Ahora
- * `asegurarOrganizacion()` la crea la primera vez y el usuario entra directo a
- * su tablero: es un concepto interno del que no tiene por que enterarse hasta
- * que quiera invitar a alguien.
+ * NO CREA LA ORGANIZACION SOLO POR ENTRAR. La creaba `asegurarOrganizacion()`
+ * en este mismo layout, y tenia sentido cuando /panel era EXCLUSIVO del
+ * organizador: quien llegaba aca ya venia a organizar. Ahora que /panel es la
+ * puerta de entrada de TODOS -- un atleta que se acaba de inscribir tambien
+ * aterriza aca -- crearla en cada visita le dejaria una organizacion fantasma
+ * a cada atleta que nunca va a organizar nada. Se sigue creando, pero recien
+ * cuando alguien elige de verdad crear una competencia
+ * (`panel/eventos/nuevo/page.tsx`), que es el unico momento en que el
+ * concepto "organizacion" empieza a importarle a esa cuenta.
  */
 export default async function PanelLayout({
   children,
@@ -34,11 +39,12 @@ export default async function PanelLayout({
   ]);
   if (!perfil) redirect("/login");
 
-  await asegurarOrganizacion();
-
   // La lista sirve para que la barra sepa el nombre y el estado de la
   // competencia abierta sin una consulta extra: el id lo saca de la URL.
-  const eventos = await listEvents();
+  const [eventos, mostrarJuzgar] = await Promise.all([
+    listEvents(),
+    puedeJuzgar(),
+  ]);
 
   return (
     <div className="min-h-dvh lg:pl-64">
@@ -61,6 +67,7 @@ export default async function PanelLayout({
           name: e.name,
           status: e.status,
         }))}
+        puedeJuzgar={mostrarJuzgar}
       />
       <div className="flex min-h-dvh flex-col">{children}</div>
     </div>

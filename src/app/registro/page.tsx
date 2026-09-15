@@ -5,12 +5,17 @@ import { traduccion } from "@/shared/i18n/servidor";
 
 export const metadata = { title: "Crear cuenta — Scora" };
 
-export default async function RegistroPage() {
+export default async function RegistroPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ volver?: string }>;
+}) {
+  const { volver } = await searchParams;
   const { idioma } = await traduccion();
 
   return (
     <PantallaDeCuenta titulo="auth.registro.titulo" subtitulo="auth.registro.subtitulo">
-      <AuthForm mode="registro" action={signUp} idioma={idioma} />
+      <AuthForm mode="registro" action={signUp} volver={volver} idioma={idioma} />
     </PantallaDeCuenta>
   );
 }

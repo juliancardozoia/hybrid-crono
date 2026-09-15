@@ -22,6 +22,7 @@ export function MenuDeCuenta({
   nombre,
   cerrarSesion,
   textos,
+  puedeJuzgar,
 }: {
   email: string;
   nombre: string | null;
@@ -35,6 +36,12 @@ export function MenuDeCuenta({
     juzgar: string;
     salir: string;
   };
+  // Solo aparece si la cuenta fue agregada como staff aprobado de alguna
+  // competencia -- y para el rol llano de juez, si esa competencia todavia
+  // permite que el juez tome su carril solo (`puede_juzgar()`, calculado en
+  // el servidor). Sin este filtro el link llevaba a una pantalla de
+  // seleccion de carril vacia para cualquier cuenta que nunca fue invitada.
+  puedeJuzgar: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const caja = useRef<HTMLDivElement>(null);
@@ -102,12 +109,15 @@ export function MenuDeCuenta({
 
           <nav className="flex flex-col py-1">
             {[
-              // El perfil primero: es donde vive la mitad de competidor de la
-              // cuenta, y es a lo que viene la mayoria. El panel es el otro
-              // perfil, no otra seccion de este.
-              { href: "/cuenta", label: textos.inscripciones },
+              // El panel primero: es el punto de entrada unico de la cuenta,
+              // compita, organice o juzgue -- no un destino exclusivo del
+              // organizador. "Mi perfil" es donde se completan los datos, un
+              // paso aparte al que se llega desde ahi.
               { href: "/panel", label: textos.panel },
-              { href: "/juez", label: textos.juzgar },
+              { href: "/panel/perfil", label: textos.inscripciones },
+              ...(puedeJuzgar
+                ? [{ href: "/juez", label: textos.juzgar }]
+                : []),
             ].map((i) => (
               <Link
                 key={i.href}

@@ -52,7 +52,7 @@ export async function guardarPerfil(
 
   if (error) return { error: error.message || "No se pudo guardar." };
 
-  revalidatePath("/cuenta");
+  revalidatePath("/panel/perfil");
   revalidatePath("/", "layout");
   return OK;
 }
@@ -90,7 +90,7 @@ export async function guardarAvatar(url: string): Promise<FormState> {
 
   if (error) return { error: error.message || "No se pudo guardar la foto." };
 
-  revalidatePath("/cuenta");
+  revalidatePath("/panel/perfil");
   revalidatePath("/", "layout");
   return { error: null };
 }

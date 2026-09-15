@@ -21,8 +21,12 @@ import type { ClaveDeTexto } from "@/shared/i18n/es";
  * panel que sube al pasar por encima es un atajo para quien tiene mouse, no la
  * unica via.
  *
- * Y sube sobre un fondo OPACO, no sobre un velo translucido encima del afiche:
- * texto blanco sobre un logo blanco no se lee, por mucho que se le ponga sombra.
+ * EL PANEL ES TRASLUCIDO, no un degradado. Se ve el afiche difuminado detras
+ * (`backdrop-blur`) y oscurecido lo justo (`/60`) para que el texto blanco siga
+ * legible incluso sobre un afiche claro -- el blur hace ese trabajo, no la
+ * opacidad sola. Un degradado (oscuro abajo, transparente arriba) fue
+ * descartado: encima de un afiche con texto en la mitad superior el nombre del
+ * evento competiria con el del organizador.
  *
  * NO HAY ETIQUETA DE "DESTACADO". Los destacados ya viven bajo un titulo que lo
  * dice; repetirlo en cada tarjeta es ruido. La esquina se usa para la BANDERA,
@@ -74,7 +78,7 @@ export function TarjetaDeEvento({
         {/* El panel del hover. `translate-y-full` lo deja fuera de cuadro y solo
             sube con el mouse o con el foco del teclado — sin `focus-within` un
             usuario que navega con Tab nunca lo vería. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-full bg-neutral-950/95 p-4 backdrop-blur transition-transform duration-200 ease-out group-hover:translate-y-0 group-focus-within:translate-y-0">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-full bg-neutral-950/60 p-4 backdrop-blur-md transition-transform duration-200 ease-out group-hover:translate-y-0 group-focus-within:translate-y-0">
           <dl className="flex flex-col gap-1.5 text-xs">
             <Fila
               etiqueta={t("evento.fecha")}
@@ -106,12 +110,16 @@ export function TarjetaDeEvento({
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 p-4">
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
-          <span className="rounded-full border border-neutral-800 px-2 py-0.5">
+        <div className="flex items-center gap-2 text-xs">
+          {/* El formato es lo primero que alguien busca ("¿esto es CrossFit o
+              Hyrox?"), y llevaba el mismo gris apagado que "Virtual" -- un
+              dato secundario. Ahora usa el verde de acento de la marca, igual
+              que los chips de la cabecera de la ficha (`CabeceraDelEvento`). */}
+          <span className="rounded-full bg-lime-400/15 px-2 py-0.5 font-semibold text-lime-300">
             {claveFormato ? t(claveFormato) : evento.formato}
           </span>
           {evento.modalidad === "virtual" && (
-            <span className="rounded-full border border-neutral-800 px-2 py-0.5">
+            <span className="rounded-full border border-neutral-800 px-2 py-0.5 text-neutral-500">
               {t("evento.virtual")}
             </span>
           )}
@@ -140,8 +148,16 @@ export function TarjetaDeEvento({
 function Fila({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="shrink-0 text-neutral-500">{etiqueta}</dt>
-      <dd className="truncate text-right font-medium text-neutral-100">{valor}</dd>
+      {/* `text-neutral-500` se perdia contra el afiche difuminado de fondo:
+          un gris pensado para una tarjeta OPACA no tiene suficiente contraste
+          sobre una imagen. `text-neutral-300` mas la sombra se leen incluso
+          sobre un afiche claro. */}
+      <dt className="shrink-0 text-neutral-300 [text-shadow:0_1px_2px_rgb(0_0_0_/_0.8)]">
+        {etiqueta}
+      </dt>
+      <dd className="truncate text-right font-medium text-neutral-50 [text-shadow:0_1px_2px_rgb(0_0_0_/_0.8)]">
+        {valor}
+      </dd>
     </div>
   );
 }
@@ -185,33 +201,36 @@ function EstadoDeInscripcion({
   return <span className="text-neutral-600">{t("evento.cerradas")}</span>;
 }
 
-/** El afiche del organizador, o algo digno cuando todavia no lo subio. */
+/**
+ * El afiche del organizador, o algo digno cuando todavia no lo subio.
+ *
+ * `logoUrl` ES EL AFICHE, pese al nombre. `coverUrl` es un campo legado que
+ * ninguna pantalla de carga escribe mas (ver `FichaDelEvento.tsx`): el unico
+ * lugar donde un organizador sube una imagen es "Afiche de la competencia"
+ * (`ImagenDelEvento.tsx`), que guarda en `logoUrl` y previsualiza con
+ * `object-cover` porque documenta explicitamente "el object-cover recorta
+ * igual que la tarjeta, asi que lo que se ve aqui es lo que se va a ver
+ * alla". Tratar `logoUrl` distinto aca —contenido y con relleno, en vez de
+ * recortado a pantalla completa— rompia esa promesa: CUALQUIER evento nuevo
+ * (que no tiene `coverUrl`, porque nadie lo carga) se veia con el afiche
+ * chico y flotando en un cuadrado vacio en vez de ocupar todo el espacio.
+ * `CabeceraDelEvento.tsx` ya trataba a `logoUrl` asi (recortado); esto lo
+ * alinea.
+ */
 function Portada({ evento }: { evento: FichaDeCatalogo }) {
-  if (evento.coverUrl) {
+  const fuente = evento.coverUrl ?? evento.logoUrl;
+
+  if (fuente) {
     return (
       // Imagen del organizador, de un dominio arbitrario: <img> y no next/image
       // porque el optimizador exige declarar cada host.
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={evento.coverUrl}
+        src={fuente}
         alt=""
         loading="lazy"
         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
       />
-    );
-  }
-
-  if (evento.logoUrl) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={evento.logoUrl}
-          alt=""
-          loading="lazy"
-          className="max-h-full max-w-full object-contain"
-        />
-      </div>
     );
   }
 

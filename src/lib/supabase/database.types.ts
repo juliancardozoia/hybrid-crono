@@ -645,7 +645,6 @@ export type Database = {
         Row: {
           address: string | null
           allow_judge_self_claim: boolean
-          auto_tiebreak: boolean
           city: string | null
           country: string | null
           cover_url: string | null
@@ -682,7 +681,6 @@ export type Database = {
         Insert: {
           address?: string | null
           allow_judge_self_claim?: boolean
-          auto_tiebreak?: boolean
           city?: string | null
           country?: string | null
           cover_url?: string | null
@@ -719,7 +717,6 @@ export type Database = {
         Update: {
           address?: string | null
           allow_judge_self_claim?: boolean
-          auto_tiebreak?: boolean
           city?: string | null
           country?: string | null
           cover_url?: string | null
@@ -3189,6 +3186,7 @@ export type Database = {
         Returns: {
           athletes: string
           bib_number: number
+          countries: Json
           division_name: string
           official: boolean
           penalty_ms: number
@@ -3210,7 +3208,6 @@ export type Database = {
         Returns: {
           address: string | null
           allow_judge_self_claim: boolean
-          auto_tiebreak: boolean
           city: string | null
           country: string | null
           cover_url: string | null
@@ -3273,6 +3270,7 @@ export type Database = {
         Args: { p_division_id: string; p_event_id: string }
         Returns: boolean
       }
+      puede_juzgar: { Args: never; Returns: boolean }
       puede_leer_evento: { Args: { p_event_id: string }; Returns: boolean }
       puede_ver_inscripcion: {
         Args: { p_registration_id: string }
@@ -3490,7 +3488,6 @@ export type Database = {
         Returns: {
           address: string | null
           allow_judge_self_claim: boolean
-          auto_tiebreak: boolean
           city: string | null
           country: string | null
           cover_url: string | null

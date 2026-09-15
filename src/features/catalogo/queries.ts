@@ -278,6 +278,8 @@ export interface EquipoInscrito {
   dorsal: number;
   nombre: string;
   integrantes: string[];
+  /** El pais de cada integrante, en el mismo orden que `integrantes`. */
+  countries: (string | null)[];
 }
 
 export interface Inscritos {

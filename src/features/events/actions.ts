@@ -59,7 +59,6 @@ function camposDeLaFicha(formData: FormData) {
     logo_url: texto(formData, "logoUrl"),
     cover_url: texto(formData, "coverUrl"),
     shirt_sizes: TALLAS.filter((t) => formData.get(`talla-${t}`) === "on"),
-    auto_tiebreak: formData.get("autoTiebreak") === "on",
   };
 }
 

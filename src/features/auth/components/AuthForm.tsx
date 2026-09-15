@@ -98,8 +98,48 @@ export function AuthForm({
           )}
         </div>
 
+        {!esLogin && (
+          <CampoDeClave
+            name="password2"
+            label={t("auth.claveRepetir")}
+            ver={t("auth.claveVer")}
+            ocultar={t("auth.claveOcultar")}
+            autoComplete="new-password"
+            minLength={8}
+          />
+        )}
+
         {state.error && (
-          <MensajeDeError>{state.error}</MensajeDeError>
+          <div className="flex flex-col gap-2">
+            <MensajeDeError>{state.error}</MensajeDeError>
+            {esLogin && (
+              <p className="text-xs text-neutral-500">
+                {t("auth.entrar.sugerenciaCrear")}{" "}
+                <Link
+                  href={volver ? `/registro?volver=${encodeURIComponent(volver)}` : "/registro"}
+                  className="font-medium text-lime-400 hover:underline"
+                >
+                  {t("auth.sinCuentaLink")}
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
+        {state.yaRegistrado && (
+          <div className="flex flex-col gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+            <p>{t("auth.registro.yaExiste")}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <Link
+                href={volver ? `/login?volver=${encodeURIComponent(volver)}` : "/login"}
+                className="font-medium text-lime-400 hover:underline"
+              >
+                {t("auth.conCuentaLink")}
+              </Link>
+              <Link href="/recuperar" className="font-medium text-lime-400 hover:underline">
+                {t("auth.registro.recuperarLink")}
+              </Link>
+            </div>
+          </div>
         )}
         {state.message && (
           <p
@@ -130,7 +170,7 @@ export function AuthForm({
           <>
             {t("auth.sinCuenta")}{" "}
             <Link
-              href="/registro"
+              href={volver ? `/registro?volver=${encodeURIComponent(volver)}` : "/registro"}
               className="font-medium text-lime-400 hover:underline"
             >
               {t("auth.sinCuentaLink")}
@@ -140,7 +180,7 @@ export function AuthForm({
           <>
             {t("auth.conCuenta")}{" "}
             <Link
-              href="/login"
+              href={volver ? `/login?volver=${encodeURIComponent(volver)}` : "/login"}
               className="font-medium text-lime-400 hover:underline"
             >
               {t("auth.conCuentaLink")}

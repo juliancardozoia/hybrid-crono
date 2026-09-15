@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { EncabezadoPublico } from "@/features/catalogo/components/EncabezadoPublico";
 import { getFormularioDeInscripcion } from "@/features/inscripciones/queries";
 import { ElegirCategoria } from "@/features/inscripciones/components/ElegirCategoria";
+import { getPerfil } from "@/features/cuenta/queries";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseConfigured } from "@/lib/supabase/env";
 
@@ -35,7 +36,30 @@ export default async function InscripcionPage({
     redirect(`/login?volver=${encodeURIComponent(`/eventos/${slug}/inscripcion`)}`);
   }
 
+  // Si ya empezo un tramite en ESTE evento (en cualquier categoria), volver a
+  // mostrarle "elegir categoria" es un callejon sin salida: `start_registration`
+  // rechaza una segunda inscripcion en la misma categoria con un error que no
+  // lleva a ningun lado. Se lo manda directo a lo que ya tiene.
+  const divisionIds = form.divisions.map((d) => d.id);
+  if (divisionIds.length > 0) {
+    const { data: existente } = await (await createClient())
+      .from("registrations")
+      .select("id")
+      .in("division_id", divisionIds)
+      .eq("created_by", usuario.id)
+      .neq("status", "cancelada")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existente) redirect(`/inscripcion/${existente.id}`);
+  }
+
   const abiertas = form.divisions.filter((d) => d.abierta);
+  // Precarga para individual: el atleta ya cargo esto una vez en /cuenta, y
+  // reescribirlo en cada competencia nueva es exactamente el trabajo repetido
+  // que completar el perfil deberia evitar.
+  const perfil = await getPerfil();
 
   return (
     <>
@@ -65,7 +89,13 @@ export default async function InscripcionPage({
             Ninguna categoría tiene inscripciones abiertas en este momento.
           </p>
         ) : (
-          <ElegirCategoria categorias={abiertas} />
+          <ElegirCategoria
+            categorias={abiertas}
+            tallas={form.shirtSizes}
+            campos={form.fields}
+            documentos={form.documents}
+            perfil={perfil}
+          />
         )}
 
         {form.documents.length > 0 && (

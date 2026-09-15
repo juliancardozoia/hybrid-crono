@@ -11,10 +11,13 @@ import type { Idioma } from "@/shared/i18n/idiomas";
  *
  * TODO ALINEADO A UNA MISMA COLUMNA. Antes el afiche y el texto flotaban con
  * separaciones distintas y las fechas caian como parrafos sueltos. Ahora el
- * afiche es un cuadrado de tamaño fijo y a su derecha hay UNA columna: chips,
- * titulo, y una fila de datos con iconos. Los iconos no son decoracion —
- * calendario, lugar, inscripciones— son lo que deja leer los tres datos de un
- * vistazo sin etiquetas que ocupen otro renglon.
+ * afiche es un cuadrado grande y a su derecha hay UNA columna que mide lo
+ * mismo que el afiche (`sm:items-stretch`): chips, titulo, una fila de datos
+ * con iconos, y las acciones anclada al pie con `mt-auto` — el boton de
+ * inscribirse queda a la altura del borde inferior de la imagen, no colgando
+ * en un hueco si el texto es corto. Los iconos no son decoracion — calendario,
+ * lugar, inscripciones— son lo que deja leer los tres datos de un vistazo sin
+ * etiquetas que ocupen otro renglon.
  *
  * El afiche es CUADRADO porque asi se diseñan: es lo que el organizador publica
  * en Instagram. Recortarlo a 16:9 le come el nombre y la edicion.
@@ -61,11 +64,15 @@ export function CabeceraDelEvento({
             `items-start` el borde superior del cuadrado quedaba unos pixeles
             por encima de la primera linea —el chip tiene su propio relleno— y se
             leia como un descuadre. */}
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-stretch sm:gap-8">
           <Afiche evento={evento} />
 
           {/* `min-w-0` deja que el título largo se corte en vez de estirar la
-              fila y empujar el afiche fuera de la pantalla. */}
+              fila y empujar el afiche fuera de la pantalla. `sm:items-stretch`
+              arriba hace que esta columna mida lo mismo que el afiche; las
+              acciones llevan `mt-auto` para quedar ancladas abajo, alineadas
+              con el borde inferior de la imagen, en vez de colgar en un hueco
+              vacío cuando el texto es más corto que la imagen. */}
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="rounded-full bg-lime-400/15 px-2.5 py-1 font-semibold text-lime-300">
@@ -84,7 +91,7 @@ export function CabeceraDelEvento({
               )}
             </div>
 
-            <h1 className="text-2xl leading-tight font-bold tracking-tight text-balance sm:text-4xl">
+            <h1 className="text-2xl leading-tight font-bold tracking-tight text-balance sm:text-5xl">
               {evento.name}
             </h1>
 
@@ -140,7 +147,7 @@ export function CabeceraDelEvento({
               </DatoConIcono>
             </dl>
 
-            <div className="mt-3 flex flex-wrap gap-3">
+            <div className="mt-auto flex flex-wrap gap-3 pt-3">
               <Acciones evento={evento} slug={slug} />
             </div>
           </div>
@@ -179,7 +186,7 @@ function Afiche({ evento }: { evento: EventoPublico }) {
   // interno, y entonces la imagen era cuadrada pero el marco visible no: el flex
   // padre estiraba la caja externa a la altura de la fila.
   return (
-    <div className="flex aspect-square w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-lg shadow-black/40 sm:w-40 lg:w-48">
+    <div className="flex aspect-square w-36 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-lg shadow-black/40 sm:w-56 lg:w-64">
       {fuente ? (
         // Imagen de un dominio arbitrario del organizador: <img> y no
         // next/image, que exigiria declarar cada host.

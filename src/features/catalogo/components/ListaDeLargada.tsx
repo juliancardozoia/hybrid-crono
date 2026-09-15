@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Selector } from "@/shared/components/Selector";
+import { Bandera } from "@/shared/components/Bandera";
 import type { Inscritos } from "../queries";
 
 /**
@@ -24,8 +25,21 @@ import type { Inscritos } from "../queries";
  * los dos, asi que la columna va en cero y el texto de la derecha explica por
  * que.
  */
-export function ListaDeLargada({ datos }: { datos: Inscritos }) {
+export function ListaDeLargada({
+  datos,
+  categoria,
+}: {
+  datos: Inscritos;
+  /**
+   * Categoria CONTROLADA desde afuera, por nombre (mismo criterio que
+   * `LeaderboardLive`/`TablaGeneral`). Con esta prop presente no se dibuja
+   * el titulo ni el selector propios: los pone quien incrusta el componente
+   * -- hoy, el encabezado unico de la pestaña de Leaderboards.
+   */
+  categoria?: string;
+}) {
   const conEquipos = datos.divisiones.filter((d) => d.equipos.length > 0);
+  const controlado = categoria !== undefined;
   const [elegida, setElegida] = useState(conEquipos[0]?.nombre ?? "");
 
   if (conEquipos.length === 0) {
@@ -39,35 +53,45 @@ export function ListaDeLargada({ datos }: { datos: Inscritos }) {
     );
   }
 
-  const division = conEquipos.find((d) => d.nombre === elegida) ?? conEquipos[0];
+  const division =
+    conEquipos.find((d) => d.nombre === (controlado ? categoria : elegida)) ?? conEquipos[0];
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-xl font-bold tracking-tight uppercase">Leaderboard</h2>
+      {controlado ? (
         <span className="text-sm text-neutral-500">
           {division.equipos.length}{" "}
           {division.equipos.length === 1 ? "inscrito" : "inscritos"} en esta categoría
         </span>
-      </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-lg font-semibold">Lista de largada</h2>
+            <span className="text-sm text-neutral-500">
+              {division.equipos.length}{" "}
+              {division.equipos.length === 1 ? "inscrito" : "inscritos"} en esta categoría
+            </span>
+          </div>
 
-      {conEquipos.length > 1 && (
-        <label className="flex max-w-sm flex-col gap-1.5">
-          <span className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
-            Categoría
-          </span>
-          <Selector
-            value={division.nombre}
-            onChange={(e) => setElegida(e.target.value)}
-            className="w-full py-3"
-          >
-            {conEquipos.map((d) => (
-              <option key={d.nombre} value={d.nombre}>
-                {d.nombre} ({d.equipos.length})
-              </option>
-            ))}
-          </Selector>
-        </label>
+          {conEquipos.length > 1 && (
+            <label className="flex max-w-sm flex-col gap-1.5">
+              <span className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
+                Categoría
+              </span>
+              <Selector
+                value={division.nombre}
+                onChange={(e) => setElegida(e.target.value)}
+                className="w-full py-3"
+              >
+                {conEquipos.map((d) => (
+                  <option key={d.nombre} value={d.nombre}>
+                    {d.nombre} ({d.equipos.length})
+                  </option>
+                ))}
+              </Selector>
+            </label>
+          )}
+        </>
       )}
 
       <div className="overflow-x-auto">
@@ -96,7 +120,22 @@ export function ListaDeLargada({ datos }: { datos: Inscritos }) {
                   1
                 </td>
                 <td className="py-3.5 pr-4">
-                  <p className="font-semibold">{eq.nombre}</p>
+                  <p className="flex items-center gap-1.5 font-semibold">
+                    {/* Una bandera por integrante, en el mismo orden que el
+                        nombre -- un equipo mixto no puede mentir con una sola
+                        bandera para los dos. Misma columna que el nombre, con
+                        un espacio de separacion: no hace falta una columna
+                        propia para esto, mismo criterio que ya usa
+                        TablaGeneral. */}
+                    {eq.countries.length > 0 && (
+                      <span className="flex shrink-0 items-center gap-1">
+                        {eq.countries.map((pais, idx) => (
+                          <Bandera key={idx} codigo={pais} className="h-3 w-4 shrink-0" />
+                        ))}
+                      </span>
+                    )}
+                    {eq.nombre}
+                  </p>
                   {/* Los integrantes solo cuando el nombre del equipo no los
                       dice. En individuales el nombre YA es el del atleta y
                       repetirlo debajo se lee como un error. */}

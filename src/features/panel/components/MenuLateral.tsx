@@ -48,8 +48,14 @@ interface Enlace {
 // tener las dos garantizaba que alguien usara la equivocada. La membresia de
 // organizacion sigue existiendo para dueños y admins, y se llega desde la
 // pantalla de colaboradores.
+// "Inicio" y no "Mis Competencias": esta fila deja de ser exclusiva del
+// organizador -- /panel es el punto de entrada de toda cuenta, con "Compito",
+// "Juzgo" y "Organizo" como secciones propias ahi (ver panel/page.tsx).
+// "Mi perfil" vive aca y no en un enlace suelto del encabezado: es una
+// pantalla mas del panel, con la misma barra lateral que el resto.
 const CUENTA: Enlace[] = [
-  { href: "/panel", label: "Mis Competencias", icono: "trofeo", exacto: true },
+  { href: "/panel", label: "Inicio", icono: "trofeo", exacto: true },
+  { href: "/panel/perfil", label: "Mi perfil", icono: "personas" },
   { href: "/panel/organizacion/plan", label: "Plan", icono: "inscripcion" },
 ];
 
@@ -142,6 +148,7 @@ export function MenuLateral({
   etiquetaIdioma,
   textosCuenta,
   eventos,
+  puedeJuzgar,
 }: {
   nombre: string;
   email: string;
@@ -161,6 +168,8 @@ export function MenuLateral({
   };
   /** Para poder mostrar el nombre y el estado de la competencia abierta. */
   eventos: EventoDelMenu[];
+  /** Igual que en `EncabezadoPublico`: solo staff aprobado con autoasignacion. */
+  puedeJuzgar: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
   const pathname = usePathname();
@@ -249,6 +258,7 @@ export function MenuLateral({
             nombre={nombre || null}
             cerrarSesion={cerrarSesion}
             textos={textosCuenta}
+            puedeJuzgar={puedeJuzgar}
           />
         </div>
       </header>

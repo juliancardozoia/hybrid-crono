@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
 import { Selector } from "@/shared/components/Selector";
+import { Bandera } from "@/shared/components/Bandera";
 import { getLeaderboard, type Leaderboard, type LeaderboardRow } from "../queries";
 
 /**
@@ -22,6 +23,7 @@ export function LeaderboardLive({
   inicial,
   eventName,
   compacto = false,
+  categoria,
 }: {
   slug: string;
   inicial: Leaderboard;
@@ -33,9 +35,19 @@ export function LeaderboardLive({
    * de las pestañas.
    */
   compacto?: boolean;
+  /**
+   * Categoria CONTROLADA desde afuera (la pestaña de Leaderboards del portal
+   * publico, que tiene un unico filtro para las tres vistas). Con esta prop
+   * presente, el componente no dibuja su propio selector ni elige una
+   * categoria por su cuenta: solo filtra con lo que le llega. Sin ella (uso
+   * standalone en `/en-vivo` y en el panel del organizador) se comporta como
+   * antes, con su propio estado y su propio selector.
+   */
+  categoria?: string;
 }) {
   const [data, setData] = useState(inicial);
   const [division, setDivision] = useState<string | null>(null);
+  const controlado = categoria !== undefined;
 
   useEffect(() => {
     let cancelado = false;
@@ -59,7 +71,7 @@ export function LeaderboardLive({
     };
   }, [slug]);
 
-  const divisionActiva = division ?? data.divisions[0] ?? null;
+  const divisionActiva = controlado ? (categoria ?? null) : (division ?? data.divisions[0] ?? null);
   const filas = data.rows.filter((r) => r.divisionName === divisionActiva);
 
   return (
@@ -105,7 +117,7 @@ export function LeaderboardLive({
             propia es leerlas todas. Un select resuelve las dos cosas de una,
             sin importar cuántas categorías tenga el evento.
           */}
-          {data.divisions.length > 1 && (
+          {!controlado && data.divisions.length > 1 && (
             <label className="mb-4 flex items-center gap-2 text-sm">
               <span className="text-neutral-500">Categoría</span>
               <Selector
@@ -131,7 +143,21 @@ export function LeaderboardLive({
                 >
                   <Posicion row={row} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{row.athletes}</span>
+                    {/* La bandera de cada integrante, EN LA MISMA COLUMNA que
+                        el nombre y con un espacio de separacion -- no una
+                        columna aparte, mismo criterio que ya usa la tabla
+                        general (TablaGeneral). Un equipo mixto no puede
+                        mentir con una sola bandera para los dos. */}
+                    <span className="flex items-center gap-1.5">
+                      {row.countries.length > 0 && (
+                        <span className="flex shrink-0 items-center gap-1">
+                          {row.countries.map((pais, idx) => (
+                            <Bandera key={idx} codigo={pais} className="h-3 w-4 shrink-0" />
+                          ))}
+                        </span>
+                      )}
+                      <span className="truncate font-medium">{row.athletes}</span>
+                    </span>
                     <span className="block text-xs text-neutral-500">
                       #{row.bib}
                       {row.teamName && ` · ${row.teamName}`}
@@ -150,7 +176,13 @@ export function LeaderboardLive({
   );
 }
 
-function EstadoOficial({ official }: { official: boolean }) {
+/**
+ * El indicador de "oficial" / "no oficial". Se exporta para que
+ * `TablaGeneral` lo reuse -- antes tenia su propia pastilla ("OFICIAL" /
+ * "NO OFICIAL", en mayusculas literales) que decia lo mismo con otro texto y
+ * otro estilo en la misma pestaña.
+ */
+export function EstadoOficial({ official }: { official: boolean }) {
   return official ? (
     <span className="rounded-lg bg-emerald-500/15 px-3 py-1 text-xs font-bold tracking-wider text-emerald-300 uppercase">
       Resultados oficiales

@@ -13,6 +13,7 @@
     "verify:queries": "node scripts/verify-queries.mjs",
     "verify:security": "node scripts/verify-security.mjs",
     "verify:remote": "npm run verify:queries && npm run verify:security",
+    "resetear:base": "node scripts/resetear-base.mjs",
     "seed:dev": "node scripts/seed-dev.mjs",
     "seed:etapas": "node scripts/seed-torneo-etapas.mjs",
     "seed:3fases": "node scripts/seed-torneo-3-fases.mjs",

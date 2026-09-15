@@ -376,22 +376,6 @@ export function FichaDelEvento({
             ))}
           </div>
         </fieldset>
-
-        <label className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            name="autoTiebreak"
-            defaultChecked={evento?.auto_tiebreak ?? true}
-            className="mt-1 accent-lime-400"
-          />
-          <span className="text-sm">
-            Desempate automático
-            <span className="mt-0.5 block text-xs text-neutral-500">
-              Entre dos que suman los mismos puntos gana quien tuvo mejores
-              puestos. Es el criterio de los Games.
-            </span>
-          </span>
-        </label>
       </Seccion>
 
       {state.error && (

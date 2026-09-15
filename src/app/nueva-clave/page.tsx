@@ -20,6 +20,7 @@ export default async function NuevaClavePage() {
         action={updatePassword}
         submitLabel={t("auth.nueva.boton")}
         esperando={t("auth.espera")}
+        enlaceSiVencido={{ href: "/recuperar", texto: t("auth.nueva.pedirOtro") }}
       >
         <CampoDeClave
           label={t("auth.claveNueva")}

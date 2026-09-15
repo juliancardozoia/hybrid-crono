@@ -14,9 +14,17 @@ export default async function RecuperarPage() {
       titulo="auth.recuperar.titulo"
       subtitulo="auth.recuperar.subtitulo"
       pie={
-        <Link href="/login" className="text-lime-400 hover:underline">
-          {t("auth.recuperar.volver")}
-        </Link>
+        <div className="flex flex-col gap-2">
+          <Link href="/login" className="text-lime-400 hover:underline">
+            {t("auth.recuperar.volver")}
+          </Link>
+          <p className="text-neutral-600">
+            {t("auth.sinCuenta")}{" "}
+            <Link href="/registro" className="font-medium text-lime-400 hover:underline">
+              {t("auth.sinCuentaLink")}
+            </Link>
+          </p>
+        </div>
       }
     >
       <FormularioSimpleDeCuenta

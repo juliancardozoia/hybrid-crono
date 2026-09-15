@@ -108,6 +108,9 @@ export const en: Diccionario = {
   "auth.conCuentaLink": "Sign in",
   "auth.terminos":
     "By creating an account you accept the terms of service. The same account lets you compete, judge or organize.",
+  "auth.entrar.sugerenciaCrear": "No account yet, or a typo in the email?",
+  "auth.registro.yaExiste": "There's already an account with that email.",
+  "auth.registro.recuperarLink": "Forgot your password?",
   "auth.recuperar.titulo": "Reset your password",
   "auth.recuperar.subtitulo": "We'll email you a link to choose a new one.",
   "auth.recuperar.boton": "Send the link",
@@ -115,6 +118,7 @@ export const en: Diccionario = {
   "auth.nueva.titulo": "Choose your password",
   "auth.nueva.subtitulo": "The old one stops working as soon as you save this.",
   "auth.nueva.boton": "Save and sign in",
+  "auth.nueva.pedirOtro": "Request a new link",
 
   // --- Brand column ---------------------------------------------------------
   "marca.lema": "The fitness competition platform for Latin America.",

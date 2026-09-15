@@ -124,20 +124,54 @@ export interface ResumenDeInscripcion {
   divisionName: string;
   startsAt: string | null;
   timezone: string;
+  bib: number | null;
 }
 
-/** Las inscripciones donde el usuario es capitan o integrante. */
+/**
+ * Las inscripciones donde el usuario es capitan o integrante.
+ *
+ * FILTRADO EXPLICITO por ser INTEGRANTE (`registration_members.profile_id`),
+ * no por `created_by`. Se probaron las dos y la primera version (por
+ * `created_by`) seguia mostrando de mas: el alta manual del organizador pone
+ * al ORGANIZADOR como `created_by` de cada atleta que carga a mano (ver
+ * "El alta manual de atletas..." — `created_by` es quien llama la funcion,
+ * NUNCA el atleta), asi que una cuenta que administra un evento y ademas
+ * carga atletas a mano seguia viendo esos registros en "Compito": su propio
+ * id aparecia como `created_by` en cada uno.
+ *
+ * Ser integrante (tener una fila en `registration_members` con el propio
+ * `profile_id`) es la unica señal que de verdad significa "yo compito aca":
+ * el capitan de una auto-inscripcion SIEMPRE queda como integrante #1 con su
+ * propio profile_id (`start_registration`), y un atleta cargado a mano NUNCA
+ * tiene `profile_id` propio a menos que el mismo entre despues a reclamar su
+ * lugar — que es exactamente cuando deberia empezar a aparecerle aca.
+ */
 export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data: miembros } = await supabase
+    .from("registration_members")
+    .select("registration_id")
+    .eq("profile_id", user.id);
+
+  const registrationIds = [...new Set((miembros ?? []).map((m) => m.registration_id))];
+  if (registrationIds.length === 0) return [];
 
   const { data: registros } = await supabase
     .from("registrations")
-    .select("id, status, team_name, event_id, division_id")
+    .select("id, status, team_name, event_id, division_id, team_id")
+    .in("id", registrationIds)
     .order("created_at", { ascending: false });
 
   if (!registros || registros.length === 0) return [];
 
-  const [{ data: eventos }, { data: divisiones }] = await Promise.all([
+  const teamIds = [...new Set(registros.map((r) => r.team_id).filter((id): id is string => id !== null))];
+
+  const [{ data: eventos }, { data: divisiones }, { data: equipos }] = await Promise.all([
     supabase
       .from("events")
       .select("id, name, public_slug, starts_at, timezone")
@@ -146,10 +180,14 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
       .from("divisions")
       .select("id, name")
       .in("id", [...new Set(registros.map((r) => r.division_id))]),
+    teamIds.length > 0
+      ? supabase.from("teams").select("id, bib_number").in("id", teamIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; bib_number: number | null }> }),
   ]);
 
   const evento = new Map((eventos ?? []).map((e) => [e.id, e]));
   const division = new Map((divisiones ?? []).map((d) => [d.id, d.name]));
+  const dorsal = new Map((equipos ?? []).map((t) => [t.id, t.bib_number]));
 
   return registros.flatMap((r) => {
     const e = evento.get(r.event_id);
@@ -164,6 +202,7 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
         divisionName: division.get(r.division_id) ?? "",
         startsAt: e.starts_at,
         timezone: e.timezone,
+        bib: r.team_id ? (dorsal.get(r.team_id) ?? null) : null,
       },
     ];
   });

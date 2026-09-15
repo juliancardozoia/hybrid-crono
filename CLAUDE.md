@@ -226,8 +226,9 @@ src/shared/unidades/   kilos y libras. El peso se guarda en kilos y se recuerda 
 src/features/judge/    PWA del juez: db (Dexie), sync (outbox), store, componentes
 src/features/auth/     entrar, crear cuenta, Google, recuperar contraseña
 src/features/org/       organizaciones (se crean solas) y membresías
-src/features/cuenta/   perfil de competidor: datos, foto e inscripciones
-src/features/panel/    el marco del panel de organizador
+src/features/cuenta/   perfil de competidor: datos y foto (la pantalla vive en /panel/perfil)
+src/features/panel/    el marco del panel: home unico por rol (compito/organizo/juzgo) y el
+                       menu lateral que usan tambien las pantallas de un evento
 src/features/events/   config de competencia (queries/actions), acceso por rol, plantillas
 src/features/athletes/ import CSV (lógica pura + tests) y alta manual
 src/features/heats/    armado de heats, carriles y jueces
@@ -425,6 +426,26 @@ confirm_registration  materializa el equipo
   con "L", "l" y "Large".
 - **Los campos extra del formulario son DATOS** (`registration_fields`), no columnas. Cada
   competencia pide cosas distintas y agregar una columna por idea no escala.
+- **Individual fusiona los tres primeros pasos en uno.** Para una categoria de un solo integrante,
+  el capitan ES el unico integrante: separar "elegir categoria" de "cargar mis datos" de "enviar"
+  en tres pantallas era exactamente lo que confundia a un atleta real en simulacro. Hoy
+  `confirmarInscripcionIndividual()` (`src/features/inscripciones/actions.ts`) hace
+  `start_registration` + `save_member_data` + `submit_registration` en un solo click, con un solo
+  boton ("Confirmar inscripcion") en `ElegirCategoria`. Equipo NO se fusiona: el capitan necesita
+  el id de la inscripcion YA CREADO para invitar a sus compañeros por correo, y eso pasa en otra
+  visita, no en la misma sentada.
+- **Si algo falla a mitad de la fusion, el tramite en `borrador` no se pierde.**
+  `/eventos/[slug]/inscripcion` detecta un tramite propio existente en cualquier categoria del
+  evento y redirige derecho ahi en vez de mostrar "elegir categoria" de nuevo — sin esto,
+  reintentar chocaba contra "Ya tenés una inscripción en esta categoría" sin ningun camino de
+  vuelta al tramite ya empezado.
+- **El perfil de la cuenta (`profiles`) se completa solo con lo que el atleta ya tipeo en la
+  inscripcion.** `backfillPerfil()` copia nombre/telefono/fecha de nacimiento a `profiles` DESPUES
+  de guardar los datos del tramite, pero **solo los campos que `profiles` todavia tiene vacios** —
+  nunca pisa algo que la persona ya guardo a mano en `/panel/perfil`. Es la otra mitad de la
+  precarga: `ElegirCategoria` ya lee `profiles` para sugerir estos mismos campos en la proxima
+  inscripcion (ver `getPerfil()` en `src/app/eventos/[slug]/inscripcion/page.tsx`); sin el backfill,
+  el perfil nunca se terminaba de completar solo con inscribirse.
 
 ### Dos barreras distintas, y conviene no confundirlas
 
@@ -438,6 +459,78 @@ Al escribir tests de acceso aparecen las dos y se comportan al reves de lo que u
 Las politicas de `registrations` y `registration_members` se preguntan mutuamente, asi que los
 helpers (`es_integrante_de`, `puede_ver_inscripcion`) son SECURITY DEFINER — sin eso es recursion
 de RLS, el mismo motivo por el que existe `event_role`.
+
+## Un atleta tambien puede leer su propia competencia
+
+`divisions`, `events` y `teams` nacieron con RLS pensado solo para STAFF
+(`event_role(event_id) is not null`): tenia sentido mientras esas tablas las
+tocaba nada mas que el organizador desde el panel. El portal de inscripciones
+publicas las necesita para otra cosa — que un atleta comun pueda abrir su
+propio tramite (`/inscripcion/[id]`) y ver el nombre de su categoria y de su
+competencia, y que `/panel` le muestre su dorsal para enlazar a sus
+resultados.
+
+Sin una excepcion, esas tres consultas devolvian CERO FILAS por RLS para
+cualquier atleta sin rol de staff — sin ningun error visible, la pantalla
+hacia `notFound()` como si el tramite no existiera. Asi se detecto: un atleta
+real, en simulacro, no podia ver su propia inscripcion recien confirmada.
+
+Las tres migraciones (`20260914100000`, `20260914110000`, `20260914120000`)
+agregan la MISMA forma de excepcion a `divisions_read`, `events_read` y
+`teams_read`, acotada a la fila propia — nunca a la tabla entera:
+
+```sql
+or exists (
+  select 1 from registrations r
+  where r.<columna> = <tabla>.id
+    and (r.created_by = auth.uid() or es_integrante_de(r.id))
+)
+```
+
+**Esto tiene un efecto colateral que hay que recordar**: `listEvents()`
+—la que ya usaba el sidebar del panel— ahora devuelve TAMBIEN los eventos
+donde el usuario solo compite, no unicamente los que administra. Por eso
+existe `listEventosQueOrganizo()` (`src/features/events/queries.ts`): junta
+los `org_id` de `org_members` con los `event_id` de `event_staff` en un rol
+que NO sea `judge` (un juez de evento no administra nada — ver "Colaborador y
+juez NO son lo mismo" mas abajo), y filtra `events` por esa union explicita
+en vez de confiar en RLS a secas. **Cualquier pantalla nueva que necesite
+"los eventos que administro" tiene el mismo riesgo si usa `listEvents()` a
+secas** — usa `listEventosQueOrganizo()` en su lugar. `listEvents()` sigue
+sirviendo tal cual para lo que ya hacia bien: el sidebar solo necesita el
+nombre de la competencia abierta segun la URL, sea cual sea la razon por la
+que el usuario puede leerla.
+
+**El mismo problema, al reves, mordio a `getMisInscripciones()` (la seccion
+"Compito" de `/panel`).** `registrations_read` deja pasar tanto a
+`created_by = auth.uid()` como a `event_role(event_id) is not null` — la
+segunda existe para que el ORGANIZADOR vea el padron de su competencia desde
+el panel. `getMisInscripciones()` hacia un `select *` sin `where` propio,
+asi que una cuenta que administra un evento veia en "Compito" TODAS las
+inscripciones de esa competencia repetidas una tras otra —cada atleta
+registrado, con su propio estado— como si compitiera en cada una. Reportado
+en simulacro apenas se probo con una cuenta que a la vez organiza Y compite.
+
+**El primer arreglo (filtrar por `created_by = auth.uid()`) no alcanzaba.**
+El alta manual de atletas pone al ORGANIZADOR como `created_by` de cada
+atleta que carga a mano (`created_by` es quien LLAMA a la funcion, nunca el
+atleta — ver "El alta manual de atletas..."), asi que una cuenta que
+organiza Y ademas carga atletas a mano seguia viendo esos registros: su
+propio id era el `created_by` de los ocho. **La señal correcta de "yo
+compito aca" es ser INTEGRANTE** (`registration_members.profile_id = mi
+id`), no quien administrativamente inicio el tramite: el capitan de una
+auto-inscripcion siempre queda como integrante #1 con su propio profile_id
+(`start_registration`), y un atleta cargado a mano NUNCA tiene profile_id
+propio a menos que entre despues a reclamar su lugar — que es exactamente
+cuando deberia empezar a aparecerle. `getMisInscripciones()` filtra por eso
+y nada mas, sin mirar `created_by` en absoluto.
+
+La regla general, para la proxima pantalla de "lo mio": **RLS decide que se
+puede TOCAR, no que MOSTRAR** — una pantalla que necesita "solo lo mio"
+siempre necesita su propio filtro explicito, y ese filtro tiene que
+preguntar por la relacion de negocio real (¿soy integrante? ¿soy dueño de la
+organizacion?), nunca por una columna administrativa como `created_by` que
+puede pertenecerle a otra persona por una razon legitima.
 
 ## Un colaborador tiene rol en el EVENTO, no en la organizacion
 
@@ -469,8 +562,9 @@ poder tomar un carril: sin `user_id`, `event_staff_role` no lo encuentra.
 
 **`events_read` se redefinio y es facil romperla de nuevo.** Chequeaba solo `user_org_role(org_id)`,
 asi que un colaborador no podia leer el evento en el que colabora —y sin leer el evento no carga
-ninguna pantalla del panel. Ahora chequea las dos vias. Si agregas una politica sobre `events`,
-acordate de las dos.
+ninguna pantalla del panel. Ahora chequea TRES vias —organizacion, `event_staff_role`, y (desde
+`20260914110000`) tener una inscripcion propia en ese evento, ver "Un atleta tambien puede leer su
+propia competencia" mas abajo—. Si agregas una politica sobre `events`, acordate de las tres.
 
 ## El cronograma: arenas, y por que el solape se calcula y no se prohibe
 
@@ -494,11 +588,13 @@ mismo error que ya mordio en la torre de control.
 
 ## El panel: la barra lateral cambia segun donde se este
 
-Fuera de una competencia muestra lo de la cuenta. DENTRO de una competencia se
-abre un bloque con esa competencia y sus secciones:
+Fuera de una competencia muestra lo de la cuenta —**Inicio** (el home
+unificado, ver "Un correo, un panel" mas abajo), **Mi perfil** y **Plan**—.
+DENTRO de una competencia se abre un bloque con esa competencia y sus
+secciones:
 
 ```
-Mis competencias / Plan
+Inicio / Mi perfil / Plan
 ┌─ Copa Hibrida de Prueba          En vivo ─┐
 │ EVENTO                                    │
 │   Informacion general                     │
@@ -984,6 +1080,28 @@ no pasaba esa validacion, y el organizador no podia transferirle un carril
 desde Heats aunque lo tuviera invitado y aprobado. Ahora tambien acepta un
 `event_staff` aprobado de ese evento.
 
+### El boton "Juzgar" solo aparece si de verdad se puede juzgar
+
+Estaba en el menu de CUALQUIER cuenta logueada (`MenuDeCuenta`, encabezado
+publico y barra del panel), sin mirar si esa cuenta fue agregada como staff de
+alguna competencia. Entraba igual a `/juez` y veia la pantalla de seleccion de
+carril, vacia pero visible, sin haber sido invitada a nada.
+
+**`puede_juzgar()`** (`20260914130000_boton_juzgar_condicional.sql`) replica el
+MISMO gate que ya aplica `claim_lane`, sin duplicar la logica a mano en la UI:
+staff APROBADO de al menos un evento (`event_staff.approved_at is not null`),
+y ademas —para el rol llano `judge`— que esa competencia no haya apagado
+`events.allow_judge_self_claim`. `manager` y `verifier` quedan afuera de esa
+segunda condicion porque `claim_lane` los deja pasar siempre via
+`can_verify_event`, autoasignacion prendida o apagada: el toggle restringe a
+los JUECES, no a quien ya administra la competencia — misma regla que ya
+documenta la seccion de jueces verificados, ahora tambien reflejada en si el
+boton se muestra.
+
+`MenuDeCuenta` recibe `puedeJuzgar: boolean` y solo agrega el link "Juzgar" si
+es `true`; `EncabezadoPublico` y `MenuLateral` lo calculan server-side con
+`puedeJuzgar()` (`src/features/judge/queries.ts`) antes de renderizar.
+
 ### Un carril terminado se protege: no se lista ni en "tuyos" ni en "libres"
 
 Complemento de la liberacion automatica de arriba. `judge_visible_lanes()` ahora excluye
@@ -1376,41 +1494,63 @@ La pagina de cobros estuvo rota desde la fase 14 por esto. **La solucion no es
 recortar el tipo sino no pasar el objeto**: el componente importa `ADAPTADORES`
 y busca el suyo por `provider`, que es lo que ya hacia `BloqueDePago`.
 
-## Un correo, dos perfiles
+## Un correo, un panel: todos los roles en un solo lugar
 
-La misma cuenta compite y organiza. **No hay dos registros ni un "tipo de
-usuario" que elegir en la puerta**: quien se anota a una competencia y despues
-arma la suya no vuelve a registrarse, y un organizador que quiere competir
-tampoco.
+La misma cuenta compite, organiza y juzga. **No hay dos registros ni un "tipo
+de usuario" que elegir en la puerta**: quien se anota a una competencia y
+despues arma la suya no vuelve a registrarse, y un organizador que quiere
+competir tampoco.
 
 Por eso `profiles` NO tiene una columna `rol`: el rol no es del usuario, es del
-CONTEXTO. Se es organizador de las competencias propias y competidor de aquellas
-en las que uno se inscribio, al mismo tiempo.
+CONTEXTO. Se es organizador de las competencias propias, competidor de
+aquellas en las que uno se inscribio, y juez de las que lo invitaron, todo al
+mismo tiempo.
 
-| | Donde | Que hay |
+**Hasta esta fase esto vivia en DOS ESPACIOS SEPARADOS** —`/cuenta` para
+competir, `/panel` para organizar—, cada uno con un puente explicito al otro y
+ninguno como "seccion" del otro. Se unifico en un solo punto de entrada por un
+problema concreto, reportado en simulacro: un atleta que terminaba de
+inscribirse no tenia forma de saber que existia un "panel" distinto de su
+perfil, y `confirmarInscripcionIndividual()` no tenia a donde mandarlo que no
+fuera una pantalla de "tramite completo" que habia que abandonar por cuenta
+propia, o un `/panel` de organizador vacio que sugeria que hacia falta crear
+una competencia para poder usar la app.
+
+`/panel` (la RAIZ, sin sub-ruta) es ahora el HOME de cualquier cuenta, con tres
+secciones que aparecen segun lo que esa cuenta hace de verdad:
+
+| Seccion | Cuando aparece | De donde sale |
 |---|---|---|
-| Competidor | `/cuenta` | sus datos, su foto, sus inscripciones |
-| Organizador | `/panel` | sus competencias, con menu lateral |
+| **Compito** | siempre — con estado vacio si no hay ninguna inscripcion | `getMisInscripciones()` |
+| **Juzgo** | si `puede_juzgar()` es true | `getJudgeLanes()` |
+| **Organizo** | siempre — la lista, o el CTA de crear la primera competencia | `listEventosQueOrganizo()` |
 
-Cada pantalla lleva un enlace a la otra, presentado como lo que es —entrar al
-otro espacio— y no como otra seccion de la misma.
+Un atleta puro ve "Compito" y la invitacion a crear una competencia si quiere;
+un organizador puro ve "Organizo"; alguien con las tres facetas las ve las
+tres, cada una en su propia seccion. Confirmar una inscripcion individual
+manda DERECHO ACA, no a una pantalla intermedia.
 
-### La organizacion se crea sola, y por eso se borro una pantalla
+**El perfil (foto, telefono, fecha de nacimiento, pais) vive en
+`/panel/perfil`** — una pantalla mas del panel, con su propio link en la barra
+lateral ("Mi perfil"), no una pantalla aparte con su propio encabezado publico
+y su propio pie de pagina. `/cuenta` sigue existiendo como REDIRECCION a
+`/panel/perfil` — mismo criterio que `/mis-inscripciones`: un link guardado en
+favoritos o que quedo en un correo no puede terminar en un 404.
+
+### La organizacion se crea sola, y recien cuando hace falta
 
 Antes, quien se registraba para organizar caia en un "crea tu organizacion"
-antes de poder hacer nada. La organizacion es un concepto INTERNO —el espacio
-donde viven los eventos, los atletas y los carriles, y el sujeto de casi todas
-las politicas de RLS— que no le importa a nadie el primer dia. Pedirla por
-adelantado es cobrar una decision que el usuario todavia no puede tomar.
+antes de poder hacer nada; se arreglo haciendo que `ensure_my_organization()`
+la creara sola AL ENTRAR A `/panel`. Eso alcanzaba mientras `/panel` era
+exclusivo del organizador — pero dejo de alcanzar el dia que `/panel` se volvio
+la puerta de entrada de CUALQUIER cuenta: crearla en cada visita le dejaria una
+fila de organizacion fantasma a cada atleta que jamas va a organizar nada.
 
-`ensure_my_organization()` la crea la primera vez que alguien entra al panel,
-con su nombre y un slug derivado del CORREO (no del nombre: "Ana Pérez" da
-"ana-perez", que choca en cuanto haya dos). Es idempotente. La llama el layout
-de `/panel`, asi que el usuario entra directo a su tablero.
-
-Sigue existiendo y sigue siendo la base de la seguridad; lo unico que cambio es
-quien la crea. **El usuario no ve la palabra "organizacion" hasta que quiera
-invitar a alguien.**
+`ensure_my_organization()` se sigue llamando, pero ahora SOLO desde
+`panel/eventos/nuevo/page.tsx` — el momento exacto en que alguien elige de
+verdad crear una competencia. Es la misma doctrina de siempre, un paso mas
+lejos: **el usuario no ve la palabra "organizacion" hasta que la necesita**, y
+ahora tampoco se le crea una silenciosa solo por mirar la puerta.
 
 ### El panel es un espacio de trabajo, y por eso lleva barra lateral
 
@@ -1418,6 +1558,10 @@ Alguien configurando una competencia salta veinte veces entre categorias,
 pruebas, atletas y heats. Con los destinos en el encabezado, cada salto obliga a
 volver arriba; en una barra lateral estan siempre en el mismo sitio. En celular
 se convierte en un cajon: una barra fija se comeria media pantalla.
+
+Esto ya no es exclusivo del organizador: la misma barra —y el mismo
+`MenuDeCuenta` del encabezado publico— sirve de chrome para CUALQUIER cuenta
+que entra a `/panel`, compita, organice o juzgue.
 
 ### La foto de perfil
 
@@ -2005,7 +2149,7 @@ y `public_leaderboard()` filtran por `status`. Cada una mira el eje que le corre
   pasar a Mexico devuelve cero resultados y parece un error de la pagina.
 - **El encabezado publico tiene UN solo boton.** Quien llega viene a buscar competencias, no a
   administrar nada. Sin sesion, "Mi cuenta" lleva al login; con sesion abre el menu con las tres
-  cosas que hace la misma cuenta (panel, inscripciones, juzgar) y el cierre de sesion.
+  cosas que hace la misma cuenta (panel, mi perfil, juzgar) y el cierre de sesion.
 
 ### Las pantallas de cuenta
 
@@ -2248,6 +2392,10 @@ Verificadas contra el rulebook de los CrossFit Games, no inferidas:
   orden de base, fecha de inscripcion). `compararEntradasGenerales(dir)`
   (`src/shared/scoring/overall.ts`) es el UNICO comparador de la tabla general — `computeOverall` y
   `buildScoreboard` lo comparten, en vez de cada uno reescribir el mismo cuerpo a mano.
+- **`events.auto_tiebreak` se elimino.** Era un checkbox de "Informacion general" ("Desempate
+  automatico") que prometia que el desempate se pudiera apagar, pero ninguna consulta lo leia
+  jamas: el vector de puestos de arriba se aplica SIEMPRE, sin toggle. Quedaba de una version
+  anterior a este motor de puntuacion. Se borro la columna (`20260914160000`) y el checkbox.
 - **El podio se COMPARTE, nunca se rompe a mano.** Dos equipos empatados en 1º reciben ambos 🥇 y
   el 🥈 queda sin dueño — consistente con que ocupan las posiciones 1 y 2. Sus PUNTOS dependen de
   `tiePointPolicy` (arriba), no "se reparten" siempre: con el default cada uno cobra integro el
@@ -2887,6 +3035,31 @@ latencia que a nadie le importa: un atleta cruza la meta cada varios minutos.
   (ver `HeatCard.tsx`). En formularios donde limpiar sí es lo deseado —login, alta, invitación— el
   reset es un beneficio y el `<form>` está bien.
 
+  Segunda instancia real, en `src/features/inscripciones/components/PanelDeInscripcion.tsx`
+  (`MisDatos`): un atleta escribía nombre, apellido y teléfono, se olvidaba de tildar "Acepto los
+  términos", apretaba guardar, y el error de validación volvía con el formulario **completamente
+  vacío** — tenía que retipear todo. Mismo arreglo: `onSubmit` con `e.preventDefault()` y
+  `startTransition`, en vez de `useActionState` + `action={formAction}`.
+
+- **`revalidatePath()` durante el RENDER de una pagina revienta con "used revalidatePath ... during
+  render which is unsupported".** Pasa cuando una Server Component page invoca directo, en su
+  cuerpo, una funcion que internamente llama a `revalidatePath` — `src/app/inscripcion/[id]/page.tsx`
+  hacia `await reclamarLugar(id)` para que quien entra por un link de invitacion reclame su lugar
+  al abrir, y esa funcion revalidaba `/inscripcion/[id]` y `/mis-inscripciones` "por las dudas". Next
+  permite `revalidatePath` como respuesta a una accion del usuario (un submit, un click con
+  `startTransition`), pero NO como efecto secundario de simplemente renderizar una pagina. El
+  arreglo: sacar el `revalidatePath` de esa funcion — la pagina que la llama ya es
+  `force-dynamic` y trae los datos frescos en el mismo request, asi que no hacia falta invalidar
+  nada ahi.
+- **`signUp()` puede perder el destino de `volver` en tres lugares seguidos, y solo se nota al
+  registrarse desde un link de inscripcion.** `signIn()` siempre respeto `volver` y redirigio bien;
+  `signUp()` (crear cuenta) lo ignoraba por completo y mandaba siempre a `/panel`, asi que un atleta
+  NUEVO que llegaba a `/eventos/[slug]/inscripcion`, caia al login, elegia "Crear cuenta" en vez de
+  "Iniciar sesion", y terminaba en el panel de organizador en vez de volver a inscribirse — tenia
+  que volver a buscar el evento a mano. Habia que arreglar los TRES eslabones a la vez: el link
+  "¿No tenés cuenta?" en `AuthForm.tsx` no propagaba `?volver=`, `/registro/page.tsx` no leia
+  `searchParams`, y `signUp()` no leia `volver` de `formData`. Los tres compilan bien por separado;
+  el bug solo aparece siguiendo el camino completo a mano.
 - **El linter de React 19 rechaza `setState` síncrono dentro de un `useEffect`.** Si te lo marca,
   el arreglo correcto suele ser `useSyncExternalStore` (ver `useOnlineStatus.ts`) o mover el
   `setState` a un callback, no un `eslint-disable`.

@@ -38,7 +38,7 @@ export default async function AsistentePage({
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 p-6 lg:p-10">
       <div>
         <Link href="/panel" className="text-sm text-neutral-500 hover:text-neutral-300">
-          ← Mis Competencias
+          ← Tu panel
         </Link>
         <h1 className="mt-2 text-2xl font-bold tracking-tight">{event.name}</h1>
       </div>

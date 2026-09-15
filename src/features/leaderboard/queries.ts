@@ -14,6 +14,8 @@ export interface LeaderboardRow {
   bib: number;
   teamName: string | null;
   athletes: string;
+  /** El pais de cada integrante, en el mismo orden que `athletes`. */
+  countries: (string | null)[];
   status: LaneStatus;
   totalMs: number | null;
   penaltyMs: number;
@@ -34,6 +36,7 @@ interface RpcRow {
   bib_number: number;
   team_name: string | null;
   athletes: string | null;
+  countries: unknown;
   status: LaneStatus;
   total_ms: number | null;
   penalty_ms: number;
@@ -72,6 +75,7 @@ export async function getLeaderboard(slug: string): Promise<Leaderboard> {
     bib: r.bib_number,
     teamName: r.team_name,
     athletes: r.athletes ?? "",
+    countries: Array.isArray(r.countries) ? (r.countries as (string | null)[]) : [],
     status: r.status,
     totalMs: r.total_ms,
     penaltyMs: r.penalty_ms,

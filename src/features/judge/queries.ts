@@ -1,5 +1,27 @@
 import { createClient } from "@/lib/supabase/server";
+import { supabaseConfigured } from "@/lib/supabase/env";
 import type { LaneStatus } from "@/lib/supabase/types";
+
+/**
+ * Si el boton "Juzgar" debe verse.
+ *
+ * `puede_juzgar()` replica el mismo gate que ya aplica `claim_lane`: staff
+ * APROBADO de al menos un evento, y para el rol llano de juez, que esa
+ * competencia no haya apagado la autoasignacion
+ * (`events.allow_judge_self_claim`). Sin esto el boton aparecia en el menu de
+ * cualquier cuenta logueada, la hubieran invitado a algo o no.
+ */
+export async function puedeJuzgar(): Promise<boolean> {
+  if (!supabaseConfigured()) return false;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const { data } = await supabase.rpc("puede_juzgar");
+  return data ?? false;
+}
 
 export interface JudgeLane {
   laneId: string;

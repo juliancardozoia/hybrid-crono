@@ -111,6 +111,9 @@ export const pt: Diccionario = {
   "auth.conCuentaLink": "Entre",
   "auth.terminos":
     "Ao criar a conta você aceita os termos do serviço. Pode competir, julgar ou organizar com a mesma conta.",
+  "auth.entrar.sugerenciaCrear": "Ainda não tem conta ou digitou o e-mail errado?",
+  "auth.registro.yaExiste": "Já existe uma conta com esse e-mail.",
+  "auth.registro.recuperarLink": "Esqueceu sua senha?",
   "auth.recuperar.titulo": "Recuperar senha",
   "auth.recuperar.subtitulo": "Enviamos um link ao seu e-mail para escolher uma nova.",
   "auth.recuperar.boton": "Enviar o link",
@@ -118,6 +121,7 @@ export const pt: Diccionario = {
   "auth.nueva.titulo": "Escolha sua senha",
   "auth.nueva.subtitulo": "A anterior deixa de funcionar assim que você salvar esta.",
   "auth.nueva.boton": "Salvar e entrar",
+  "auth.nueva.pedirOtro": "Pedir um novo link",
 
   // --- Argumentos da tela de conta ------------------------------------------
   "marca.lema": "A plataforma de competições de fitness da América Latina.",

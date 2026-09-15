@@ -1,5 +1,9 @@
+"use client";
+
+import { useState } from "react";
 import type { BloquePublico, EventoPublico, MovimientoPublico } from "../queries";
 import { Icono } from "@/shared/components/Icono";
+import { Selector } from "@/shared/components/Selector";
 import { formatearCarga } from "@/shared/unidades/carga";
 
 /**
@@ -18,6 +22,14 @@ import { formatearCarga } from "@/shared/unidades/carga";
  * Una prueba sin liberar se LISTA pero no se abre. El organizador carga los WODs
  * con semanas de anticipacion para configurar la pantalla del juez, y cuando se
  * revelan lo decide el.
+ *
+ * FILTRO POR CATEGORIA, mismo widget que el resto de la pestaña de
+ * Leaderboards (`Selector`, "UN COMBO, NO PESTAÑAS"): con varias categorias
+ * corriendo pruebas distintas, un atleta de Scaled no tiene por que leer los
+ * pesos de Elite para encontrar los suyos. Solo filtra las PARTES que
+ * declaran division (`parte.divisiones`); una parte sin ninguna declarada es
+ * comun a todas y nunca se esconde. Una prueba sin liberar se sigue listando
+ * siempre: no hay con que filtrarla, porque su contenido todavia no se ve.
  */
 
 const UNIDAD: Record<string, string> = {
@@ -45,45 +57,86 @@ const EQUIPO: Record<string, string> = {
 
 export function PanelDeWorkouts({ evento }: { evento: EventoPublico }) {
   const esCircuito = evento.format === "carrera_hibrida";
+  const [categoria, setCategoria] = useState<string | null>(null);
+  const divisiones = evento.divisions ?? [];
 
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="text-lg font-semibold">{esCircuito ? "El circuito" : "Las pruebas"}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* El mismo texto que la pestaña ("Circuito"/"Workouts" en
+            MarcoDelEvento.tsx), no una variante propia ("El circuito"/"Las
+            pruebas"): son la misma cosa vista dos veces en la misma
+            pantalla, y decirla distinto en cada lugar hace dudar de si es
+            la misma seccion. */}
+        <h2 className="text-lg font-semibold">{esCircuito ? "Circuito" : "Workouts"}</h2>
+
+        {divisiones.length > 1 && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-neutral-500">Categoría</span>
+            <Selector
+              value={categoria ?? ""}
+              onChange={(e) => setCategoria(e.target.value || null)}
+              className="min-w-0 flex-1 py-2 text-sm sm:flex-none"
+            >
+              <option value="">Todas</option>
+              {divisiones.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </Selector>
+          </label>
+        )}
+      </div>
 
       <div className="flex flex-col gap-5">
-        {evento.workouts.map((w, i) => (
-          <article
-            key={w.name}
-            className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/30"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800 font-mono text-sm font-bold text-neutral-400">
-                  {i + 1}
-                </span>
-                <h3 className="text-lg font-semibold">{w.name}</h3>
-              </div>
+        {evento.workouts.map((w, i) => {
+          // Sin categoria elegida, o sin liberar (nada que filtrar todavia),
+          // se muestran las partes tal cual. Una parte sin `divisiones`
+          // declaradas es comun a todas y nunca se esconde.
+          const partes =
+            categoria && w.liberado
+              ? w.parts.filter((p) => p.divisiones.length === 0 || p.divisiones.includes(categoria))
+              : w.parts;
 
-              {!w.liberado && (
-                <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-500">
-                  Se anuncia más adelante
-                </span>
-              )}
-            </div>
+          // Con categoria elegida y ninguna parte que le corresponda, este WOD
+          // no es de esa categoria: no tiene sentido listarlo vacio.
+          if (categoria && w.liberado && w.parts.length > 0 && partes.length === 0) return null;
 
-            {w.liberado && (
-              <div className="flex flex-col gap-6 p-5">
-                {w.description && (
-                  <p className="whitespace-pre-line text-neutral-300">{w.description}</p>
+          return (
+            <article
+              key={w.name}
+              className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/30"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800 font-mono text-sm font-bold text-neutral-400">
+                    {i + 1}
+                  </span>
+                  <h3 className="text-lg font-semibold">{w.name}</h3>
+                </div>
+
+                {!w.liberado && (
+                  <span className="rounded-full border border-neutral-700 px-3 py-1 text-xs text-neutral-500">
+                    Se anuncia más adelante
+                  </span>
                 )}
-
-                {w.parts.map((p, j) => (
-                  <Parte key={j} parte={p} unica={w.parts.length === 1} />
-                ))}
               </div>
-            )}
-          </article>
-        ))}
+
+              {w.liberado && (
+                <div className="flex flex-col gap-6 p-5">
+                  {w.description && (
+                    <p className="whitespace-pre-line text-neutral-300">{w.description}</p>
+                  )}
+
+                  {partes.map((p, j) => (
+                    <Parte key={j} parte={p} unica={w.parts.length === 1} />
+                  ))}
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
     </div>
   );

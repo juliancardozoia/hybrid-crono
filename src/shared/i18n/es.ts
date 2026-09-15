@@ -19,7 +19,7 @@
 export const es = {
   // --- Encabezado y cuenta --------------------------------------------------
   "cuenta.mi": "Mi cuenta",
-  "cuenta.panel": "Panel Organizador",
+  "cuenta.panel": "Mi panel",
   "cuenta.inscripciones": "Mi Perfil",
   "cuenta.juzgar": "Juzgar",
   "cuenta.salir": "Cerrar sesión",
@@ -116,6 +116,9 @@ export const es = {
   "auth.conCuentaLink": "Entra",
   "auth.terminos":
     "Al crear la cuenta aceptas los términos del servicio. Puedes competir, juzgar u organizar con la misma cuenta.",
+  "auth.entrar.sugerenciaCrear": "¿No tienes cuenta o escribiste mal el correo?",
+  "auth.registro.yaExiste": "Ya existe una cuenta con ese correo.",
+  "auth.registro.recuperarLink": "¿Olvidaste tu contraseña?",
   "auth.recuperar.titulo": "Recuperar contraseña",
   "auth.recuperar.subtitulo": "Te enviamos un enlace al correo para elegir una nueva.",
   "auth.recuperar.boton": "Enviar el enlace",
@@ -123,6 +126,7 @@ export const es = {
   "auth.nueva.titulo": "Elige tu contraseña",
   "auth.nueva.subtitulo": "La anterior deja de funcionar apenas guardes esta.",
   "auth.nueva.boton": "Guardar y entrar",
+  "auth.nueva.pedirOtro": "Pedir un enlace nuevo",
 
   // --- Argumentos de la pantalla de cuenta ----------------------------------
   "marca.lema": "La plataforma de competencias de fitness de Latinoamérica.",
