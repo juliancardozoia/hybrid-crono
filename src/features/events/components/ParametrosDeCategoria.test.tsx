@@ -314,13 +314,13 @@ describe("eliminar categoría", () => {
   it("no se ofrece si ya tiene equipos inscritos", () => {
     pintar("crossfit", { ...CATEGORIA, equiposInscritos: 3 });
 
-    expect(screen.queryByRole("button", { name: "Eliminar" })).toBeNull();
+    expect(screen.queryByTitle("Eliminar categoría")).toBeNull();
     expect(screen.getByTitle(/No se puede eliminar/)).toBeTruthy();
   });
 
   it("se ofrece si no tiene ningún equipo", () => {
     pintar("crossfit");
 
-    expect(screen.getByRole("button", { name: "Eliminar" })).toBeTruthy();
+    expect(screen.getByTitle("Eliminar categoría")).toBeTruthy();
   });
 });

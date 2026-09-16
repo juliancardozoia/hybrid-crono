@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { ZonaDeArchivo } from "@/shared/components/ZonaDeArchivo";
 import { Icono } from "@/shared/components/Icono";
+import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { agregarDocumento, borrarDocumento } from "../actions.documentos";
@@ -135,14 +136,7 @@ function Grupo({
               >
                 {d.name}
               </a>
-              <button
-                type="button"
-                onClick={() => quitar(d.id)}
-                className="px-2 text-sm text-neutral-600 hover:text-red-400"
-                title="Quitar documento"
-              >
-                ✕
-              </button>
+              <BotonQuitar onClick={() => quitar(d.id)} title="Quitar documento" />
             </li>
           ))}
         </ul>

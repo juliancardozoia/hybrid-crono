@@ -8,6 +8,7 @@ import { getPenaltyTypes } from "@/features/events/config/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { NuevaPenalizacion } from "@/features/events/components/NuevaPenalizacion";
+import { QuitarPenalizacion } from "@/features/events/components/QuitarPenalizacion";
 import type { PenaltyKind } from "@/lib/supabase/types";
 
 const TIPOS: Record<PenaltyKind, string> = {
@@ -82,14 +83,11 @@ export default async function PenalizacionesPage({
                     mensajeDeCarga="Actualizando la penalización…"
                     className="text-sm text-neutral-500 hover:text-neutral-200"
                   />
-                  <FormularioDeEstado
-                    accion={eliminar.bind(null, id, p.id)}
-                    estadoInicial={{ error: null }}
-                    etiqueta="Eliminar"
-                    pendienteTexto="…"
-                    mensajeDeCarga="Eliminando la penalización…"
-                    title="Eliminar penalización"
-                    className="text-sm text-neutral-600 hover:text-red-400"
+                  <QuitarPenalizacion
+                    eventId={id}
+                    penaltyId={p.id}
+                    label={p.label}
+                    eliminar={eliminar}
                   />
                 </div>
               )}

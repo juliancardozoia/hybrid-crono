@@ -270,7 +270,7 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
             mensajeDeCarga="Creando la prueba…"
             className={claseDeBoton({ variante: "primary" })}
           >
-            Crear prueba
+            Crear workout
           </BotonDeEnvio>
         </div>
       </form>

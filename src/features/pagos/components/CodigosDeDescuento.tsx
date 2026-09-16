@@ -4,6 +4,7 @@ import { useActionState, useTransition } from "react";
 import { borrarCodigo, crearCodigo, type FormState } from "../actions";
 import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
+import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { Selector } from "@/shared/components/Selector";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -75,14 +76,11 @@ export function CodigosDeDescuento({
                 {c.used_count} usado{c.used_count === 1 ? "" : "s"}
                 {c.max_uses !== null && ` de ${c.max_uses}`}
               </span>
-              <button
-                type="button"
+              <BotonQuitar
                 onClick={() => quitarCodigo(c.id)}
-                className="ml-auto px-2 text-sm text-neutral-600 hover:text-red-400"
                 title="Quitar código"
-              >
-                ✕
-              </button>
+                className="ml-auto"
+              />
             </li>
           ))}
         </ul>

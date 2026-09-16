@@ -58,6 +58,19 @@ function Etiqueta({
  * una pantalla mas larga por la que hay que pasar en cada visita. La ayuda se
  * reserva para los campos donde de verdad hace falta.
  */
+/**
+ * El navegador (Chrome) autocompleta la hora de un `datetime-local` vacio con
+ * la hora ACTUAL apenas el organizador elige una fecha en el calendario, sin
+ * que nadie haya tocado el reloj. Si el campo todavia no tenia valor, se
+ * descarta esa hora y se fuerza 00:00 — el organizador la cambia si quiere.
+ * Una vez que el campo ya tiene un valor, los cambios de hora se respetan tal
+ * cual: esto solo corrige el autocompletado del primer click.
+ */
+function siempreConHoraCero(valorPrevio: string, valorNuevo: string): string {
+  if (valorPrevio || !valorNuevo) return valorNuevo;
+  return `${valorNuevo.slice(0, 10)}T00:00`;
+}
+
 function Seccion({
   titulo,
   children,
@@ -100,6 +113,18 @@ export function FichaDelEvento({
   } as FormState);
   const [pais, setPais] = useState(evento?.country ?? "");
   const [huso, setHuso] = useState(evento?.timezone ?? "America/Bogota");
+  const [startsAt, setStartsAt] = useState(
+    paraInputLocal(evento?.starts_at ?? null, huso),
+  );
+  const [endsAt, setEndsAt] = useState(
+    paraInputLocal(evento?.ends_at ?? null, huso),
+  );
+  const [registrationOpensAt, setRegistrationOpensAt] = useState(
+    paraInputLocal(evento?.registration_opens_at ?? null, huso),
+  );
+  const [registrationClosesAt, setRegistrationClosesAt] = useState(
+    paraInputLocal(evento?.registration_closes_at ?? null, huso),
+  );
 
   const prefijo = PAISES.find((p) => p.codigo === pais)?.prefijo ?? "";
 
@@ -187,7 +212,10 @@ export function FichaDelEvento({
             <input
               name="startsAt"
               type="datetime-local"
-              defaultValue={paraInputLocal(evento?.starts_at ?? null, huso)}
+              value={startsAt}
+              onChange={(e) =>
+                setStartsAt(siempreConHoraCero(startsAt, e.target.value))
+              }
               className={campo}
             />
           </Etiqueta>
@@ -195,7 +223,10 @@ export function FichaDelEvento({
             <input
               name="endsAt"
               type="datetime-local"
-              defaultValue={paraInputLocal(evento?.ends_at ?? null, huso)}
+              value={endsAt}
+              onChange={(e) =>
+                setEndsAt(siempreConHoraCero(endsAt, e.target.value))
+              }
               className={campo}
             />
           </Etiqueta>
@@ -206,10 +237,12 @@ export function FichaDelEvento({
             <input
               name="registrationOpensAt"
               type="datetime-local"
-              defaultValue={paraInputLocal(
-                evento?.registration_opens_at ?? null,
-                huso,
-              )}
+              value={registrationOpensAt}
+              onChange={(e) =>
+                setRegistrationOpensAt(
+                  siempreConHoraCero(registrationOpensAt, e.target.value),
+                )
+              }
               className={campo}
             />
           </Etiqueta>
@@ -217,10 +250,12 @@ export function FichaDelEvento({
             <input
               name="registrationClosesAt"
               type="datetime-local"
-              defaultValue={paraInputLocal(
-                evento?.registration_closes_at ?? null,
-                huso,
-              )}
+              value={registrationClosesAt}
+              onChange={(e) =>
+                setRegistrationClosesAt(
+                  siempreConHoraCero(registrationClosesAt, e.target.value),
+                )
+              }
               className={campo}
             />
           </Etiqueta>

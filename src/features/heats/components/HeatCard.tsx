@@ -35,6 +35,7 @@ export function HeatCard({
   judges,
   canManage,
   canVerify,
+  accionesExtra,
 }: {
   eventId: string;
   /** Huso de la competencia: la hora que importa es la del venue. */
@@ -44,6 +45,20 @@ export function HeatCard({
   judges: JudgeOption[];
   canManage: boolean;
   canVerify: boolean;
+  /**
+   * Controles del LLAMADOR que van en la misma fila que el badge
+   * "Programado"/"Largado" — hoy, "Quitar heat".
+   *
+   * ANTES ERA UN OVERLAY `absolute top-4 right-4` puesto encima de la
+   * tarjeta desde afuera (`PantallaDeHeats.tsx`), en la MISMA esquina donde
+   * el header ya pinta este badge: el botón quedaba flotando arriba del
+   * badge, tapándolo. Sacarlo del todo a una fila aparte arriba de la
+   * tarjeta tampoco sirvió: el pedido es que conviva CON el badge, no que
+   * quede afuera de la tarjeta. La solución real es que el propio `header`
+   * —que ya es un `flex` con `justify-between`— lo reciba como un elemento
+   * más de esa fila, al lado del badge, en vez de superponerlo por fuera.
+   */
+  accionesExtra?: React.ReactNode;
 }) {
   const [lanesState, lanesAction, guardando] = useActionState(
     assignLanes,
@@ -156,15 +171,18 @@ export function HeatCard({
               ` · ${fechaHoraEnEvento(heat.scheduled_at, timezone)}`}
           </p>
         </div>
-        <span
-          className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
-            largado
-              ? "bg-lime-500/15 text-lime-300"
-              : "bg-neutral-800 text-neutral-400"
-          }`}
-        >
-          {largado ? "Largado" : "Programado"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+              largado
+                ? "bg-lime-500/15 text-lime-300"
+                : "bg-neutral-800 text-neutral-400"
+            }`}
+          >
+            {largado ? "Largado" : "Programado"}
+          </span>
+          {accionesExtra}
+        </div>
       </header>
 
       {largado ? (

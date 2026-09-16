@@ -30,17 +30,17 @@ export default async function AsistentePage({
   const siguiente = pasoSiguiente(paso);
   const anterior = pasoAnterior(paso);
 
-  // `max-w-4xl`: con `2xl` el formulario ocupaba una franja angosta en el medio
-  // y dejaba media pantalla vacia a cada lado en un escritorio, que es donde se
-  // configura una competencia. Ancho suficiente para dos columnas de campos sin
-  // que una linea de texto se vuelva ilegible de tan larga.
+  // `max-w-5xl`, igual que el layout de "Configuracion competencia"
+  // (`/panel/eventos/[id]/layout.tsx`): son dos pantallas del mismo evento y
+  // saltar de una a otra con un ancho distinto se ve como que la pagina se
+  // achico, aunque nada haya cambiado de verdad.
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 p-6 lg:p-10">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 sm:p-6 lg:p-10">
       <div>
         <Link href="/panel" className="text-sm text-neutral-500 hover:text-neutral-300">
           ← Tu panel
         </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">{event.name}</h1>
+        <h1 className="mt-2 text-2xl font-bold">{event.name}</h1>
       </div>
 
       <PasosDelAsistente actual={paso} eventId={id} />

@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
+import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
 import { Modal } from "@/shared/components/Modal";
@@ -333,18 +334,7 @@ function QuitarEquipo({
 
   return (
     <>
-      {/* No es `Boton`: ninguna variante existente combina "neutral en reposo,
-          rojo solo al hover" — inventar una variante para un solo caso
-          concreto es la excepcion que el primitive deberia evitar, no
-          generar. El tamaño (44px) ya sigue el minimo tactil formalizado. */}
-      <button
-        type="button"
-        onClick={() => setConfirmar(true)}
-        title="Quitar atleta/equipo"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
-      >
-        ✕
-      </button>
+      <BotonQuitar onClick={() => setConfirmar(true)} title="Quitar atleta/equipo" />
 
       <Modal
         abierto={confirmar}

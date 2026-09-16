@@ -14,6 +14,7 @@ import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import { Boton, claseDeBoton } from "@/shared/components/Boton";
+import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Selector } from "@/shared/components/Selector";
 import { CampoBase, CLASE_INPUT, Field, Select } from "@/shared/components/SimpleForm";
@@ -162,30 +163,35 @@ export function FilaDeCategoria({
         )}
       </td>
       <td className="px-4 py-3 text-right whitespace-nowrap">
-        <button
-          type="button"
-          onClick={() => setEditar(true)}
-          className="rounded-lg px-2 py-1 text-sm text-lime-400 hover:bg-neutral-900"
-        >
-          Editar
-        </button>
-        {alQuitar &&
-          (categoria.equiposInscritos > 0 ? (
-            <span
-              className="ml-1 px-2 py-1 text-xs text-neutral-600"
-              title="No se puede eliminar: ya tiene equipos inscritos"
-            >
-              {categoria.equiposInscritos} equipo(s)
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmar(true)}
-              className="ml-1 rounded-lg px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-900 hover:text-red-400"
-            >
-              Eliminar
-            </button>
-          ))}
+        {/* `items-center` es lo que alinea "Editar" con `BotonQuitar` al
+            lado: los dos tienen alturas distintas (uno es texto con
+            padding, el otro un cuadrado fijo) y sin esto quedaban corridos
+            entre si en vez de centrados en la misma fila. */}
+        <div className="inline-flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => setEditar(true)}
+            className="rounded-lg px-2 py-1 text-sm text-lime-400 hover:bg-neutral-900"
+          >
+            Editar
+          </button>
+          {alQuitar &&
+            (categoria.equiposInscritos > 0 ? (
+              <span
+                className="px-2 py-1 text-xs text-neutral-600"
+                title="No se puede eliminar: ya tiene equipos inscritos"
+              >
+                {categoria.equiposInscritos} equipo(s)
+              </span>
+            ) : (
+              // Icono, no la palabra "Eliminar" — misma filosofia que ya usan
+              // "Quitar atleta/equipo" (GrillaDeAtletas.tsx) y "Quitar heat"
+              // (PantallaDeHeats.tsx): el gesto destructivo se reconoce por
+              // el simbolo, y "Eliminar" al lado de "Editar" en una fila
+              // angosta se leia como dos acciones de peso similar.
+              <BotonQuitar onClick={() => setConfirmar(true)} title="Eliminar categoría" />
+            ))}
+        </div>
 
         <Modal
           abierto={editar}

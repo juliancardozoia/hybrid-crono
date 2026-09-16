@@ -8,6 +8,7 @@ import {
   type FormState,
 } from "@/features/workouts/actions";
 import { NuevaPrueba } from "@/features/workouts/components/NuevaPrueba";
+import { QuitarPrueba } from "@/features/workouts/components/QuitarPrueba";
 import { describirParte } from "@/features/workouts/lib/describir";
 import { getEstadoDelPlan } from "@/features/planes/queries";
 import { AvisoDePlan } from "@/features/planes/components/AvisoDePlan";
@@ -150,14 +151,11 @@ export default async function PruebasPage({
                       }
                       className="rounded-xl border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-600 disabled:opacity-60"
                     />
-                    <FormularioDeEstado
-                      accion={quitar.bind(null, id, workout.id)}
-                      estadoInicial={{ error: null }}
-                      etiqueta="✕"
-                      pendienteTexto="…"
-                      mensajeDeCarga="Quitando la prueba…"
-                      title="Quitar prueba"
-                      className="px-2 py-1 text-sm text-neutral-600 hover:text-red-400"
+                    <QuitarPrueba
+                      eventId={id}
+                      workoutId={workout.id}
+                      label={workout.name}
+                      eliminar={quitar}
                     />
                   </div>
                 )}

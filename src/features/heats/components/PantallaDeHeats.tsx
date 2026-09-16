@@ -7,6 +7,7 @@ import { DistribuirHeats } from "./DistribuirHeats";
 import { Pestanas } from "./PestanasDePrueba";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { Boton, claseDeBoton } from "@/shared/components/Boton";
+import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { Modal } from "@/shared/components/Modal";
 import { Selector } from "@/shared/components/Selector";
 import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
@@ -313,22 +314,30 @@ export function PantallaDeHeats({
 
                 <div className="mt-4 flex flex-col gap-4 pl-1">
                   {heatsDelGrupo.map((heat) => (
-                    <div key={heat.id} className="relative">
-                      <HeatCard
-                        eventId={eventId}
-                        timezone={timezone}
-                        heat={heat}
-                        teams={opciones}
-                        judges={judges}
-                        canManage={canManage}
-                        canVerify={canVerify}
-                      />
-                      {canManage && heat.started_at === null && (
-                        <div className="absolute top-4 right-4">
+                    // Antes vivía como overlay `absolute top-4 right-4`
+                    // ENCIMA de la tarjeta — exactamente donde `HeatCard` ya
+                    // pinta su badge "Programado"/"Largado", así que el botón
+                    // de quitar tapaba el badge. Ahora se lo pasa como
+                    // `accionesExtra`: el propio `header` de `HeatCard` (ya
+                    // es un `flex` con el badge) lo pinta AL LADO del badge,
+                    // en la misma fila y dentro de la tarjeta — conviven en
+                    // vez de superponerse o quedar afuera.
+                    <HeatCard
+                      key={heat.id}
+                      eventId={eventId}
+                      timezone={timezone}
+                      heat={heat}
+                      teams={opciones}
+                      judges={judges}
+                      canManage={canManage}
+                      canVerify={canVerify}
+                      accionesExtra={
+                        canManage &&
+                        heat.started_at === null && (
                           <QuitarHeat eventId={eventId} heat={heat} quitarHeat={quitarHeat} />
-                        </div>
-                      )}
-                    </div>
+                        )
+                      }
+                    />
                   ))}
                 </div>
               </details>
@@ -362,14 +371,7 @@ function QuitarHeat({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setConfirmar(true)}
-        title="Quitar heat"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-sm text-neutral-700 hover:bg-neutral-900 hover:text-red-400"
-      >
-        ✕
-      </button>
+      <BotonQuitar onClick={() => setConfirmar(true)} title="Quitar heat" />
 
       <Modal
         abierto={confirmar}

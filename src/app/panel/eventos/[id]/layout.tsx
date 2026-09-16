@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireEventAccess } from "@/features/events/lib/access";
 import { EventTabs } from "@/features/events/components/EventTabs";
 import { EstadoBadge } from "@/features/events/components/EstadoBadge";
@@ -14,10 +15,14 @@ export default async function EventoLayout({
 
   return (
     <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-10">
+      <Link href="/panel" className="text-sm text-neutral-500 hover:text-neutral-300">
+        ← Tu panel
+      </Link>
+
       {/* El nombre se repite aquí, y a propósito: la barra lateral lo muestra
           truncado a 64 caracteres de ancho y en un celular ni siquiera está
           abierta. Es el título de la página, no una migaja de navegación. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">{event.name}</h1>
           <p className="text-sm text-neutral-500">
