@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, type ChangeEventHandler } from "react";
 import { BotonDeEnvio } from "./BotonDeEnvio";
 import { Selector } from "./Selector";
 import { MensajeDeError } from "./MensajeDeError";
@@ -166,6 +166,7 @@ export function Select({
   required,
   ayuda,
   error,
+  onChange,
 }: {
   label: string;
   name: string;
@@ -175,6 +176,8 @@ export function Select({
   ayuda?: string;
   /** Mismo slot que `ayuda`, en rojo — nunca las dos a la vez. */
   error?: string;
+  /** Para mostrar u ocultar otros campos segun la opcion elegida. */
+  onChange?: ChangeEventHandler<HTMLSelectElement>;
 }) {
   return (
     <CampoBase label={label} ayuda={ayuda} error={error}>
@@ -183,6 +186,7 @@ export function Select({
         defaultValue={defaultValue}
         required={required}
         error={Boolean(error)}
+        onChange={onChange}
         // El input de Field es `py-3`; el Selector base es `py-2.5`. Sin este
         // override, un Field y un Select en la misma fila (FieldRow) quedan
         // con distinta altura — es exactamente el desnivel que reporto la

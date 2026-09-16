@@ -12,7 +12,6 @@ import {
   type ParteCompleta,
 } from "@/features/workouts/queries";
 import {
-  agregarBloque,
   agregarParte,
   alternarCategoria,
   borrarBloque,
@@ -21,9 +20,9 @@ import {
   type FormState,
 } from "@/features/workouts/actions";
 import { describirParte } from "@/features/workouts/lib/describir";
-import { SimpleForm, Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
 import { NuevoMovimiento } from "@/features/workouts/components/NuevoMovimiento";
+import { NuevoBloque } from "@/features/workouts/components/NuevoBloque";
 import { EditarPrueba, EditarParte } from "@/features/workouts/components/EditarParte";
 import {
   EditarBloque,
@@ -35,6 +34,7 @@ import { VistaPreviaDelWod } from "@/features/workouts/components/VistaPreviaDel
 import { SimuladorDeJuez } from "@/features/workouts/components/SimuladorDeJuez";
 import { armarEstructuraDeWod } from "@/shared/timing/wodStructure";
 import { desdeKilos } from "@/shared/unidades/carga";
+import type { WorkoutRow } from "@/lib/supabase/types";
 
 /**
  * El constructor de una prueba, con TODAS sus partes.
@@ -108,6 +108,11 @@ export default async function PruebaPage({
   }
 
   const unaSolaParte = prueba.partes.length === 1;
+  // Un circuito no tiene modal de "Editar parte" (su estructura se edita en
+  // Circuito, no aca) -- ahi no hay donde unificar nombre/descripcion/etapa,
+  // asi que el boton "Editar prueba" de arriba sigue haciendo falta.
+  const esCircuitoUnica =
+    unaSolaParte && prueba.partes[0]?.part.time_scheme === "circuito";
 
   async function quitarBloque(blockId: string, _p: FormState, _f: FormData) {
     "use server";
@@ -147,7 +152,13 @@ export default async function PruebaPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-semibold">{prueba.workout.name}</h2>
-          {canManage && <EditarPrueba eventId={id} workout={prueba.workout} />}
+          {/* Con una sola parte (el caso comun) el nombre, la descripcion y la
+              etapa se editan DENTRO del modal de esa parte -- ver `workout`
+              en `SeccionDeParte` -- asi que este boton solo hace falta con
+              varias partes, o con un circuito, que no tiene ese modal. */}
+          {canManage && (!unaSolaParte || esCircuitoUnica) && (
+            <EditarPrueba eventId={id} workout={prueba.workout} />
+          )}
         </div>
         {prueba.workout.description && (
           <p className="mt-1 max-w-2xl text-sm text-neutral-400">
@@ -162,6 +173,9 @@ export default async function PruebaPage({
           eventId={id}
           parte={parte}
           unaSolaParte={unaSolaParte}
+          // Solo con una sola parte: es lo que le permite a `EditarParte`
+          // unificar nombre/descripcion/etapa en su mismo modal.
+          workout={unaSolaParte ? prueba.workout : undefined}
           canManage={canManage}
           divisiones={divisiones}
           nombreDivision={nombreDivision}
@@ -206,6 +220,7 @@ function SeccionDeParte({
   eventId,
   parte,
   unaSolaParte,
+  workout,
   canManage,
   divisiones,
   nombreDivision,
@@ -222,6 +237,8 @@ function SeccionDeParte({
   eventId: string;
   parte: ParteCompleta;
   unaSolaParte: boolean;
+  /** Solo con una sola parte: unifica su edicion con la de esta parte. */
+  workout?: WorkoutRow;
   canManage: boolean;
   divisiones: Array<{ id: string; name: string }>;
   nombreDivision: Map<string, string>;
@@ -260,7 +277,7 @@ function SeccionDeParte({
 
         {canManage && !esCircuito && (
           <div className="flex items-center gap-1">
-            <EditarParte eventId={eventId} part={part} titulo={titulo} otrasPartes={otrasPartes} />
+            <EditarParte eventId={eventId} part={part} workout={workout} otrasPartes={otrasPartes} />
             {!unaSolaParte && (
               <FormularioDeEstado
                 accion={quitarParte.bind(null, part.id)}
@@ -365,7 +382,11 @@ function SeccionDeParte({
                             actual={bloque.id}
                             tipo="bloque"
                           />
-                          <EditarBloque eventId={eventId} bloque={bloque} />
+                          <EditarBloque
+                            eventId={eventId}
+                            bloque={bloque}
+                            timeScheme={part.time_scheme}
+                          />
                           <FormularioDeEstado
                             accion={quitarBloque.bind(null, bloque.id)}
                             estadoInicial={{ error: null }}
@@ -480,52 +501,7 @@ function SeccionDeParte({
                 Agregar bloque
               </summary>
               <div className="mt-4">
-                <SimpleForm
-                  action={agregarBloque}
-                  submitLabel="Agregar bloque"
-                  hidden={{ eventId, partId: part.id }}
-                >
-                  <FieldRow>
-                    <Select
-                      label="Tipo"
-                      name="kind"
-                      defaultValue="trabajo"
-                      options={[
-                        { value: "trabajo", label: "Trabajo" },
-                        { value: "buy_in", label: "Buy-in" },
-                        { value: "cash_out", label: "Cash-out" },
-                        { value: "descanso", label: "Descanso" },
-                      ]}
-                    />
-                    <Field
-                      label="Rondas"
-                      name="repeticiones"
-                      type="number"
-                      placeholder="1 (vacío = sin límite, si la prueba es AMRAP)"
-                    />
-                  </FieldRow>
-                  <FieldRow>
-                    <Field
-                      label="Duración (seg)"
-                      name="duracionSegundos"
-                      type="number"
-                      placeholder="intervalos, o cuánto dura el descanso"
-                    />
-                    <Field
-                      label="Descanso (seg)"
-                      name="descansoSegundos"
-                      type="number"
-                      placeholder="solo intervalos"
-                    />
-                  </FieldRow>
-                  <Field
-                    label="Cap de este bloque (min)"
-                    name="capMinutos"
-                    type="number"
-                    placeholder="Vacío = sin tope propio. No aplica a Descanso."
-                    ayuda="Se mide desde que ARRANCA este bloque, no desde la largada del heat. Solo tiene efecto si la prueba tiene algún bloque de Descanso."
-                  />
-                </SimpleForm>
+                <NuevoBloque eventId={eventId} partId={part.id} timeScheme={part.time_scheme} />
               </div>
             </details>
           )}

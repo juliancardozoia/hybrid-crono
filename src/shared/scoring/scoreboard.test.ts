@@ -20,7 +20,7 @@ function documento(parcial: Partial<ScoreboardInput> = {}): ScoreboardInput {
       {
         id: "p1",
         workoutId: "w1",
-        workoutName: "Evento 1",
+        workoutName: "WOD #1 - Fran",
         label: "",
         orderIndex: 0,
         stage: 1,

@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { editarParte, editarPrueba, type FormState } from "../actions";
+import { editarParte, editarPrueba, editarPruebaYParte, type FormState } from "../actions";
 import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Selector } from "@/shared/components/Selector";
 import { Modal, BotonesDeModal, useCerrarAlGuardar } from "@/shared/components/Modal";
-import type { WorkoutPartRow, WorkoutRow } from "@/lib/supabase/types";
+import type { TimeScheme, WorkoutPartRow, WorkoutRow } from "@/lib/supabase/types";
 
 const inicial: FormState = { error: null };
 
@@ -76,19 +76,30 @@ export function EditarPrueba({
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="workoutId" value={workout.id} />
 
-          <Field label="Nombre" name="name" defaultValue={workout.name} required />
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <Field label="Nombre" name="name" defaultValue={workout.name} required />
+            </div>
+            <div className="w-24">
+              <Field
+                label="Etapa"
+                name="stage"
+                type="number"
+                min={1}
+                required
+                defaultValue={String(workout.stage)}
+              />
+            </div>
+          </div>
+          <p className="text-xs font-medium text-amber-400">
+            Etapa: 1 = todos compiten. 2 o más = solo quien avanzó en el corte
+            de la etapa anterior (se confirma en Puntuación).
+          </p>
           <Field
             label="Descripción"
             name="description"
             defaultValue={workout.description ?? ""}
             placeholder="Se muestra en la ficha pública cuando publicas la prueba"
-          />
-          <Field
-            label="Etapa"
-            name="stage"
-            type="number"
-            defaultValue={String(workout.stage)}
-            ayuda="1 = todos compiten. 2 o más = solo quien avanzó en el corte de la etapa anterior (se confirma en Puntuación)."
           />
         </form>
 
@@ -110,27 +121,46 @@ export function EditarPrueba({
  * Antes esto solo se podía elegir AL CREAR: corregir un cap de 10 a 12 minutos
  * obligaba a borrar la prueba entera con sus bloques y sus movimientos.
  *
- * Los campos de tiempo se muestran los tres siempre y no según el esquema: cuál
- * hace falta depende de lo que el organizador esté por elegir en el selector de
- * arriba, y esconderlos obligaría a volver a abrir el modal después de cambiar
- * el esquema. La base rechaza las combinaciones imposibles igual, y la acción
- * las traduce a un mensaje que se lee.
+ * El campo de tiempo que se muestra depende del esquema elegido en el selector
+ * de arriba (cap solo en "For Time con cap", ventana solo en AMRAP, intervalo
+ * solo en "Intervalos"): mostrar los tres siempre invitaba a llenar uno que el
+ * esquema elegido ni siquiera usa. `timeScheme` es estado del componente para
+ * reaccionar al cambio sin volver a abrir el modal.
+ *
+ * `workout` es OPCIONAL y solo se pasa con una sola parte: ahi este mismo
+ * modal unifica nombre, descripción y etapa (que antes vivían en un botón
+ * "Editar prueba" aparte) con el esquema y la puntuación, y guarda las dos
+ * cosas con `editarPruebaYParte`. Con más de una parte se sigue usando
+ * `EditarPrueba` por separado — el nombre y la etapa son del WORKOUT, y
+ * repetirlos en el modal de cada parte confundiría cuál de las dos copias
+ * es la que en verdad se guarda.
  */
 export function EditarParte({
   eventId,
   part,
-  titulo,
+  workout,
   otrasPartes,
 }: {
   eventId: string;
   part: WorkoutPartRow;
-  titulo: string;
+  workout?: WorkoutRow;
   /** Las demas partes del evento, para elegir de donde sale un desempate ajeno. */
   otrasPartes: Array<{ id: string; nombre: string }>;
 }) {
   const [abierto, setAbierto] = useState(false);
-  const [state, formAction, pending] = useActionState(editarParte, inicial);
+  const [state, formAction, pending] = useActionState(
+    workout ? editarPruebaYParte : editarParte,
+    inicial,
+  );
   useCerrarAlGuardar(pending, state.error, () => setAbierto(false));
+
+  const [timeScheme, setTimeScheme] = useState<TimeScheme>(part.time_scheme);
+
+  // Este modal EDITA la parte (esquema, tiempos, puntos, desempate) — no es
+  // "como se puntua", que es el titulo que usa la seccion de afuera para
+  // describir el resultado ya cargado. El label solo existe con mas de una
+  // parte (ver `agregarParte`): vacio significa que esta es la unica.
+  const tituloModal = part.label ? `Editar parte ${part.label}` : "Editar prueba";
 
   // "" | "propia" | "otra". No distingue 'hito' de 'manual' a proposito: esa
   // diferencia es COMO llega el valor, no de DONDE sale, y la accion la
@@ -149,7 +179,7 @@ export function EditarParte({
         Editar
       </button>
 
-      <Modal abierto={abierto} alCerrar={() => setAbierto(false)} titulo={titulo}>
+      <Modal abierto={abierto} alCerrar={() => setAbierto(false)} titulo={tituloModal}>
         <form
           key={abierto ? "abierto" : "cerrado"}
           id={`editar-parte-${part.id}`}
@@ -159,11 +189,51 @@ export function EditarParte({
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="partId" value={part.id} />
 
+          {workout && (
+            <>
+              <h4 className="text-sm font-semibold text-neutral-400 uppercase">
+                Datos generales
+              </h4>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <Field label="Nombre" name="name" defaultValue={workout.name} required />
+                </div>
+                <div className="w-24">
+                  <Field
+                    label="Etapa"
+                    name="stage"
+                    type="number"
+                    min={1}
+                    required
+                    defaultValue={String(workout.stage)}
+                  />
+                </div>
+              </div>
+              <p className="text-xs font-medium text-amber-400">
+                Etapa: 1 = todos compiten. 2 o más = solo quien avanzó en el
+                corte de la etapa anterior (se confirma en Puntuación).
+                Revisala si esta competencia tiene cortes.
+              </p>
+              <Field
+                label="Descripción"
+                name="description"
+                defaultValue={workout.description ?? ""}
+                placeholder="Se muestra en la ficha pública cuando publicas la prueba"
+              />
+              <input type="hidden" name="workoutId" value={workout.id} />
+
+              <h4 className="border-t border-neutral-800 pt-4 text-sm font-semibold text-neutral-400 uppercase">
+                Cómo se puntúa
+              </h4>
+            </>
+          )}
+
           <Select
             label="Cómo se mide"
             name="timeScheme"
             defaultValue={part.time_scheme}
             options={ESQUEMAS}
+            onChange={(e) => setTimeScheme(e.target.value as TimeScheme)}
           />
 
           <FieldRow>
@@ -184,28 +254,38 @@ export function EditarParte({
             />
           </FieldRow>
 
-          <FieldRow>
+          {timeScheme === "cap" && (
             <Field
               label="Cap (min)"
               name="capMinutos"
               type="number"
               defaultValue={aMinutos(part.time_cap_ms)}
-              placeholder="solo For Time con cap"
             />
+          )}
+          {timeScheme === "ventana" && (
             <Field
               label="Ventana (min)"
               name="ventanaMinutos"
               type="number"
               defaultValue={aMinutos(part.window_ms)}
-              placeholder="solo AMRAP"
             />
-          </FieldRow>
+          )}
+          {timeScheme === "intervalos" && (
+            <Field
+              label="Intervalo (seg)"
+              name="intervaloSegundos"
+              type="number"
+              defaultValue={part.interval_ms === null ? "" : String(part.interval_ms / 1000)}
+            />
+          )}
 
           <FieldRow>
             {/* El peso de la prueba. Antes esto obligaba a crear una TABLA de
                 puntos entera para decir "esta vale el doble"; un
                 multiplicador dice lo mismo y no se puede desincronizar de la
-                curva de la categoria. */}
+                curva de la categoria. Se usa siempre, sin importar el
+                esquema: incluso una carga maxima o un for time sin cap
+                pueden valer distinto de los demas WODs de la competencia. */}
             <Field
               label="Cuánto vale ganarla"
               name="maxPoints"
@@ -214,16 +294,6 @@ export function EditarParte({
               placeholder="100"
               ayuda="Puntos del 1.º. Vacío = 100, como el resto."
             />
-            <Field
-              label="Intervalo (seg)"
-              name="intervaloSegundos"
-              type="number"
-              defaultValue={part.interval_ms === null ? "" : String(part.interval_ms / 1000)}
-              placeholder="solo intervalos"
-            />
-          </FieldRow>
-
-          <FieldRow>
             <Select
               label="Cómo trabaja el equipo"
               name="teamMode"

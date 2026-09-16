@@ -6,7 +6,7 @@ import { Field, Select, FieldRow } from "@/shared/components/SimpleForm";
 import { Modal, BotonesDeModal, useCerrarAlGuardar } from "@/shared/components/Modal";
 import { desdeKilos } from "@/shared/unidades/carga";
 import { estiloDelPaso } from "@/shared/timing/wod";
-import type { PartBlockRow, PartMovementRow } from "@/lib/supabase/types";
+import type { BlockKind, PartBlockRow, PartMovementRow, TimeScheme } from "@/lib/supabase/types";
 
 const inicial: FormState = { error: null };
 
@@ -25,16 +25,45 @@ const ESTILOS: Record<string, string> = {
   numero: "escribe la cantidad",
 };
 
+/**
+ * Edita un bloque, mostrando solo los campos que el TIPO elegido usa.
+ *
+ * Mismo criterio que `NuevoBloque`: un Descanso solo tiene Duracion (su largo);
+ * Rondas, Descanso(seg) y Cap no significan nada para el y ya no se muestran.
+ * Duracion/Descanso en un bloque que NO es Descanso son "solo intervalos" -asi
+ * decian sus placeholders- asi que se piden solo si la prueba es EMOM/Tabata.
+ *
+ * "Cap de este bloque (min)" se ofrece para CUALQUIER bloque que no sea
+ * Descanso: es justo lo que hace falta en un For Time con un descanso
+ * obligatorio en el medio (trabajo con cap -> descanso -> trabajo). No se
+ * oculta segun la posicion del bloque -aunque hoy sea el ultimo, reordenar o
+ * agregar otro despues le puede devolver efecto, y esconderlo ahi invitaba a
+ * pensar que dejo de poder cargarse-.
+ *
+ * LA EXCEPCION ES `sin_reloj` (carga maxima): ahi ni el cap ni las Rondas se
+ * llegan a evaluar nunca -el esquema se cierra solo al agotar los intentos de
+ * levantamiento, sin pasar por `stepIndex` ni por segmentos (ver `wod.ts`)-,
+ * asi que a diferencia del resto de los esquemas no hay ninguna estructura de
+ * bloques que le devuelva efecto. Sin la excepcion de arriba (reordenar puede
+ * reactivarlo), esta si se puede esconder siempre.
+ */
 export function EditarBloque({
   eventId,
   bloque,
+  timeScheme,
 }: {
   eventId: string;
   bloque: PartBlockRow;
+  timeScheme: TimeScheme;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [state, formAction, pending] = useActionState(editarBloque, inicial);
   useCerrarAlGuardar(pending, state.error, () => setAbierto(false));
+
+  const [kind, setKind] = useState<BlockKind>(bloque.kind);
+  const esDescanso = kind === "descanso";
+  const esIntervalos = timeScheme === "intervalos";
+  const esCargaMaxima = timeScheme === "sin_reloj";
 
   return (
     <>
@@ -43,7 +72,7 @@ export function EditarBloque({
         onClick={() => setAbierto(true)}
         className="rounded-lg px-2 py-1 text-xs text-lime-400 transition-colors hover:bg-neutral-900"
       >
-        Editar
+        Editar bloque
       </button>
 
       <Modal abierto={abierto} alCerrar={() => setAbierto(false)} titulo="Editar bloque">
@@ -61,6 +90,7 @@ export function EditarBloque({
               label="Tipo"
               name="kind"
               defaultValue={bloque.kind}
+              onChange={(e) => setKind(e.target.value as BlockKind)}
               options={[
                 { value: "trabajo", label: "Trabajo" },
                 { value: "buy_in", label: "Buy-in" },
@@ -68,12 +98,14 @@ export function EditarBloque({
                 { value: "descanso", label: "Descanso" },
               ]}
             />
-            <Field
-              label="Rondas"
-              name="repeticiones"
-              type="number"
-              defaultValue={String(bloque.repeticiones)}
-            />
+            {!esDescanso && !esCargaMaxima && (
+              <Field
+                label="Rondas"
+                name="repeticiones"
+                type="number"
+                defaultValue={String(bloque.repeticiones)}
+              />
+            )}
           </FieldRow>
 
           <Field
@@ -83,24 +115,34 @@ export function EditarBloque({
             placeholder="Opcional: “Parte pesada”, “Buy-in”…"
           />
 
-          <FieldRow>
+          {esDescanso ? (
             <Field
               label="Duración (seg)"
               name="duracionSegundos"
               type="number"
               defaultValue={bloque.duracion_ms === null ? "" : String(bloque.duracion_ms / 1000)}
-              placeholder="intervalos, o cuánto dura el descanso"
+              placeholder="Cuánto dura el descanso"
             />
-            <Field
-              label="Descanso (seg)"
-              name="descansoSegundos"
-              type="number"
-              defaultValue={bloque.descanso_ms === null ? "" : String(bloque.descanso_ms / 1000)}
-              placeholder="solo intervalos"
-            />
-          </FieldRow>
+          ) : (
+            esIntervalos && (
+              <FieldRow>
+                <Field
+                  label="Duración (seg)"
+                  name="duracionSegundos"
+                  type="number"
+                  defaultValue={bloque.duracion_ms === null ? "" : String(bloque.duracion_ms / 1000)}
+                />
+                <Field
+                  label="Descanso (seg)"
+                  name="descansoSegundos"
+                  type="number"
+                  defaultValue={bloque.descanso_ms === null ? "" : String(bloque.descanso_ms / 1000)}
+                />
+              </FieldRow>
+            )
+          )}
 
-          {bloque.kind !== "descanso" && (
+          {!esDescanso && !esCargaMaxima && (
             <Field
               label="Cap de este bloque (min)"
               name="capMinutos"

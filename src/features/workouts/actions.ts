@@ -138,9 +138,16 @@ export async function crearPrueba(
 ): Promise<FormState> {
   const eventId = String(formData.get("eventId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
+  // Obligatoria desde el alta: dejarla para "editar despues" es como se
+  // pierde en una competencia con cortes (ver `faltaAlgoEnLaParte` mas abajo
+  // no la valida porque es del workout, no de la parte).
+  const stage = numeroOpcional(formData, "stage");
 
   await requireManage(eventId);
   if (name.length < 2) return { error: "Escribe un nombre a la prueba." };
+  if (stage === null || stage < 1) {
+    return { error: "La etapa tiene que ser 1 o mayor." };
+  }
 
   // Los mismos campos y las mismas validaciones que `editarParte`: si
   // divergieran, una prueba creada y una editada terminarian con reglas
@@ -164,6 +171,7 @@ export async function crearPrueba(
     .insert({
       event_id: eventId,
       name,
+      stage: Math.floor(stage),
       order_index: (ultima?.order_index ?? -1) + 1,
     })
     .select("id")
@@ -628,6 +636,68 @@ export async function editarParte(
     .eq("id", partId);
 
   if (error) return { error: traducir(error) };
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Edita la prueba Y su unica parte en un solo Guardar.
+ *
+ * Solo tiene sentido con una parte: ahi "la prueba" y "la parte" son la misma
+ * pantalla para el organizador (ver `unaSolaParte` en la pagina), y tenerlas
+ * en dos modales separados —uno para nombre/descripcion/etapa, otro para
+ * esquema/tiempos/puntos— es la misma duplicacion que ya se evito en
+ * `guardarCategoria`. Con mas de una parte se mantienen separadas: el
+ * nombre y la etapa son del WORKOUT, y repetirlos en el modal de cada parte
+ * (Parte A, Parte B) confundiria cual es el que en verdad los guarda.
+ */
+export async function editarPruebaYParte(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  const workoutId = String(formData.get("workoutId") ?? "");
+  const partId = String(formData.get("partId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim() || null;
+  const stage = numeroOpcional(formData, "stage");
+
+  await requireManage(eventId);
+  if (name.length < 2) return { error: "Escribe un nombre a la prueba." };
+  if (stage === null || stage < 1) {
+    return { error: "La etapa tiene que ser 1 o mayor." };
+  }
+
+  const campos = camposDeParte(formData);
+  const falta = faltaAlgoEnLaParte(campos);
+  if (falta) return { error: falta };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("workout_parts")
+    .select("capture_mode")
+    .eq("id", partId)
+    .maybeSingle();
+
+  const { campos: camposDesempate, error: errorDesempate } = camposDeDesempate(
+    formData,
+    actual?.capture_mode ?? null,
+  );
+  if (errorDesempate) return { error: errorDesempate };
+
+  const { error: errorWorkout } = await supabase
+    .from("workouts")
+    .update({ name, description, stage: Math.floor(stage) })
+    .eq("id", workoutId);
+  if (errorWorkout) return { error: traducir(errorWorkout) };
+
+  const { error: errorParte } = await supabase
+    .from("workout_parts")
+    .update({ ...campos, ...camposDesempate })
+    .eq("id", partId);
+  if (errorParte) return { error: traducir(errorParte) };
+
   refrescar(eventId);
   return OK;
 }

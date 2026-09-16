@@ -109,10 +109,14 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
     error: null,
   } as FormState);
   const [preset, setPreset] = useState<Preset>(PRESETS[0]);
+  const [timeScheme, setTimeScheme] = useState<TimeScheme>(PRESETS[0].timeScheme);
 
   function aplicar(id: string) {
     const elegido = PRESETS.find((p) => p.id === id);
-    if (elegido) setPreset(elegido);
+    if (elegido) {
+      setPreset(elegido);
+      setTimeScheme(elegido.timeScheme);
+    }
   }
 
   return (
@@ -146,23 +150,48 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
       >
         <input type="hidden" name="eventId" value={eventId} />
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Nombre</span>
-          <input
-            name="name"
-            required
-            placeholder="Evento 1"
-            className={campo}
-            defaultValue={preset.name}
-          />
-        </label>
+        <div className="flex gap-4">
+          <label className="flex flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium">Nombre</span>
+            <input
+              name="name"
+              required
+              placeholder="WOD #1 - Fran"
+              className={campo}
+              defaultValue={preset.name}
+            />
+          </label>
+
+          {/* Se pide ACA y no solo al editar despues: en una competencia con
+              cortes, una prueba creada sin pensar la etapa queda en la 1 por
+              default, y eso significa "todos compiten" — un WOD de la etapa 2
+              corrido asi puntuaria tambien a quien ya quedo afuera del corte.
+              Al lado del nombre, angosta, para no alargar el formulario. */}
+          <label className="flex w-24 flex-col gap-1.5">
+            <span className="text-sm font-medium">Etapa</span>
+            <input
+              name="stage"
+              type="number"
+              min="1"
+              required
+              defaultValue="1"
+              className={campo}
+            />
+          </label>
+        </div>
+        <p className="text-xs font-medium text-amber-400">
+          Etapa: 1 = todos compiten. 2 o más = solo quien avanzó en el corte
+          de la etapa anterior (se confirma en Puntuación). Si esta
+          competencia tiene cortes, revisá esto antes de guardar.
+        </p>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Formato</span>
             <Selector
               name="timeScheme"
-              defaultValue={preset.timeScheme}
+              value={timeScheme}
+              onChange={(e) => setTimeScheme(e.target.value as TimeScheme)}
               className={selector}
             >
               {ESQUEMAS.map((o) => (
@@ -220,7 +249,9 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
           </label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        {/* Solo el tiempo que el formato elegido de verdad usa: un For Time
+            sin cap y una carga maxima no tienen ninguno de los tres. */}
+        {timeScheme === "cap" && (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Cap (min)</span>
             <input
@@ -232,6 +263,8 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
               defaultValue={preset.capMinutos ?? ""}
             />
           </label>
+        )}
+        {timeScheme === "ventana" && (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Ventana (min)</span>
             <input
@@ -243,6 +276,8 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
               defaultValue={preset.ventanaMinutos ?? ""}
             />
           </label>
+        )}
+        {timeScheme === "intervalos" && (
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Intervalo (seg)</span>
             <input
@@ -253,7 +288,7 @@ export function NuevaPrueba({ eventId }: { eventId: string }) {
               defaultValue={preset.intervaloSegundos ?? ""}
             />
           </label>
-        </div>
+        )}
 
         {state.error && (
           <MensajeDeError>{state.error}</MensajeDeError>
