@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireManage } from "@/features/events/lib/access";
 import { cifrar, descifrar, hayLlaveDeCifrado } from "./lib/cifrado";
 import { leerCredencialesMercadoPago } from "./adapters/verificadores/mercadopago";
@@ -58,48 +58,48 @@ export async function guardarProveedor(
 
   const supabase = await createClient();
 
-  // El indice unico real es (org_id, provider, coalesce(label, '')). Este
-  // formulario nunca pide un label (no hay campo para eso), asi que siempre
-  // manda null -- la busqueda tiene que filtrar por label tambien, sin eso
-  // devuelve CUALQUIER fila de ese proveedor para la organizacion. Si hay
-  // mas de una (label distinto, de una configuracion vieja o de otro
-  // camino), `.maybeSingle()` falla con "multiple rows" -- y como antes NO
-  // se leia `error` de esta consulta, esa falla quedaba invisible: el
-  // codigo seguia como si `existente` fuera null, intentaba un INSERT, y
-  // recien ahi aparecia "Ya existe una configuracion para ese medio de
-  // pago" sin ninguna pista de por que, con la fila real ahi mismo y el
-  // checkbox tildado sin poder guardarse.
-  const { data: existente, error: errorExistente } = await supabase
+  // OJO CON LA LISTA DE COLUMNAS: `secret_ciphertext` esta a proposito fuera
+  // del GRANT de select de `authenticated` (ni el propio dueño lo puede leer
+  // por este camino, ver 20260901101100_pagos.sql) -- pedirlo aca hacia
+  // fallar esta consulta con un error de permisos en TODO guardado, de
+  // cualquier medio de pago, y ese error se traducia (mal) como "ya existe
+  // una configuracion", sin relacion con la causa real. Este select solo
+  // pide lo que `authenticated` SI puede leer.
+  const { data: existente } = await supabase
     .from("payment_providers")
-    .select("id, secret_ciphertext")
+    .select("id")
     .eq("org_id", orgId)
     .eq("provider", provider)
     .is("label", null)
     .maybeSingle();
 
-  if (errorExistente) {
-    return {
-      error:
-        "Hay más de una configuración guardada para este medio de pago en tu organización. Revisá payment_providers desde Supabase antes de volver a guardar.",
-    };
-  }
-
   // Un campo de secreto vacio significa "dejalo como estaba", no "borralo":
   // si no, editar el numero de cuenta borraria la credencial sin avisar.
   //
   // Con DOS secretos (MercadoPago: firma del webhook + access token) hay que
-  // poder tocar uno solo sin perder el otro -- se descifra lo que ya habia
-  // para completar el que no vino en este envio.
+  // poder tocar uno solo sin perder el otro -- para eso hace falta el
+  // secreto ANTERIOR, y ese SI esta protegido por RLS/GRANT. Se lee con el
+  // cliente de SERVICIO, nunca con la sesion del organizador: el valor
+  // descifrado queda en memoria del servidor para armar el nuevo sobre
+  // cifrado, y no sale de aca -- ni a este componente, ni al navegador.
   let secretCiphertext: string | undefined;
   if (adaptador.campoSecretoExtra) {
     if (secreto || secretoExtra) {
       let anterior = { webhookSecret: "", accessToken: "" };
-      if (existente?.secret_ciphertext) {
-        try {
-          anterior = leerCredencialesMercadoPago(descifrar(existente.secret_ciphertext));
-        } catch {
-          // El secreto guardado no se pudo descifrar (llave distinta, dato
-          // corrupto): no hay nada que recuperar, se pisa con lo que llegue.
+      if (existente) {
+        const { data: fila } = await createServiceClient()
+          .from("payment_providers")
+          .select("secret_ciphertext")
+          .eq("id", existente.id)
+          .maybeSingle();
+
+        if (fila?.secret_ciphertext) {
+          try {
+            anterior = leerCredencialesMercadoPago(descifrar(fila.secret_ciphertext));
+          } catch {
+            // El secreto guardado no se pudo descifrar (llave distinta, dato
+            // corrupto): no hay nada que recuperar, se pisa con lo que llegue.
+          }
         }
       }
 

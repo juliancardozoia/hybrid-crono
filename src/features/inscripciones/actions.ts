@@ -501,8 +501,7 @@ export async function guardarPasoInscripcion(
 
     if (errorExistente) {
       return {
-        error:
-          "Hay más de una configuración guardada para este medio de pago en tu organización. Revisá payment_providers desde Supabase antes de volver a guardar.",
+        error: "No se pudo verificar la configuración actual de este medio de pago. Probá de nuevo en un momento.",
       };
     }
 
