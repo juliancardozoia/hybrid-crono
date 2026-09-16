@@ -11,7 +11,7 @@
  * Sin eso, cualquiera que sepa la URL del webhook inscribe equipos gratis.
  */
 
-export type EstadoDePago = "aprobado" | "rechazado" | "pendiente";
+export type EstadoDePago = "aprobado" | "rechazado" | "pendiente" | "procesando";
 
 export type ResultadoDeWebhook =
   | {
@@ -21,7 +21,14 @@ export type ResultadoDeWebhook =
       estado: EstadoDePago;
       /** Nuestra orden, que viaja como referencia externa en la pasarela. */
       orderId: string | null;
+      /**
+       * Monto verificado, en centavos. `null` cuando no se pudo confirmar
+       * contra la API real de la pasarela (ej. sin credenciales para
+       * consultar) -- el llamador NUNCA debe tratar `null` como "coincide".
+       */
       montoCents: number | null;
+      /** Moneda verificada (ISO 4217). `null` en el mismo caso que `montoCents`. */
+      currency: string | null;
       raw: unknown;
     }
   | { verificado: false; motivo: string };
@@ -30,7 +37,13 @@ export interface ContextoDeWebhook {
   headers: Headers;
   /** El cuerpo crudo, sin parsear: la firma se calcula sobre los bytes exactos. */
   cuerpo: string;
-  /** El secreto del organizador, ya descifrado. Null si no lo configuro. */
+  /**
+   * El contenido de `secret_ciphertext` ya descifrado, tal cual se guardo.
+   * Para la mayoria de las pasarelas es el secreto en texto plano; para las
+   * que necesitan mas de una credencial (ej. MercadoPago: firma del webhook +
+   * access token) es una estructura que el verificador de esa pasarela sabe
+   * interpretar. Null si no hay nada configurado.
+   */
   secreto: string | null;
 }
 
@@ -60,6 +73,13 @@ export interface Adaptador {
   camposPublicos: Array<{ key: string; label: string; ayuda?: string }>;
   /** Que secreto pide, si pide alguno. */
   campoSecreto?: { label: string; ayuda?: string };
+  /**
+   * Un segundo secreto, para pasarelas que necesitan dos credenciales
+   * distintas -- ej. MercadoPago: la firma del webhook (para verificar que el
+   * mensaje es autentico) y el access token (para consultar el pago real por
+   * la API). Va como campo `secretoExtra` en el formulario.
+   */
+  campoSecretoExtra?: { label: string; ayuda?: string };
 
   /** Que ve quien va a pagar. */
   instrucciones(params: {

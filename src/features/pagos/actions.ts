@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireManage } from "@/features/events/lib/access";
-import { cifrar, hayLlaveDeCifrado } from "./lib/cifrado";
+import { cifrar, descifrar, hayLlaveDeCifrado } from "./lib/cifrado";
+import { leerCredencialesMercadoPago } from "./adapters/verificadores/mercadopago";
 import { ADAPTADORES } from "./adapters";
 import type { DiscountKind, PaymentProvider } from "@/lib/supabase/types";
 
@@ -36,11 +37,12 @@ export async function guardarProveedor(
   const provider = String(formData.get("provider") ?? "") as PaymentProvider;
   const label = String(formData.get("label") ?? "").trim() || null;
   const secreto = String(formData.get("secreto") ?? "").trim();
+  const secretoExtra = String(formData.get("secretoExtra") ?? "").trim();
 
   const adaptador = ADAPTADORES[provider];
   if (!adaptador) return { error: "Ese medio de pago no existe." };
 
-  if (secreto && !hayLlaveDeCifrado()) {
+  if ((secreto || secretoExtra) && !hayLlaveDeCifrado()) {
     return {
       error:
         "Falta configurar PAYMENTS_ENCRYPTION_KEY en el servidor. Sin esa clave no se pueden guardar credenciales.",
@@ -56,23 +58,56 @@ export async function guardarProveedor(
 
   const supabase = await createClient();
 
+  const { data: existente } = await supabase
+    .from("payment_providers")
+    .select("id, secret_ciphertext")
+    .eq("org_id", orgId)
+    .eq("provider", provider)
+    .maybeSingle();
+
+  // Un campo de secreto vacio significa "dejalo como estaba", no "borralo":
+  // si no, editar el numero de cuenta borraria la credencial sin avisar.
+  //
+  // Con DOS secretos (MercadoPago: firma del webhook + access token) hay que
+  // poder tocar uno solo sin perder el otro -- se descifra lo que ya habia
+  // para completar el que no vino en este envio.
+  let secretCiphertext: string | undefined;
+  if (adaptador.campoSecretoExtra) {
+    if (secreto || secretoExtra) {
+      let anterior = { webhookSecret: "", accessToken: "" };
+      if (existente?.secret_ciphertext) {
+        try {
+          anterior = leerCredencialesMercadoPago(descifrar(existente.secret_ciphertext));
+        } catch {
+          // El secreto guardado no se pudo descifrar (llave distinta, dato
+          // corrupto): no hay nada que recuperar, se pisa con lo que llegue.
+        }
+      }
+
+      const webhookSecretFinal = secreto || anterior.webhookSecret;
+      if (!webhookSecretFinal) {
+        return { error: `Falta "${adaptador.campoSecreto?.label ?? "la clave secreta del webhook"}".` };
+      }
+
+      secretCiphertext = cifrar(
+        JSON.stringify({
+          webhookSecret: webhookSecretFinal,
+          accessToken: secretoExtra || anterior.accessToken,
+        }),
+      );
+    }
+  } else if (secreto) {
+    secretCiphertext = cifrar(secreto);
+  }
+
   const fila = {
     org_id: orgId,
     provider,
     label,
     public_config: publicConfig,
     active: formData.get("activo") === "on",
-    // Un campo de secreto vacio significa "dejalo como estaba", no "borralo":
-    // si no, editar el numero de cuenta borraria la credencial sin avisar.
-    ...(secreto ? { secret_ciphertext: cifrar(secreto) } : {}),
+    ...(secretCiphertext ? { secret_ciphertext: secretCiphertext } : {}),
   };
-
-  const { data: existente } = await supabase
-    .from("payment_providers")
-    .select("id")
-    .eq("org_id", orgId)
-    .eq("provider", provider)
-    .maybeSingle();
 
   const { error } = existente
     ? await supabase

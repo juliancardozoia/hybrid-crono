@@ -21,6 +21,11 @@ export const mercadopago: Adaptador = {
     label: "Clave secreta del webhook",
     ayuda: "En MercadoPago: Tus integraciones → Webhooks → Firma secreta.",
   },
+  campoSecretoExtra: {
+    label: "Access token",
+    ayuda:
+      "En MercadoPago: Tus integraciones → Credenciales de producción → Access token. Sin esto el pago no se confirma solo: alguien de la organización lo tiene que aprobar a mano.",
+  },
 
   instrucciones({ totalCents, currency }) {
     return {

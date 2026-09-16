@@ -97,6 +97,23 @@ export function ConfigurarProveedor({
         </div>
       )}
 
+      {adaptador.campoSecretoExtra && (
+        <div className="mt-3">
+          <Field
+            label={adaptador.campoSecretoExtra.label}
+            name="secretoExtra"
+            type="password"
+            autoComplete="off"
+            placeholder={
+              actual?.tieneSecreto
+                ? "Ya hay uno guardado — dejalo vacío para no tocarlo"
+                : ""
+            }
+            ayuda={`${adaptador.campoSecretoExtra.ayuda} Se guarda cifrado y no se puede volver a leer.`}
+          />
+        </div>
+      )}
+
       {state.error && (
         <MensajeDeError className="mt-3">{state.error}</MensajeDeError>
       )}

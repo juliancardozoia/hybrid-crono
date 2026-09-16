@@ -174,6 +174,13 @@ export interface IntegranteManual {
   stateProvince: string | null;
   box: string | null;
   shirtSize: string | null;
+  /**
+   * El organizador NO puede aceptar el waiver por otra persona. Marcado en
+   * true es una declaracion AUDITADA de que la firmo offline (papel, en
+   * persona) -- sin marcar, la aceptacion queda pendiente hasta que la
+   * propia persona entre con su cuenta y acepte.
+   */
+  terminosAceptadosOffline: boolean;
 }
 
 function traducir(error: { code?: string; message?: string } | null): string {
@@ -271,6 +278,7 @@ export async function crearRegistroManual(
         String(formData.get(`stateProvince_${i}`) ?? "").trim() || null,
       box: String(formData.get(`box_${i}`) ?? "").trim() || null,
       shirtSize: String(formData.get(`shirtSize_${i}`) ?? "").trim() || null,
+      terminosAceptadosOffline: formData.get(`terminosAceptadosOffline_${i}`) === "on",
     });
   }
 

@@ -1,0 +1,13 @@
+-- Agrega el estado "procesando" a una orden.
+--
+-- Hasta ahora `order_status` no distinguia "nadie intento pagar todavia"
+-- (pendiente) de "la pasarela esta procesando el pago activamente" (una
+-- transferencia en revision, una tarjeta que MercadoPago esta autorizando).
+-- Es lo que hace falta para verificar un pago de verdad contra la API real
+-- en vez de confiar en el cuerpo del webhook -- ver la migracion siguiente.
+--
+-- Sola en su propio archivo, sin usarla en la misma transaccion: un valor de
+-- enum agregado por ALTER TYPE no se puede usar de forma segura hasta que la
+-- transaccion que lo agrego este confirmada. Mismo patron que ya uso
+-- `20260901100500_marcajes_de_wod.sql` para los tipos de timing_events.
+alter type public.order_status add value if not exists 'procesando';

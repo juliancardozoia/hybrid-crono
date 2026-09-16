@@ -10,6 +10,12 @@ import {
 } from "../actions";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import type { CampoDelFormulario } from "../queries";
+import {
+  textoDeEstado,
+  claseDePastilla,
+  mensajeDeReadiness,
+  type Readiness,
+} from "../lib/estados";
 import type {
   RegistrationMemberRow,
   RegistrationRow,
@@ -30,27 +36,6 @@ import { CamposDeAtleta } from "./CamposDeAtleta";
  * contesta arriba de todo y en una sola línea.
  */
 
-const ESTADO: Record<
-  RegistrationRow["status"],
-  { texto: string; clase: string }
-> = {
-  borrador: { texto: "Sin enviar", clase: "bg-neutral-800 text-neutral-300" },
-  esperando_integrantes: {
-    texto: "Faltan integrantes",
-    clase: "bg-amber-400/15 text-amber-300",
-  },
-  esperando_pago: {
-    texto: "Falta pagar",
-    clase: "bg-amber-400/15 text-amber-300",
-  },
-  confirmada: { texto: "Confirmada", clase: "bg-lime-400/15 text-lime-300" },
-  cancelada: { texto: "Cancelada", clase: "bg-red-500/15 text-red-300" },
-  lista_espera: {
-    texto: "En lista de espera",
-    clase: "bg-neutral-800 text-neutral-300",
-  },
-};
-
 const campo =
   "w-full rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400";
 
@@ -64,6 +49,7 @@ export function PanelDeInscripcion({
   miId,
   soyCapitan,
   pago,
+  readiness,
 }: {
   registro: RegistrationRow;
   integrantes: RegistrationMemberRow[];
@@ -74,6 +60,7 @@ export function PanelDeInscripcion({
   miId: string | null;
   soyCapitan: boolean;
   pago: PagoDeInscripcion;
+  readiness: Readiness;
 }) {
   const [pendiente, startTransition] = useTransition();
   const { activar, desactivar } = useCarga();
@@ -84,17 +71,26 @@ export function PanelDeInscripcion({
   const equipoCompleto = integrantes.length === teamSize && faltan === 0;
   const cerrada =
     registro.status === "confirmada" || registro.status === "cancelada";
-
-  const estado = ESTADO[registro.status];
+  const mensajeReadiness = mensajeDeReadiness(registro.status, readiness);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <span
-          className={`rounded-full px-3 py-1 text-sm font-medium ${estado.clase}`}
+          className={`rounded-full px-3 py-1 text-sm font-medium ${claseDePastilla(registro.status)}`}
         >
-          {estado.texto}
+          {textoDeEstado(registro.status)}
         </span>
+        {mensajeReadiness && (
+          <span
+            className={`text-sm font-medium ${
+              readiness === "listo" ? "text-lime-400" : "text-amber-400"
+            }`}
+          >
+            {readiness === "listo" ? "✓ " : "○ "}
+            {mensajeReadiness}
+          </span>
+        )}
       </div>
 
       {(registro.status === "esperando_pago" || pago.orden !== null) && (
@@ -186,6 +182,23 @@ export function PanelDeInscripcion({
           confirmarAlGuardar={teamSize === 1 && soyCapitan}
         />
       )}
+
+      {/* Post-confirmacion: solo datos OPERACIONALES (nunca nombre/apellido/
+          pais/terminos, ya materializados en `athletes` -- ver el comentario
+          de `soloOperacionales` en CamposDeAtleta). Es la pantalla que hace
+          real "cupo asegurado, ahora completa tu inscripcion". */}
+      {yo &&
+        cerrada &&
+        registro.status === "confirmada" &&
+        readiness !== "listo" && (
+          <CompletarDatos
+            registrationId={registro.id}
+            miembro={yo}
+            tallas={tallas}
+            campos={campos}
+            documentos={documentos}
+          />
+        )}
 
       {!yo && (
         <p className="rounded-2xl border border-neutral-800 p-4 text-sm text-neutral-400">
@@ -420,6 +433,101 @@ function MisDatos({
           variante="primary"
         >
           {confirmarAlGuardar ? "Confirmar inscripción" : "Guardar mis datos"}
+        </Boton>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * "Cupo asegurado — completa tu inscripción": la pantalla que aparece
+ * DESPUES de confirmarse, cuando todavia falta algo de fase completa. Mismo
+ * formulario que `MisDatos`, pero con `soloOperacionales` -- nunca vuelve a
+ * mostrar (ni a poder pisar) nombre/apellido/pais/terminos.
+ */
+function CompletarDatos({
+  registrationId,
+  miembro,
+  tallas,
+  campos,
+  documentos,
+}: {
+  registrationId: string;
+  miembro: RegistrationMemberRow;
+  tallas: string[];
+  campos: CampoDelFormulario[];
+  documentos: Array<{ name: string; url: string; requiresAcceptance: boolean }>;
+}) {
+  const [pendiente, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const { activar, desactivar } = useCarga();
+  const { exito, error: avisarError } = useNotificaciones();
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setError(null);
+
+    startTransition(async () => {
+      activar("Guardando…");
+      try {
+        const r = await guardarMisDatos({ error: null }, formData);
+        if (r.error) {
+          setError(r.error);
+          avisarError(r.error);
+          return;
+        }
+        exito("Datos guardados.");
+      } finally {
+        desactivar();
+      }
+    });
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="flex flex-col gap-4 rounded-2xl border border-amber-400/30 bg-amber-400/5 p-5"
+    >
+      <input type="hidden" name="registrationId" value={registrationId} />
+      <input type="hidden" name="memberId" value={miembro.id} />
+
+      <div>
+        <h2 className="text-sm font-semibold text-amber-300 uppercase">
+          Completa tu inscripción
+        </h2>
+        <p className="mt-1 text-sm text-neutral-400">
+          Tu cupo ya está asegurado. Faltan estos datos para que quedes listo
+          para competir.
+        </p>
+      </div>
+
+      <CamposDeAtleta
+        valores={{
+          firstName: miembro.first_name,
+          lastName: miembro.last_name,
+          birthDate: miembro.birth_date,
+          gender: miembro.gender,
+          phone: miembro.phone,
+          shirtSize: miembro.shirt_size,
+          country: miembro.country,
+          documentId: miembro.document_id,
+          stateProvince: miembro.state_province,
+          box: miembro.box,
+          answers: miembro.answers as Record<string, string> | null,
+          aceptado: miembro.accepted_terms_at !== null,
+        }}
+        tallas={tallas}
+        campos={campos}
+        documentos={documentos}
+        soloOperacionales
+      />
+
+      {error && <MensajeDeError>{error}</MensajeDeError>}
+
+      <div>
+        <Boton type="submit" cargando={pendiente} textoCargando="Guardando…" variante="primary">
+          Guardar
         </Boton>
       </div>
     </form>

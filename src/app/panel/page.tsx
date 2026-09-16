@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { listEventosQueOrganizo } from "@/features/events/queries";
 import { getMisInscripciones } from "@/features/inscripciones/queries";
+import {
+  textoDeEstado,
+  claseDePastilla,
+  mensajeDeReadiness,
+} from "@/features/inscripciones/lib/estados";
 import { getPerfil } from "@/features/cuenta/queries";
 import { puedeJuzgar, getJudgeLanes } from "@/features/judge/queries";
 import { rangoDeFechas } from "@/features/catalogo/lib/formato";
@@ -25,15 +30,6 @@ export const metadata = { title: "Panel — Scora" };
  * DERECHO ACA: es el destino natural despues de inscribirse, no una pantalla
  * de "tramite completo" separada.
  */
-
-const ESTADO_INSCRIPCION: Record<string, { texto: string; clase: string }> = {
-  borrador: { texto: "Sin enviar", clase: "bg-neutral-800 text-neutral-300" },
-  esperando_integrantes: { texto: "Faltan integrantes", clase: "bg-amber-400/15 text-amber-300" },
-  esperando_pago: { texto: "Falta pagar", clase: "bg-amber-400/15 text-amber-300" },
-  confirmada: { texto: "Confirmada", clase: "bg-lime-400/15 text-lime-300" },
-  cancelada: { texto: "Cancelada", clase: "bg-red-500/15 text-red-300" },
-  lista_espera: { texto: "En lista de espera", clase: "bg-neutral-800 text-neutral-300" },
-};
 
 const ESTADO_EVENTO: Record<EventStatus, { texto: string; clase: string }> = {
   draft: { texto: "Borrador", clase: "bg-neutral-800 text-neutral-400" },
@@ -99,10 +95,12 @@ export default async function PanelPage() {
         ) : (
           <ul className="flex flex-col gap-2">
             {inscripciones.map((i) => {
-              const estado = ESTADO_INSCRIPCION[i.status] ?? {
-                texto: i.status,
-                clase: "bg-neutral-800 text-neutral-300",
-              };
+              // "PAGADO no significa LISTO": una vez confirmada, este
+              // mensaje es lo que distingue "ya pagaste, pero..." de "no
+              // falta nada". Antes de confirmarse, el badge de status ya
+              // cuenta toda la historia ("falta pagar", "faltan
+              // integrantes") y esto no agrega nada nuevo.
+              const mensaje = mensajeDeReadiness(i.status, i.readiness);
               return (
                 <li
                   key={i.id}
@@ -115,6 +113,16 @@ export default async function PanelPage() {
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
+                    {mensaje && (
+                      <p
+                        className={`mt-1 text-sm font-medium ${
+                          i.readiness === "listo" ? "text-lime-400" : "text-amber-400"
+                        }`}
+                      >
+                        {i.readiness === "listo" ? "✓ " : "○ "}
+                        {mensaje}
+                      </p>
+                    )}
                   </Link>
                   <div className="flex shrink-0 items-center gap-3">
                     {i.bib !== null && (
@@ -133,8 +141,18 @@ export default async function PanelPage() {
                         Completar pago
                       </Link>
                     )}
-                    <span className={`rounded-lg px-2.5 py-1 text-xs font-medium ${estado.clase}`}>
-                      {estado.texto}
+                    {i.status === "confirmada" && i.readiness === "accion_requerida" && (
+                      <Link
+                        href={`/inscripcion/${i.id}`}
+                        className="text-sm font-medium text-amber-400 hover:underline"
+                      >
+                        Completar mi inscripción
+                      </Link>
+                    )}
+                    <span
+                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${claseDePastilla(i.status)}`}
+                    >
+                      {textoDeEstado(i.status)}
                     </span>
                   </div>
                 </li>

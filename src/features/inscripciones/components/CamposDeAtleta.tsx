@@ -27,6 +27,8 @@ export function CamposDeAtleta({
   campos,
   documentos,
   soloEsenciales = false,
+  soloOperacionales = false,
+  identidadConocida = false,
 }: {
   valores?: {
     firstName?: string | null;
@@ -55,61 +57,96 @@ export function CamposDeAtleta({
    * repregunta lo que el atleta ya cargo en otra competencia -- el perfil es
    * UNO SOLO para toda la plataforma); si el perfil TODAVIA NO los tiene, se
    * DIFIEREN igual -- no se le pide a un atleta nuevo algo que un atleta
-   * viejo no tiene que repetir. Se completan despues en "Mis datos" (mismo
-   * formulario, sin este flag). Sexo, talla y los campos del organizador
-   * siguen la misma regla: nunca viven en el perfil, siempre se difieren.
+   * viejo no tiene que repetir. Se completan despues en "Completar mi
+   * inscripcion" (`soloOperacionales`). Sexo, talla y los campos del
+   * organizador siguen la misma regla: nunca viven en el perfil, siempre se
+   * difieren.
    */
   soloEsenciales?: boolean;
+  /**
+   * La contracara: la pantalla de "completar mi inscripcion" que aparece
+   * DESPUES de pagar (o de confirmarse, si es gratis). Nombre, apellido,
+   * pais y terminos van OCULTOS con su valor actual -- nunca se re-muestran
+   * para editar aca, porque una vez que el equipo ya se materializo
+   * (`confirm_registration`), volver a tocarlos desde este formulario no
+   * actualiza la foto ya congelada en `athletes` (snapshot, ver el plan de
+   * rediseño) y dejaria el tramite y lo que compite desalineados. Se manda
+   * `p_fase: "completa"` al guardar, que en el servidor escribe estos campos
+   * ocultos con el mismo valor que ya tenian -- no los toca de verdad.
+   */
+  soloOperacionales?: boolean;
+  /**
+   * "Competirás como {nombre} · {país}" ya se mostró arriba (ver
+   * `ElegirCategoria`), con su propio botón "Cambiar" -- esto evita repetir
+   * los mismos tres campos una segunda vez debajo. Los valores siguen
+   * viajando igual, ocultos: el resumen no reemplaza al formulario, solo lo
+   * tapa visualmente mientras el atleta no pida cambiarlo.
+   */
+  identidadConocida?: boolean;
 }) {
   const respuestas = valores?.answers ?? {};
   const [pais, setPais] = useState(valores?.country ?? "");
+  const camposDeEstaFase = soloOperacionales
+    ? campos.filter((c) => c.fase === "completa")
+    : campos;
+  const ocultarIdentidad = soloOperacionales || identidadConocida;
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Nombre</span>
-          <input
-            name="firstName"
-            required
-            defaultValue={valores?.firstName ?? ""}
-            className={campo}
-          />
-        </label>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Apellido</span>
-          <input
-            name="lastName"
-            required
-            defaultValue={valores?.lastName ?? ""}
-            className={campo}
-          />
-        </label>
-      </div>
+      {ocultarIdentidad ? (
+        <>
+          <input type="hidden" name="firstName" value={valores?.firstName ?? ""} />
+          <input type="hidden" name="lastName" value={valores?.lastName ?? ""} />
+          <input type="hidden" name="country" value={valores?.country ?? ""} />
+        </>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Nombre</span>
+              <input
+                name="firstName"
+                required
+                defaultValue={valores?.firstName ?? ""}
+                className={campo}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium">Apellido</span>
+              <input
+                name="lastName"
+                required
+                defaultValue={valores?.lastName ?? ""}
+                className={campo}
+              />
+            </label>
+          </div>
 
-      {/* Pais: sin esto, la bandera de la grilla del organizador (y de la
-          lista de largada / leaderboard publico) nunca puede mostrarse para
-          nadie que se inscriba solo -- antes solo lo pedia el alta manual del
-          organizador. */}
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">País</span>
-        <Selector
-          name="country"
-          required
-          value={pais}
-          onChange={(e) => setPais(e.target.value)}
-          className={selector}
-        >
-          <option value="" disabled>
-            Elige un país…
-          </option>
-          {PAISES.map((p) => (
-            <option key={p.codigo} value={p.codigo}>
-              {p.nombre}
-            </option>
-          ))}
-        </Selector>
-      </label>
+          {/* Pais: sin esto, la bandera de la grilla del organizador (y de la
+              lista de largada / leaderboard publico) nunca puede mostrarse
+              para nadie que se inscriba solo -- antes solo lo pedia el alta
+              manual del organizador. */}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium">País</span>
+            <Selector
+              name="country"
+              required
+              value={pais}
+              onChange={(e) => setPais(e.target.value)}
+              className={selector}
+            >
+              <option value="" disabled>
+                Elige un país…
+              </option>
+              {PAISES.map((p) => (
+                <option key={p.codigo} value={p.codigo}>
+                  {p.nombre}
+                </option>
+              ))}
+            </Selector>
+          </label>
+        </>
+      )}
 
       {/* Nacimiento y telefono. En modo rapido: oculto si el perfil lo tiene,
           NADA (ni se pregunta) si no lo tiene. Fuera de soloEsenciales
@@ -209,7 +246,7 @@ export function CamposDeAtleta({
             )}
           </div>
 
-          {campos.map((c) => (
+          {camposDeEstaFase.map((c) => (
             <label key={c.key} className="flex flex-col gap-1.5">
               <span className="text-sm font-medium">{c.label}</span>
               {c.type === "seleccion" ? (
@@ -240,6 +277,12 @@ export function CamposDeAtleta({
         </>
       )}
 
+      {soloOperacionales ? (
+        // Ya se acepto en la pantalla esencial -- readiness no deja llegar
+        // aca sin eso. Se re-manda oculto para que `save_member_data` no lo
+        // interprete como "retirar la aceptacion".
+        <input type="hidden" name="acceptTerms" value={valores?.aceptado ? "on" : ""} />
+      ) : (
       <label className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -268,6 +311,7 @@ export function CamposDeAtleta({
           )}
         </span>
       </label>
+      )}
     </>
   );
 }

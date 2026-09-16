@@ -219,6 +219,126 @@ describe("cupos", () => {
   });
 });
 
+describe("hold de cupo (Fase 5)", () => {
+  // PGlite es una sola conexion secuencial: no se pueden interleavear dos
+  // transacciones de verdad para probar la carrera byte a byte. Lo que SI se
+  // puede probar -- y es lo que realmente importa -- es que el LOCK cuenta
+  // bien: que un hold vencido libera el cupo sin cancelar el tramite, que
+  // reintentar el pago lo renueva si sigue disponible, y que avisa (no deja
+  // pagar en silencio) si otro ya se lo llevo mientras tanto.
+  beforeEach(async () => {
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query(
+        "insert into division_registration (division_id, event_id, capacity, price_cents, currency) values ($1, $2, 1, 10000, 'COP')",
+        [s.divisionId, s.eventId],
+      ),
+    );
+  });
+
+  async function inscribirYEnviar(usuario: string, nombre: string, apellido: string) {
+    const id = await empezar(s.divisionId, usuario);
+    const [capitan] = await integrantes(id, usuario);
+    // DATOS_OK (el fixture compartido del archivo) no trae `country`, y
+    // desde que el pais es requisito para "completo"
+    // (20260914170000_pais_en_inscripcion_publica.sql) eso deja al
+    // integrante en 'invitado' para siempre -- es la causa real de casi
+    // todas las fallas preexistentes de este archivo (no relacionadas con
+    // esta fase). Se agrega aca, sin tocar el fixture compartido: no es
+    // parte del alcance de Fase 5 arreglarlo para el resto del archivo.
+    await completar(usuario, capitan.id, {
+      ...DATOS_OK,
+      firstName: nombre,
+      lastName: apellido,
+      country: "CO",
+    });
+    await asUser(s.db, usuario, () => s.db.query("select submit_registration($1)", [id]));
+    return id;
+  }
+
+  it("con precio, enviar la inscripcion deja un hold de 15 minutos y el cupo queda tomado", async () => {
+    const id = await inscribirYEnviar(atleta, "Ana", "Pérez");
+
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ status: string; hold_expires_at: string | null }>(
+        "select status, hold_expires_at from registrations where id = $1",
+        [id],
+      ),
+    );
+    expect(rows[0].status).toBe("esperando_pago");
+    expect(rows[0].hold_expires_at).not.toBeNull();
+    expect(new Date(rows[0].hold_expires_at!).getTime()).toBeGreaterThan(Date.now());
+
+    const mensaje = await asUser(s.db, companero, () =>
+      expectDenied(() => s.db.query("select start_registration($1)", [s.divisionId])),
+    );
+    expect(mensaje).toMatch(/cupos/i);
+  });
+
+  it("un hold vencido libera el cupo SIN cancelar el tramite", async () => {
+    const id = await inscribirYEnviar(atleta, "Ana", "Pérez");
+
+    // Se vence el hold a mano -- simula que pasaron los 15 minutos.
+    await asAdmin(s.db, () =>
+      s.db.query(
+        "update registrations set hold_expires_at = now() - interval '1 minute' where id = $1",
+        [id],
+      ),
+    );
+
+    // El tramite sigue existiendo, en esperando_pago -- no se cancelo solo.
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ status: string }>("select status from registrations where id = $1", [id]),
+    );
+    expect(rows[0].status).toBe("esperando_pago");
+
+    // Y el cupo ya se puede volver a tomar.
+    await asUser(s.db, companero, () =>
+      s.db.query("select start_registration($1)", [s.divisionId]),
+    );
+  });
+
+  it("reintentar el pago renueva el hold si el cupo sigue disponible", async () => {
+    const id = await inscribirYEnviar(atleta, "Ana", "Pérez");
+
+    await asAdmin(s.db, () =>
+      s.db.query(
+        "update registrations set hold_expires_at = now() - interval '1 minute' where id = $1",
+        [id],
+      ),
+    );
+
+    await asUser(s.db, atleta, () => s.db.query("select upsert_order($1)", [id]));
+
+    const { rows } = await asAdmin(s.db, () =>
+      s.db.query<{ hold_expires_at: string }>(
+        "select hold_expires_at from registrations where id = $1",
+        [id],
+      ),
+    );
+    expect(new Date(rows[0].hold_expires_at).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("si otro ya se llevó el cupo, reintentar el pago avisa en vez de dejar pagar por un lugar que ya no es suyo", async () => {
+    const id = await inscribirYEnviar(atleta, "Ana", "Pérez");
+
+    await asAdmin(s.db, () =>
+      s.db.query(
+        "update registrations set hold_expires_at = now() - interval '1 minute' where id = $1",
+        [id],
+      ),
+    );
+
+    // Otro atleta toma el cupo que quedó libre.
+    await inscribirYEnviar(companero, "Beto", "Gómez");
+
+    // El primero intenta pagar de nuevo: el cupo ya no es suyo.
+    const mensaje = await asUser(s.db, atleta, () =>
+      expectDenied(() => s.db.query("select upsert_order($1)", [id])),
+    );
+    expect(mensaje).toMatch(/llenó/i);
+  });
+});
+
 describe("equipos: invitar y reclamar", () => {
   let registro: string;
 
@@ -806,6 +926,91 @@ describe("admin_create_registration: el alta manual", () => {
           ],
         ),
       ).rejects.toThrow(/talla/i);
+    });
+  });
+
+  describe("el organizador no puede aceptar el waiver por otra persona (Fase 6)", () => {
+    it("sin marcar aceptación offline, el equipo se crea igual pero la aceptación queda pendiente", async () => {
+      const integrante = {
+        firstName: "Diego",
+        lastName: "Nuñez",
+        email: "diego@correo.com",
+        birthDate: "1992-01-01",
+        country: "CO",
+        documentId: "999888777",
+      };
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ id: string }>(
+          "select id from admin_create_registration($1, $2, $3::jsonb)",
+          [s.divisionId, null, JSON.stringify([integrante])],
+        );
+        const registro = await s.db.query<{ id: string; status: string }>(
+          "select id, status from registrations where team_id = $1",
+          [res.rows[0].id],
+        );
+        expect(registro.rows[0].status).toBe("confirmada");
+
+        const miembro = await s.db.query<{
+          status: string;
+          accepted_terms_at: string | null;
+          accepted_terms_offline_by: string | null;
+        }>(
+          `select status, accepted_terms_at, accepted_terms_offline_by
+           from registration_members where registration_id = $1`,
+          [registro.rows[0].id],
+        );
+        // Completo como DATO (el organizador lo tipeo), pero sin aceptacion.
+        expect(miembro.rows[0].status).toBe("completo");
+        expect(miembro.rows[0].accepted_terms_at).toBeNull();
+        expect(miembro.rows[0].accepted_terms_offline_by).toBeNull();
+
+        const readiness = await s.db.query<{ registration_readiness: string }>(
+          "select registration_readiness($1)",
+          [registro.rows[0].id],
+        );
+        expect(readiness.rows[0].registration_readiness).toBe("accion_requerida");
+      });
+    });
+
+    it("marcando la aceptación offline, queda auditado quién la declaró", async () => {
+      const integrante = {
+        firstName: "Elena",
+        lastName: "Vidal",
+        email: "elena@correo.com",
+        birthDate: "1992-01-01",
+        country: "CO",
+        documentId: "111222333",
+        terminosAceptadosOffline: true,
+      };
+
+      await asUser(s.db, s.users.owner, async () => {
+        const res = await s.db.query<{ id: string }>(
+          "select id from admin_create_registration($1, $2, $3::jsonb)",
+          [s.divisionId, null, JSON.stringify([integrante])],
+        );
+        const registro = await s.db.query<{ id: string }>(
+          "select id from registrations where team_id = $1",
+          [res.rows[0].id],
+        );
+
+        const miembro = await s.db.query<{
+          accepted_terms_at: string | null;
+          accepted_terms_offline_by: string | null;
+        }>(
+          `select accepted_terms_at, accepted_terms_offline_by
+           from registration_members where registration_id = $1`,
+          [registro.rows[0].id],
+        );
+        expect(miembro.rows[0].accepted_terms_at).not.toBeNull();
+        expect(miembro.rows[0].accepted_terms_offline_by).toBe(s.users.owner);
+
+        const readiness = await s.db.query<{ registration_readiness: string }>(
+          "select registration_readiness($1)",
+          [registro.rows[0].id],
+        );
+        expect(readiness.rows[0].registration_readiness).toBe("listo");
+      });
     });
   });
 });

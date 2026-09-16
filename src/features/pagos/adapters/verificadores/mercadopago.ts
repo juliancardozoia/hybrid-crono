@@ -33,6 +33,47 @@ import type {
 /** Cuanto tiempo se acepta un webhook. Mas viejo que esto es un replay. */
 const VENTANA_MS = 5 * 60 * 1000;
 
+/** Cuanto se espera la respuesta de la API antes de darla por caida. */
+const TIMEOUT_CONSULTA_MS = 8000;
+
+export interface CredencialesMercadoPago {
+  webhookSecret: string;
+  accessToken: string;
+}
+
+/**
+ * Interpreta el contenido YA DESCIFRADO de `secret_ciphertext`.
+ *
+ * Desde que existe el access token, se guarda como JSON
+ * `{"webhookSecret": "...", "accessToken": "..."}`. Una fila guardada ANTES
+ * de este cambio es texto plano: todo el contenido ERA la firma del webhook.
+ * Los dos formatos se siguen leyendo -- si no, una organizacion que configuro
+ * MercadoPago hace tiempo y no volvio a esta pantalla dejaria de verificar
+ * firmas de un dia para el otro.
+ */
+export function leerCredencialesMercadoPago(
+  textoDescifrado: string | null,
+): CredencialesMercadoPago {
+  if (!textoDescifrado) return { webhookSecret: "", accessToken: "" };
+
+  try {
+    const parsed = JSON.parse(textoDescifrado) as {
+      webhookSecret?: unknown;
+      accessToken?: unknown;
+    };
+    if (parsed && typeof parsed === "object" && typeof parsed.webhookSecret === "string") {
+      return {
+        webhookSecret: parsed.webhookSecret,
+        accessToken: typeof parsed.accessToken === "string" ? parsed.accessToken : "",
+      };
+    }
+  } catch {
+    // No es JSON: formato viejo, todo el texto es el secreto del webhook.
+  }
+
+  return { webhookSecret: textoDescifrado, accessToken: "" };
+}
+
 interface FirmaMercadoPago {
   ts: string;
   v1: string;
@@ -106,19 +147,87 @@ export function verificarFirmaMercadoPago(params: {
   return { valida: true };
 }
 
-/** Traduce el estado de MercadoPago al nuestro. */
+/**
+ * Traduce el estado de MercadoPago al nuestro.
+ *
+ * `in_process`/`authorized`/`pending` son "MercadoPago lo esta procesando
+ * activamente" -- ni aprobado ni rechazado, pero tampoco "nadie intento
+ * pagar todavia" (que es lo que significa nuestro `pendiente`). Por eso caen
+ * en `procesando`, un estado distinto.
+ */
 export function traducirEstado(estado: string): EstadoDePago {
   if (estado === "approved") return "aprobado";
   if (["rejected", "cancelled", "refunded", "charged_back"].includes(estado)) return "rechazado";
+  if (["in_process", "authorized", "pending"].includes(estado)) return "procesando";
   return "pendiente";
+}
+
+interface PagoMercadoPago {
+  id: number | string;
+  status: string;
+  transaction_amount: number;
+  currency_id: string;
+  external_reference: string | null;
+}
+
+type ResultadoDeConsulta =
+  | { ok: true; pago: PagoMercadoPago }
+  | { ok: false; motivo: string };
+
+/**
+ * Consulta el pago real contra la API de MercadoPago.
+ *
+ * Es el paso que faltaba: la notificacion del webhook solo trae un id, y
+ * confiar en el `status` que venga en su cuerpo seria confiar en un mensaje
+ * que cualquiera con la URL podria intentar falsificar (la firma prueba que
+ * el MENSAJE es de MercadoPago, no que el ESTADO que declara sea el actual).
+ * Ante cualquier falla de red o de credenciales, no se confirma nada: el
+ * llamador trata esto como `verificado: false`.
+ */
+async function consultarPagoMercadoPago(
+  paymentId: string,
+  accessToken: string,
+): Promise<ResultadoDeConsulta> {
+  try {
+    const respuesta = await fetch(
+      `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(TIMEOUT_CONSULTA_MS),
+      },
+    );
+
+    if (!respuesta.ok) {
+      return { ok: false, motivo: `MercadoPago respondió ${respuesta.status} al consultar el pago.` };
+    }
+
+    const pago = (await respuesta.json()) as PagoMercadoPago;
+    if (pago.id === undefined || pago.id === null) {
+      return { ok: false, motivo: "La respuesta de MercadoPago no trae un id de pago." };
+    }
+
+    return { ok: true, pago };
+  } catch (err) {
+    return {
+      ok: false,
+      motivo: `No se pudo consultar el pago en MercadoPago: ${err instanceof Error ? err.message : "error desconocido"}`,
+    };
+  }
 }
 
 /**
  * Verifica un webhook de MercadoPago.
  *
- * Devuelve `estado: "pendiente"` incluso cuando la firma es valida: la
- * notificacion solo trae el id del pago, y darlo por aprobado seria confiar en
- * el cuerpo del mensaje. El estado real hay que preguntarselo a MercadoPago.
+ * Dos pasos, ninguno opcional:
+ *
+ *   1. La FIRMA prueba que el mensaje lo mando MercadoPago.
+ *   2. La CONSULTA A LA API prueba que el estado que se va a usar es el
+ *      real, no el que traia el cuerpo del mensaje.
+ *
+ * Sin access token configurado (organizaciones que todavia no lo cargaron, o
+ * migraron desde antes de que existiera este campo) se preserva el
+ * comportamiento historico: firma valida, estado `pendiente`, queda para
+ * confirmar a mano. Nunca se aprueba un pago sin haber pasado por el paso 2.
  */
 export const verificarMercadoPago: VerificadorDeWebhook = async (
   ctx: ContextoDeWebhook,
@@ -133,21 +242,53 @@ export const verificarMercadoPago: VerificadorDeWebhook = async (
   const data = (cuerpo.data ?? {}) as Record<string, unknown>;
   const dataId = data.id !== undefined && data.id !== null ? String(data.id) : null;
 
+  const { webhookSecret, accessToken } = leerCredencialesMercadoPago(ctx.secreto);
+
   const firma = verificarFirmaMercadoPago({
     firma: ctx.headers.get("x-signature"),
     requestId: ctx.headers.get("x-request-id"),
     dataId,
-    secreto: ctx.secreto,
+    secreto: webhookSecret || null,
   });
 
   if (!firma.valida) return { verificado: false, motivo: firma.motivo ?? "Firma inválida." };
 
+  const orderIdDelCuerpo =
+    typeof cuerpo.external_reference === "string" ? cuerpo.external_reference : null;
+
+  if (!accessToken) {
+    return {
+      verificado: true,
+      externalId: dataId!,
+      estado: "pendiente",
+      orderId: orderIdDelCuerpo,
+      montoCents: null,
+      currency: null,
+      raw: cuerpo,
+    };
+  }
+
+  const consulta = await consultarPagoMercadoPago(dataId!, accessToken);
+  if (!consulta.ok) return { verificado: false, motivo: consulta.motivo };
+
+  const { pago } = consulta;
+
+  // El id que responde la API tiene que ser el mismo que trajo la
+  // notificacion -- si no, algo no cierra y no se confia en nada de esto.
+  if (String(pago.id) !== dataId) {
+    return {
+      verificado: false,
+      motivo: "El id del pago consultado no coincide con el de la notificación.",
+    };
+  }
+
   return {
     verificado: true,
-    externalId: dataId!,
-    estado: "pendiente",
-    orderId: typeof cuerpo.external_reference === "string" ? cuerpo.external_reference : null,
-    montoCents: null,
-    raw: cuerpo,
+    externalId: String(pago.id),
+    estado: traducirEstado(pago.status),
+    orderId: pago.external_reference ?? orderIdDelCuerpo,
+    montoCents: Math.round(pago.transaction_amount * 100),
+    currency: pago.currency_id ? pago.currency_id.toUpperCase() : null,
+    raw: pago,
   };
 };

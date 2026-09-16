@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  leerCredencialesMercadoPago,
   manifiesto,
   parsearFirma,
   traducirEstado,
@@ -138,10 +139,44 @@ describe("traducirEstado", () => {
     }
   });
 
-  it("cualquier otra cosa queda pendiente, nunca aprobada", () => {
-    for (const e of ["in_process", "authorized", "algo_nuevo", ""]) {
+  it("los estados 'en curso' de MercadoPago son procesando, no pendiente", () => {
+    for (const e of ["in_process", "authorized", "pending"]) {
+      expect(traducirEstado(e)).toBe("procesando");
+    }
+  });
+
+  it("cualquier otra cosa desconocida queda pendiente, nunca aprobada", () => {
+    for (const e of ["algo_nuevo", ""]) {
       expect(traducirEstado(e)).toBe("pendiente");
     }
+  });
+});
+
+describe("leerCredencialesMercadoPago", () => {
+  it("sin nada guardado, las dos credenciales vienen vacías", () => {
+    expect(leerCredencialesMercadoPago(null)).toEqual({ webhookSecret: "", accessToken: "" });
+  });
+
+  it("formato viejo (texto plano): todo el texto es la firma del webhook", () => {
+    expect(leerCredencialesMercadoPago("clave-vieja")).toEqual({
+      webhookSecret: "clave-vieja",
+      accessToken: "",
+    });
+  });
+
+  it("formato nuevo (JSON): separa firma y access token", () => {
+    expect(
+      leerCredencialesMercadoPago(
+        JSON.stringify({ webhookSecret: "firma-1", accessToken: "token-1" }),
+      ),
+    ).toEqual({ webhookSecret: "firma-1", accessToken: "token-1" });
+  });
+
+  it("JSON sin accessToken todavía: queda vacío, no undefined", () => {
+    expect(leerCredencialesMercadoPago(JSON.stringify({ webhookSecret: "firma-1" }))).toEqual({
+      webhookSecret: "firma-1",
+      accessToken: "",
+    });
   });
 });
 
@@ -169,14 +204,186 @@ describe("el webhook completo", () => {
     expect(r.verificado).toBe(false);
   });
 
-  it("verificado, el estado NUNCA arranca en aprobado", async () => {
+  it("SIN access token configurado, el estado NUNCA arranca en aprobado", async () => {
     // La notificación solo trae el id: aprobar sin consultar la API sería
     // confiar en el cuerpo del mensaje, que es justo lo que no se puede hacer.
+    // Este es el formato viejo de credenciales (texto plano, sin access token).
     const ts = Math.floor(Date.now() / 1000);
     const r = await verificarMercadoPago(
       contexto({ data: { id: "PAY-1" } }, firmar("PAY-1", "req-1", ts)),
     );
     expect(r.verificado).toBe(true);
-    if (r.verificado) expect(r.estado).toBe("pendiente");
+    if (r.verificado) {
+      expect(r.estado).toBe("pendiente");
+      expect(r.montoCents).toBeNull();
+      expect(r.currency).toBeNull();
+    }
+  });
+});
+
+describe("el webhook completo, CON access token: consulta la API de verdad", () => {
+  const ACCESS_TOKEN = "TEST-access-token";
+  const CREDENCIALES = JSON.stringify({ webhookSecret: SECRETO, accessToken: ACCESS_TOKEN });
+
+  function contextoConToken(cuerpo: unknown, firma: string | null, requestId = "req-1") {
+    const headers = new Headers();
+    if (firma) headers.set("x-signature", firma);
+    headers.set("x-request-id", requestId);
+    return { headers, cuerpo: JSON.stringify(cuerpo), secreto: CREDENCIALES };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("un pago aprobado en la API se refleja tal cual, con monto y moneda verificados", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: "PAY-1",
+            status: "approved",
+            transaction_amount: 150.5,
+            currency_id: "cop",
+            external_reference: "orden-1",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-1" } }, firmar("PAY-1", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(true);
+    if (r.verificado) {
+      expect(r.estado).toBe("aprobado");
+      expect(r.externalId).toBe("PAY-1");
+      expect(r.montoCents).toBe(15050);
+      expect(r.currency).toBe("COP");
+      expect(r.orderId).toBe("orden-1");
+    }
+  });
+
+  it("un pago 'pending' en la API queda procesando, no pendiente ni aprobado", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: "PAY-2",
+            status: "pending",
+            transaction_amount: 10,
+            currency_id: "COP",
+            external_reference: "orden-2",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-2" } }, firmar("PAY-2", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(true);
+    if (r.verificado) expect(r.estado).toBe("procesando");
+  });
+
+  it("un pago rechazado en la API se registra como rechazado", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: "PAY-3",
+            status: "rejected",
+            transaction_amount: 10,
+            currency_id: "COP",
+            external_reference: "orden-3",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-3" } }, firmar("PAY-3", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(true);
+    if (r.verificado) expect(r.estado).toBe("rechazado");
+  });
+
+  it("si el id que responde la API no coincide con el de la notificación, se rechaza entero", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            id: "PAY-OTRO",
+            status: "approved",
+            transaction_amount: 10,
+            currency_id: "COP",
+            external_reference: "orden-1",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-1" } }, firmar("PAY-1", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(false);
+  });
+
+  it("si la API responde con error, no se confirma nada", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 500 })),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-1" } }, firmar("PAY-1", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(false);
+  });
+
+  it("si la API es inalcanzable (red caída), no se confirma nada", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network error");
+      }),
+    );
+
+    const ts = Math.floor(Date.now() / 1000);
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-1" } }, firmar("PAY-1", "req-1", ts)),
+    );
+
+    expect(r.verificado).toBe(false);
+  });
+
+  it("una firma invalida rechaza ANTES de siquiera llamar a la API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const r = await verificarMercadoPago(
+      contextoConToken({ data: { id: "PAY-1" } }, "ts=1,v1=falsa"),
+    );
+
+    expect(r.verificado).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

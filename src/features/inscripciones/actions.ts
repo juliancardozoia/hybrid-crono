@@ -191,9 +191,14 @@ export async function guardarMisDatos(
   if ("error" in datos) return datos;
 
   const supabase = await createClient();
+  // 'completa': este formulario (MisDatos / CompletarDatos) siempre manda
+  // todo lo que tiene, esenciales incluidos -- la fase completa escribe los
+  // dos grupos. La unica llamada que de verdad restringe a solo lo esencial
+  // es `confirmarInscripcionIndividual`, mas abajo.
   const { error } = await supabase.rpc("save_member_data", {
     p_member_id: memberId,
     p_datos: datos as never,
+    p_fase: "completa",
   });
 
   if (error) return { error: traducir(error) };
@@ -260,9 +265,17 @@ export async function confirmarInscripcionIndividual(
     };
   }
 
+  // 'esencial': lo unico que hace falta para decidir categoria, elegibilidad
+  // y poder pagar. Los datos operacionales (telefono, talla, documento, box,
+  // respuestas del organizador) se completan DESPUES -- ver
+  // `CompletarDatos` en `PanelDeInscripcion.tsx` -- nunca se piden ni se
+  // escriben aca, aunque `datosDelFormulario()` los traiga igual (por los
+  // campos ocultos de `soloEsenciales`): en fase esencial el servidor los
+  // ignora.
   const { error: errorDatos } = await supabase.rpc("save_member_data", {
     p_member_id: miembro.id,
     p_datos: datos as never,
+    p_fase: "esencial",
   });
   if (errorDatos) return { error: traducir(errorDatos) };
 

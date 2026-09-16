@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { armarOrden, reportarPagoManual } from "../actions";
 import { ADAPTADORES, montoLegible } from "../adapters";
+import { paymentStatus } from "../lib/estado";
 import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -65,7 +66,9 @@ export function BloqueDePago({
     );
   }
 
-  const pagada = orden.status === "pagada";
+  const estado = paymentStatus(orden);
+  const pagada = estado === "pagado";
+  const procesando = estado === "procesando";
 
   return (
     <section className="flex flex-col gap-4 border-t border-neutral-800 pt-6">
@@ -91,9 +94,16 @@ export function BloqueDePago({
             Pago recibido. Tu inscripción quedó confirmada.
           </p>
         )}
+
+        {procesando && (
+          <p className="mt-3 rounded-xl bg-amber-400/10 p-3 text-sm text-amber-300">
+            Estamos confirmando tu pago con la pasarela. No hace falta que
+            hagas nada más — esto se actualiza solo.
+          </p>
+        )}
       </div>
 
-      {!pagada && (
+      {!pagada && !procesando && (
         <>
           {intentos.length > 0 && (
             <p className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">

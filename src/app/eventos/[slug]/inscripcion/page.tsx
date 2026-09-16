@@ -40,14 +40,35 @@ export default async function InscripcionPage({
   // mostrarle "elegir categoria" es un callejon sin salida: `start_registration`
   // rechaza una segunda inscripcion en la misma categoria con un error que no
   // lleva a ningun lado. Se lo manda directo a lo que ya tiene.
+  //
+  // "Ya tiene un tramite" no es solo "lo creo" (created_by): un integrante
+  // INVITADO que reclamo su lugar (`claim_membership`) y despues cerro el
+  // navegador antes de completar sus datos tambien tiene un tramite en curso,
+  // y antes de este fix no lo encontraba aca -- volvia a "elegir categoria" y
+  // chocaba con "ya tenes una inscripcion en esta categoria" sin ningun
+  // camino de vuelta. Se buscan las dos señales por separado y se combinan.
   const divisionIds = form.divisions.map((d) => d.id);
   if (divisionIds.length > 0) {
-    const { data: existente } = await (await createClient())
+    const supabase = await createClient();
+
+    const { data: comoIntegrante } = await supabase
+      .from("registration_members")
+      .select("registration_id")
+      .eq("profile_id", usuario.id);
+
+    const idsComoIntegrante = (comoIntegrante ?? []).map((m) => m.registration_id);
+
+    const condiciones = [`created_by.eq.${usuario.id}`];
+    if (idsComoIntegrante.length > 0) {
+      condiciones.push(`id.in.(${idsComoIntegrante.join(",")})`);
+    }
+
+    const { data: existente } = await supabase
       .from("registrations")
       .select("id, status")
       .in("division_id", divisionIds)
-      .eq("created_by", usuario.id)
       .neq("status", "cancelada")
+      .or(condiciones.join(","))
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

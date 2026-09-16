@@ -270,6 +270,26 @@ function BloqueDeIntegrante({
             />
           )}
         </div>
+
+        {/* Sin marcar, el atleta queda con la aceptacion pendiente hasta que
+            entre con su propia cuenta y acepte -- el organizador no puede
+            firmar el waiver en su nombre. Marcarlo es una declaracion
+            auditada (queda quien la hizo), para el caso real de una firma
+            en papel el dia del evento. */}
+        <label className="flex items-start gap-3 rounded-xl border border-neutral-800 p-3">
+          <input
+            type="checkbox"
+            name={`terminosAceptadosOffline_${indice}`}
+            className="mt-0.5 accent-lime-400"
+          />
+          <span className="text-sm text-neutral-300">
+            Esta persona ya firmó los términos en papel o en persona
+            <span className="mt-0.5 block text-xs text-neutral-500">
+              Sin marcar, queda pendiente hasta que la persona entre con su
+              propia cuenta y acepte — no se puede aceptar en su nombre.
+            </span>
+          </span>
+        </label>
       </div>
     </div>
   );

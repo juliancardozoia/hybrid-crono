@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { EncabezadoPublico } from "@/features/catalogo/components/EncabezadoPublico";
-import { getFormularioDeInscripcion, getInscripcion } from "@/features/inscripciones/queries";
+import {
+  getFormularioDeInscripcion,
+  getInscripcion,
+  getReadiness,
+} from "@/features/inscripciones/queries";
 import { reclamarLugar } from "@/features/inscripciones/actions";
 import { PanelDeInscripcion } from "@/features/inscripciones/components/PanelDeInscripcion";
 import { getPagoDeInscripcion } from "@/features/pagos/queries";
@@ -32,9 +36,10 @@ export default async function InscripcionDetallePage({
   const inscripcion = await getInscripcion(id);
   if (!inscripcion) notFound();
 
-  const [form, pago] = await Promise.all([
+  const [form, pago, readiness] = await Promise.all([
     getFormularioDeInscripcion(inscripcion.evento.publicSlug),
     getPagoDeInscripcion(id),
+    getReadiness(id),
   ]);
 
   const yo = inscripcion.integrantes.find((m) => m.profile_id === user.id) ?? null;
@@ -83,6 +88,7 @@ export default async function InscripcionDetallePage({
           miId={yo?.id ?? null}
           soyCapitan={soyCapitan}
           pago={pago}
+          readiness={readiness ?? "incompleto"}
         />
       </main>
     </>

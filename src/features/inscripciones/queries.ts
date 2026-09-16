@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createPublicClient } from "@/lib/supabase/public";
+import type { Readiness } from "./lib/estados";
 import type {
   RegistrationFieldType,
   RegistrationMemberRow,
@@ -37,6 +38,12 @@ export interface CampoDelFormulario {
   options: string[];
   scope: "equipo" | "integrante";
   divisionId: string | null;
+  /**
+   * Cuando se pide: "esencial" (antes de pagar) o "completa" (despues). Hoy
+   * `CamposDeAtleta` sigue pidiendo todo junto sin mirar este campo -- queda
+   * listo para cuando la pantalla se divida en dos pasos.
+   */
+  fase: "esencial" | "completa";
 }
 
 export interface FormularioDeInscripcion {
@@ -115,6 +122,56 @@ export async function getInscripcion(id: string): Promise<InscripcionCompleta | 
   };
 }
 
+/**
+ * Llama a `registration_readiness`.
+ *
+ * FUNCION NUEVA, TODAVIA NO EN `database.types.ts`: ese archivo es generado
+ * contra el proyecto de Supabase real (`npx supabase gen types typescript
+ * --linked`), y esta migracion no se aplico ahi todavia. El `as never`/`as
+ * unknown` de aca es exactamente ese hueco temporal -- cuando se regeneren
+ * los tipos despues del `db push`, `registration_readiness` va a aparecer en
+ * el union de RPCs solo y este cast deja de hacer falta (se puede sacar sin
+ * tocar el resto de la funcion).
+ */
+async function llamarReadiness(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  registrationId: string,
+): Promise<Readiness | null> {
+  const { data, error } = await supabase.rpc("registration_readiness" as never, {
+    p_registration_id: registrationId,
+  } as never);
+  if (error || !data) return null;
+  return data as unknown as Readiness;
+}
+
+export async function getReadiness(registrationId: string): Promise<Readiness | null> {
+  const supabase = await createClient();
+  return llamarReadiness(supabase, registrationId);
+}
+
+/**
+ * La misma consulta para varias inscripciones a la vez.
+ *
+ * `registration_readiness` toma un solo id -- no hay (todavia) una version
+ * en lote, asi que esto es un viaje de red por fila via `Promise.all`.
+ * Aceptable para "mis inscripciones" (unas pocas) y para la torre de
+ * control de un evento chico o mediano; si algun evento crece a cientos de
+ * inscripciones esto conviene revisarse (mover la logica a una consulta en
+ * lote en vez de N llamadas al RPC).
+ */
+async function getReadinessEnLote(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  registrationIds: string[],
+): Promise<Map<string, Readiness>> {
+  const resultado = await Promise.all(
+    registrationIds.map(async (id) => {
+      const readiness = await llamarReadiness(supabase, id);
+      return [id, readiness ?? "incompleto"] as const;
+    }),
+  );
+  return new Map(resultado);
+}
+
 export interface ResumenDeInscripcion {
   id: string;
   status: RegistrationRow["status"];
@@ -125,6 +182,7 @@ export interface ResumenDeInscripcion {
   startsAt: string | null;
   timezone: string;
   bib: number | null;
+  readiness: Readiness;
 }
 
 /**
@@ -188,6 +246,7 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
   const evento = new Map((eventos ?? []).map((e) => [e.id, e]));
   const division = new Map((divisiones ?? []).map((d) => [d.id, d.name]));
   const dorsal = new Map((equipos ?? []).map((t) => [t.id, t.bib_number]));
+  const readiness = await getReadinessEnLote(supabase, registros.map((r) => r.id));
 
   return registros.flatMap((r) => {
     const e = evento.get(r.event_id);
@@ -203,6 +262,7 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
         startsAt: e.starts_at,
         timezone: e.timezone,
         bib: r.team_id ? (dorsal.get(r.team_id) ?? null) : null,
+        readiness: readiness.get(r.id) ?? "incompleto",
       },
     ];
   });
@@ -214,9 +274,15 @@ export interface FilaDeInscripcion {
   teamName: string | null;
   divisionName: string;
   bib: number | null;
-  integrantes: Array<{ nombre: string; email: string; completo: boolean }>;
+  integrantes: Array<{
+    nombre: string;
+    email: string;
+    completo: boolean;
+    aceptoTerminos: boolean;
+  }>;
   priceCents: number | null;
   currency: string | null;
+  readiness: Readiness;
 }
 
 /** Todas las inscripciones de un evento, para la organizacion. */
@@ -237,7 +303,9 @@ export async function getInscripcionesDelEvento(eventId: string): Promise<FilaDe
   const [{ data: integrantes }, { data: equipos }] = await Promise.all([
     supabase
       .from("registration_members")
-      .select("registration_id, first_name, last_name, invited_email, status, position")
+      .select(
+        "registration_id, first_name, last_name, invited_email, status, position, accepted_terms_at",
+      )
       .eq("event_id", eventId)
       .order("position"),
     supabase.from("teams").select("id, bib_number").eq("event_id", eventId),
@@ -245,6 +313,7 @@ export async function getInscripcionesDelEvento(eventId: string): Promise<FilaDe
 
   const nombreDivision = new Map((divisiones ?? []).map((d) => [d.id, d.name]));
   const dorsal = new Map((equipos ?? []).map((t) => [t.id, t.bib_number]));
+  const readiness = await getReadinessEnLote(supabase, registros.map((r) => r.id));
 
   return registros.map((r) => ({
     id: r.id,
@@ -254,12 +323,14 @@ export async function getInscripcionesDelEvento(eventId: string): Promise<FilaDe
     bib: r.team_id ? (dorsal.get(r.team_id) ?? null) : null,
     priceCents: r.price_cents,
     currency: r.currency,
+    readiness: readiness.get(r.id) ?? "incompleto",
     integrantes: (integrantes ?? [])
       .filter((m) => m.registration_id === r.id)
       .map((m) => ({
         nombre: [m.first_name, m.last_name].filter(Boolean).join(" "),
         email: m.invited_email,
         completo: m.status === "completo",
+        aceptoTerminos: m.accepted_terms_at !== null,
       })),
   }));
 }

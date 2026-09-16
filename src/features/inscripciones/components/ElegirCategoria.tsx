@@ -5,8 +5,14 @@ import { confirmarInscripcionIndividual, empezarInscripcion, type FormState } fr
 import { Boton } from "@/shared/components/Boton";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
 import { CamposDeAtleta } from "./CamposDeAtleta";
+import { PAISES } from "@/shared/utils/paises";
 import type { CampoDelFormulario, CategoriaParaInscribirse } from "../queries";
 import type { Perfil } from "@/features/cuenta/queries";
+
+function nombreDePais(codigo: string | null): string | null {
+  if (!codigo) return null;
+  return PAISES.find((p) => p.codigo === codigo)?.nombre ?? codigo;
+}
 
 /** "Julian Cardozo" -> {firstName: "Julian", lastName: "Cardozo"}. Heuristica
  * simple: el perfil guarda un solo campo de nombre y el tramite de inscripcion
@@ -62,6 +68,16 @@ export function ElegirCategoria({
   const camposDeLaCategoria = campos.filter(
     (c) => c.scope === "integrante" && (c.divisionId === null || c.divisionId === elegida),
   );
+
+  // "Competirás como Juan Pérez · Colombia": si SCORA ya sabe esto de una
+  // inscripcion anterior, no tiene sentido volver a preguntarlo. Arranca
+  // mostrando el resumen (no el formulario) apenas el perfil alcanza -- el
+  // atleta puede igual apretar "Cambiar" si algo esta mal.
+  const { firstName: nombrePerfil, lastName: apellidoPerfil } = separarNombre(
+    perfil?.fullName ?? null,
+  );
+  const perfilTieneEsenciales = Boolean(nombrePerfil && apellidoPerfil && perfil?.country);
+  const [editandoDatos, setEditandoDatos] = useState(!perfilTieneEsenciales);
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -154,9 +170,30 @@ export function ElegirCategoria({
           <h2 className="text-sm font-semibold text-neutral-400 uppercase">
             Tus datos
           </h2>
+
+          {perfilTieneEsenciales && !editandoDatos && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-4">
+              <p className="text-sm">
+                Competirás como{" "}
+                <span className="font-semibold">
+                  {nombrePerfil} {apellidoPerfil}
+                </span>
+                {perfil?.country && ` · ${nombreDePais(perfil.country)}`}
+              </p>
+              <button
+                type="button"
+                onClick={() => setEditandoDatos(true)}
+                className="shrink-0 text-sm font-medium text-lime-400 hover:underline"
+              >
+                Cambiar
+              </button>
+            </div>
+          )}
+
           <CamposDeAtleta
             valores={{
-              ...separarNombre(perfil?.fullName ?? null),
+              firstName: nombrePerfil,
+              lastName: apellidoPerfil,
               birthDate: perfil?.birthDate ?? null,
               phone: perfil?.phone ?? null,
               country: perfil?.country ?? null,
@@ -168,6 +205,7 @@ export function ElegirCategoria({
             campos={camposDeLaCategoria}
             documentos={documentos}
             soloEsenciales
+            identidadConocida={perfilTieneEsenciales && !editandoDatos}
           />
         </div>
       )}

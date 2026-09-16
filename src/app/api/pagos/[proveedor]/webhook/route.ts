@@ -71,7 +71,7 @@ export async function POST(
 
   const { data: orden } = await service
     .from("orders")
-    .select("id, event_id, status, total_cents")
+    .select("id, event_id, status, total_cents, currency")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -109,6 +109,26 @@ export async function POST(
   // ACA ESTA LA BARRERA. El tipo discriminado hace que los datos del pago solo
   // existan en la rama verificada: no se puede cobrar sin haber chequeado.
   if (!resultado.verificado) return rechazar(resultado.motivo);
+
+  // Verificado no es suficiente: tambien tiene que ser DE ESTA orden. La
+  // firma prueba que el mensaje es de la pasarela, no que se refiera a lo que
+  // dice referirse -- eso se cruza aca contra lo que la propia base ya sabe
+  // de la orden, nunca contra otro dato que haya viajado en el webhook.
+  if (resultado.orderId && resultado.orderId !== orden.id) {
+    return rechazar(
+      `la referencia verificada (${resultado.orderId}) no coincide con la orden ${orden.id}`,
+    );
+  }
+  if (resultado.montoCents !== null && resultado.montoCents !== orden.total_cents) {
+    return rechazar(
+      `el monto verificado (${resultado.montoCents}) no coincide con el de la orden (${orden.total_cents})`,
+    );
+  }
+  if (resultado.currency && resultado.currency !== orden.currency) {
+    return rechazar(
+      `la moneda verificada (${resultado.currency}) no coincide con la de la orden (${orden.currency})`,
+    );
+  }
 
   await service.rpc("registrar_intento_de_pago", {
     p_order_id: orden.id,
