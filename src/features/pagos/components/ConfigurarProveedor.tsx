@@ -55,18 +55,7 @@ export function ConfigurarProveedor({
       <input type="hidden" name="orgId" value={orgId} />
       <input type="hidden" name="provider" value={provider} />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-semibold">{adaptador.nombre}</h3>
-        <label className="flex items-center gap-2 text-sm text-neutral-400">
-          <input
-            type="checkbox"
-            name="activo"
-            defaultChecked={actual?.active ?? false}
-            className="accent-lime-400"
-          />
-          Ofrecerlo a los atletas
-        </label>
-      </div>
+      <h3 className="font-semibold">{adaptador.nombre}</h3>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         {adaptador.camposPublicos.map((c) => (
@@ -118,7 +107,11 @@ export function ConfigurarProveedor({
         <MensajeDeError className="mt-3">{state.error}</MensajeDeError>
       )}
 
-      <div className="mt-4">
+      {/* Al lado del boton de guardar, no arriba junto al titulo: ahi
+          quedaba fuera de la vista al bajar a llenar los campos, y se
+          perdia de vista que hay que tildarlo para que de verdad ofrezca
+          este medio. */}
+      <div className="mt-4 flex flex-wrap items-center gap-4">
         <BotonDeEnvio
           pendienteTexto="Guardando…"
           mensajeDeCarga="Guardando el medio de cobro…"
@@ -126,6 +119,16 @@ export function ConfigurarProveedor({
         >
           Guardar
         </BotonDeEnvio>
+
+        <label className="flex items-center gap-2 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            name="activo"
+            defaultChecked={actual?.active ?? false}
+            className="h-4 w-4 accent-lime-400"
+          />
+          Ofrecerlo a los atletas
+        </label>
       </div>
     </form>
   );

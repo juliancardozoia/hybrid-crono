@@ -485,12 +485,26 @@ export async function guardarPasoInscripcion(
     const hayAlgoQueGuardar =
       activo || secreto || Object.values(publicConfig).some(Boolean);
 
-    const { data: existente } = await supabase
+    // Mismo fix que `guardarProveedor` (src/features/pagos/actions.ts): el
+    // indice unico real es (org_id, provider, coalesce(label, '')), y este
+    // formulario tampoco pide label -- sin filtrar por el, una fila vieja
+    // con otro label hace que `.maybeSingle()` falle en silencio, `existente`
+    // quede null, y el intento de INSERT choque con "Ya existe una
+    // configuración" sobre una fila que en realidad ya estaba ahi.
+    const { data: existente, error: errorExistente } = await supabase
       .from("payment_providers")
       .select("id")
       .eq("org_id", orgId)
       .eq("provider", provider)
+      .is("label", null)
       .maybeSingle();
+
+    if (errorExistente) {
+      return {
+        error:
+          "Hay más de una configuración guardada para este medio de pago en tu organización. Revisá payment_providers desde Supabase antes de volver a guardar.",
+      };
+    }
 
     if (existente || hayAlgoQueGuardar) {
       if (secreto && !hayLlaveDeCifrado()) {

@@ -58,12 +58,31 @@ export async function guardarProveedor(
 
   const supabase = await createClient();
 
-  const { data: existente } = await supabase
+  // El indice unico real es (org_id, provider, coalesce(label, '')). Este
+  // formulario nunca pide un label (no hay campo para eso), asi que siempre
+  // manda null -- la busqueda tiene que filtrar por label tambien, sin eso
+  // devuelve CUALQUIER fila de ese proveedor para la organizacion. Si hay
+  // mas de una (label distinto, de una configuracion vieja o de otro
+  // camino), `.maybeSingle()` falla con "multiple rows" -- y como antes NO
+  // se leia `error` de esta consulta, esa falla quedaba invisible: el
+  // codigo seguia como si `existente` fuera null, intentaba un INSERT, y
+  // recien ahi aparecia "Ya existe una configuracion para ese medio de
+  // pago" sin ninguna pista de por que, con la fila real ahi mismo y el
+  // checkbox tildado sin poder guardarse.
+  const { data: existente, error: errorExistente } = await supabase
     .from("payment_providers")
     .select("id, secret_ciphertext")
     .eq("org_id", orgId)
     .eq("provider", provider)
+    .is("label", null)
     .maybeSingle();
+
+  if (errorExistente) {
+    return {
+      error:
+        "Hay más de una configuración guardada para este medio de pago en tu organización. Revisá payment_providers desde Supabase antes de volver a guardar.",
+    };
+  }
 
   // Un campo de secreto vacio significa "dejalo como estaba", no "borralo":
   // si no, editar el numero de cuenta borraria la credencial sin avisar.

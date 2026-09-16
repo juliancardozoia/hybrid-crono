@@ -102,11 +102,14 @@ export function PanelDeInscripcion({
         />
       )}
 
+      {/* Individual: el capitan ES el unico integrante, asi que esta lista
+          repetiria exactamente lo que "Mis datos" ya muestra abajo -- se
+          esconde entera y solo queda "Mis datos". En equipo sigue siendo la
+          unica vista de conjunto (quien falta, quien ya completo). */}
+      {teamSize > 1 && (
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-neutral-400 uppercase">
-          {teamSize === 1
-            ? "Tus datos"
-            : `Integrantes (${integrantes.length} de ${teamSize})`}
+          {`Integrantes (${integrantes.length} de ${teamSize})`}
         </h2>
 
         <ul className="divide-y divide-neutral-800 rounded-2xl border border-neutral-800">
@@ -166,6 +169,7 @@ export function PanelDeInscripcion({
           />
         )}
       </section>
+      )}
 
       {yo && !cerrada && (
         <MisDatos

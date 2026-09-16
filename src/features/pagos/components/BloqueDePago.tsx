@@ -34,6 +34,7 @@ export function BloqueDePago({
   const [error, setError] = useState<string | null>(null);
   const [pendiente, startTransition] = useTransition();
   const [abierto, setAbierto] = useState<string | null>(null);
+  const [mostrarCupon, setMostrarCupon] = useState(false);
   useCargaMientras(pendiente, "Preparando el pago…");
 
   function aplicar(valor: string) {
@@ -41,7 +42,17 @@ export function BloqueDePago({
     startTransition(async () => {
       const r = await armarOrden(registrationId, valor);
       setError(r.error);
+      if (!r.error) {
+        setCodigo("");
+        setMostrarCupon(false);
+      }
     });
+  }
+
+  // Sin código, `upsert_order` recalcula sin descuento -- es lo mismo
+  // mecanismo que "aplicar", solo que con el campo vacío.
+  function quitarCupon() {
+    aplicar("");
   }
 
   // Todavía no hay orden: la primera visita la crea.
@@ -83,9 +94,21 @@ export function BloqueDePago({
         </div>
 
         {orden.discount_cents > 0 && (
-          <p className="mt-1 text-right text-sm text-lime-400">
-            Descuento aplicado: −
-            {montoLegible(orden.discount_cents, orden.currency)}
+          <p className="mt-1 flex items-center justify-end gap-2 text-right text-sm text-lime-400">
+            <span>
+              Descuento aplicado: −
+              {montoLegible(orden.discount_cents, orden.currency)}
+            </span>
+            {!pagada && !procesando && (
+              <button
+                type="button"
+                disabled={pendiente}
+                onClick={quitarCupon}
+                className="text-neutral-500 underline hover:text-neutral-300 disabled:opacity-60"
+              >
+                Quitar
+              </button>
+            )}
           </p>
         )}
 
@@ -114,22 +137,37 @@ export function BloqueDePago({
             </p>
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              value={codigo}
-              onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-              placeholder="Código de descuento"
-              className="flex-1 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400"
-            />
-            <button
-              type="button"
-              disabled={pendiente || !codigo}
-              onClick={() => aplicar(codigo)}
-              className="rounded-xl border border-neutral-700 px-5 py-3 text-sm hover:bg-neutral-900 disabled:opacity-60"
-            >
-              {pendiente ? "…" : "Aplicar"}
-            </button>
-          </div>
+          {orden.discount_cents === 0 && (
+            <>
+              {mostrarCupon ? (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    autoFocus
+                    value={codigo}
+                    onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+                    placeholder="Código de descuento"
+                    className="flex-1 rounded-xl border border-neutral-700 bg-transparent px-4 py-3 outline-none focus:border-lime-400"
+                  />
+                  <button
+                    type="button"
+                    disabled={pendiente || !codigo}
+                    onClick={() => aplicar(codigo)}
+                    className="rounded-xl border border-neutral-700 px-5 py-3 text-sm hover:bg-neutral-900 disabled:opacity-60"
+                  >
+                    {pendiente ? "…" : "Aplicar"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMostrarCupon(true)}
+                  className="self-start text-sm text-lime-400 hover:underline"
+                >
+                  ¿Tenés un código de descuento?
+                </button>
+              )}
+            </>
+          )}
 
           {error && (
             <MensajeDeError>{error}</MensajeDeError>
