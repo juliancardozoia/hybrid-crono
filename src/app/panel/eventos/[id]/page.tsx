@@ -105,7 +105,7 @@ export default async function ResumenPage({
           titulo: "Workouts",
           cuenta: `${pruebas.length} workout(s)`,
           hecho: pruebas.length > 0,
-          opcional: true,
+          opcional: false,
         },
     {
       href: `/panel/eventos/${id}/atletas`,
