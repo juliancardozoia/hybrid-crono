@@ -66,6 +66,7 @@ export default async function PanelLayout({
           id: e.id,
           name: e.name,
           status: e.status,
+          format: e.format,
         }))}
         puedeJuzgar={mostrarJuzgar}
       />

@@ -7,7 +7,7 @@ import { Icono, type NombreDeIcono } from "@/shared/components/Icono";
 import { SelectorDeIdioma } from "@/shared/components/SelectorDeIdioma";
 import { MenuDeCuenta } from "@/features/catalogo/components/MenuDeCuenta";
 import type { Idioma } from "@/shared/i18n/idiomas";
-import type { EventStatus } from "@/lib/supabase/types";
+import type { EventFormat, EventStatus } from "@/lib/supabase/types";
 
 /**
  * El menu lateral del panel de organizador.
@@ -60,7 +60,10 @@ const CUENTA: Enlace[] = [
 ];
 
 /** Las secciones de una competencia abierta. */
-function seccionesDelEvento(id: string): {
+function seccionesDelEvento(
+  id: string,
+  esCrossfit: boolean,
+): {
   evento: Enlace[];
   administracion: Enlace[];
 } {
@@ -85,6 +88,16 @@ function seccionesDelEvento(id: string): {
       // CUALQUIER pantalla del evento, porque `base` es prefijo de todas.
       { href: base, label: "Config Competencia", icono: "pesa", exacto: true },
       { href: `${base}/atletas`, label: "Registro Atletas", icono: "personas" },
+      // SOLO CrossFit: una carrera hibrida no tiene nada que cargar a mano, el
+      // tiempo sale de cronometrar (ver el comentario de EventTabs.tsx sobre
+      // por que "Cargar" se saco de la barra de pestañas). La pantalla
+      // (`/scores`, GrillaDeScores) ya existia y funcionaba, pero no tenia
+      // NINGUN link que llevara ahi desde que se saco de esa barra -- quedo
+      // huerfana. Es justo la que necesita el plan gratuito para publicar
+      // resultados de WOD sin la app del juez en vivo.
+      ...(esCrossfit
+        ? [{ href: `${base}/scores`, label: "Cargar resultados", icono: "pesa" as NombreDeIcono }]
+        : []),
       // Dos cosas distintas que estaban en una: el leaderboard es el RESULTADO
       // —la tabla que ve el publico— y la verificacion es el TRABAJO sobre los
       // datos: recalcular, revisar anomalias, publicar lo oficial. Se entraba a
@@ -137,6 +150,7 @@ export interface EventoDelMenu {
   id: string;
   name: string;
   status: EventStatus;
+  format: EventFormat;
 }
 
 export function MenuLateral({
@@ -303,7 +317,10 @@ function BloqueDeEvento({
   pathname: string;
   alElegir: () => void;
 }) {
-  const { evento: secciones, administracion } = seccionesDelEvento(evento.id);
+  const { evento: secciones, administracion } = seccionesDelEvento(
+    evento.id,
+    evento.format === "crossfit",
+  );
 
   return (
     <div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-900/40 p-2">
