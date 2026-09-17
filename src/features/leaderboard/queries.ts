@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPublicClient } from "@/lib/supabase/public";
 import { buildScoreboard, type ScoreboardDivisionResult, type ScoreboardInput } from "@/shared/scoring/scoreboard";
+import { tablaDeDivision, type FilaDeEquipo, type TablaDeDivision } from "./lib/tabla";
 import type { Database } from "@/lib/supabase/database.types";
 import type { EventFormat, LaneStatus } from "@/lib/supabase/types";
 
@@ -202,5 +203,70 @@ export async function getTablaGeneral(
     soloCircuito: partes.length > 0 && partes.every((p) => p.timeScheme === "circuito"),
     official: Boolean(documento.event?.official),
     updatedAt: Date.now(),
+  };
+}
+
+/**
+ * El resultado de UN atleta puntual, sea cual sea el formato de la
+ * competencia. Nace de `/en-vivo/[slug]/atleta/[bib]` (esa pantalla armaba
+ * esto mismo a mano, buscando la fila del dorsal despues de traer TODO el
+ * evento) y se extrae aca para que el widget de "mis resultados" del panel
+ * pueda mostrar lo mismo sin reimplementar "que cuenta como la fila de este
+ * atleta" en un segundo lugar -- si cada pantalla lo resolviera por su
+ * cuenta, un dia podrian divergir en cual toman como la fila vigente de un
+ * equipo con corte de por medio.
+ *
+ * `null` es "sin resultados todavia" (el evento no es publico, el dorsal no
+ * existe, o todavia no hay ninguna fila cargada para el) -- el llamador
+ * decide que mostrar en ese caso, esta funcion no dictamina un mensaje.
+ */
+export type ResultadoDeAtleta =
+  | {
+      format: "crossfit";
+      eventName: string;
+      official: boolean;
+      tabla: TablaDeDivision;
+      fila: FilaDeEquipo;
+    }
+  | {
+      format: "circuito";
+      eventName: string;
+      official: boolean;
+      row: LeaderboardRow;
+      rivales: LeaderboardRow[];
+    }
+  | null;
+
+export async function getResultadoDeAtleta(
+  slug: string,
+  bib: number,
+  supabase: Cliente = createPublicClient(),
+): Promise<ResultadoDeAtleta> {
+  const info = await getEventInfo(slug, supabase);
+  if (!info) return null;
+
+  if (info.format === "crossfit") {
+    const datos = await getTablaGeneral(slug, supabase);
+    const entradaDelEquipo = datos.divisiones
+      .flatMap((d) => d.entries)
+      .find((e) => e.team.bib === bib);
+    const tabla = entradaDelEquipo ? tablaDeDivision(datos, entradaDelEquipo.team.divisionId) : null;
+    const fila = tabla?.filas.find((f) => f.teamId === entradaDelEquipo?.teamId);
+
+    if (!tabla || !fila) return null;
+    return { format: "crossfit", eventName: info.name, official: datos.official, tabla, fila };
+  }
+
+  const leaderboard = await getLeaderboard(slug, supabase);
+  const row = leaderboard.rows.find((r) => r.bib === bib);
+  if (!row) return null;
+
+  const rivales = leaderboard.rows.filter((r) => r.divisionName === row.divisionName);
+  return {
+    format: "circuito",
+    eventName: info.name,
+    official: leaderboard.official,
+    row,
+    rivales,
   };
 }

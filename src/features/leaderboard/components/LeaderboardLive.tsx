@@ -24,6 +24,7 @@ export function LeaderboardLive({
   eventName,
   compacto = false,
   categoria,
+  mostrarProyector = true,
 }: {
   slug: string;
   inicial: Leaderboard;
@@ -44,6 +45,13 @@ export function LeaderboardLive({
    * antes, con su propio estado y su propio selector.
    */
   categoria?: string;
+  /**
+   * "Ver en pantalla grande" es un atajo de PRODUCCION -- casteo al proyector
+   * del venue. Tiene sentido en `/en-vivo` (publico) y en el panel del
+   * organizador; no en un widget dentro del panel del ATLETA, que no tiene
+   * nada que proyectar. `true` por default para no tocar los usos existentes.
+   */
+  mostrarProyector?: boolean;
 }) {
   const [data, setData] = useState(inicial);
   const [division, setDivision] = useState<string | null>(null);
@@ -93,16 +101,18 @@ export function LeaderboardLive({
             <EstadoOficial official={data.official} />
           </div>
         )}
-        <Link
-          href={`/en-vivo/${slug}/proyector`}
-          className={
-            compacto
-              ? "shrink-0 text-sm text-neutral-500 hover:text-neutral-300"
-              : "mt-2 inline-block text-sm text-neutral-500 hover:text-neutral-300"
-          }
-        >
-          Ver en pantalla grande →
-        </Link>
+        {mostrarProyector && (
+          <Link
+            href={`/en-vivo/${slug}/proyector`}
+            className={
+              compacto
+                ? "shrink-0 text-sm text-neutral-500 hover:text-neutral-300"
+                : "mt-2 inline-block text-sm text-neutral-500 hover:text-neutral-300"
+            }
+          >
+            Ver en pantalla grande →
+          </Link>
+        )}
       </header>
 
       {data.rows.length === 0 ? (
