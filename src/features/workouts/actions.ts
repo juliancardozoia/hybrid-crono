@@ -36,7 +36,17 @@ function traducir(error: { code?: string; message?: string } | null): string {
   if (esLimiteDePlan(error)) return error.message ?? "Esto es del plan Pro.";
   if (error.code === "23505")
     return "Ya existe un registro con ese nombre o ese orden.";
-  if (error.code === "23503") return "Falta algo que este registro necesita.";
+  if (error.code === "23503") {
+    // Postgres distingue las dos violaciones de FK por el prefijo del mensaje:
+    // "insert or update on table X" es una referencia que falta (el caso de
+    // siempre); "update or delete on table X" es lo opuesto — algo MAS
+    // depende de este registro, tipico de borrar una prueba con heats ya
+    // armados. Devolver "falta algo que este registro necesita" en ese
+    // segundo caso es exactamente al reves de lo que paso.
+    if (error.message?.startsWith("update or delete on table"))
+      return "No se puede eliminar: todavía hay heats u otros registros que dependen de esto.";
+    return "Falta algo que este registro necesita.";
+  }
   if (error.code === "23514")
     return "Algún valor está fuera de rango para este tipo de prueba.";
   if (error.code === "42501") return "No tienes permiso para esta operación.";

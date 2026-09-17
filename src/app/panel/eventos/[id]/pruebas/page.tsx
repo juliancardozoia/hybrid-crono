@@ -75,7 +75,7 @@ export default async function PruebasPage({
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {pruebas.map(({ workout, parts }) => (
+          {pruebas.map(({ workout, parts, heatsAsignados }) => (
             <li
               key={workout.id}
               className="rounded-xl border border-lime-400/30 bg-neutral-900/40 p-4"
@@ -151,12 +151,21 @@ export default async function PruebasPage({
                       }
                       className="rounded-xl border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-600 disabled:opacity-60"
                     />
-                    <QuitarPrueba
-                      eventId={id}
-                      workoutId={workout.id}
-                      label={workout.name}
-                      eliminar={quitar}
-                    />
+                    {heatsAsignados > 0 ? (
+                      <span
+                        className="px-2 py-1 text-xs text-neutral-600"
+                        title="No se puede eliminar: ya tiene heats asignados"
+                      >
+                        {heatsAsignados} heat{heatsAsignados === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <QuitarPrueba
+                        eventId={id}
+                        workoutId={workout.id}
+                        label={workout.name}
+                        eliminar={quitar}
+                      />
+                    )}
                   </div>
                 )}
               </div>

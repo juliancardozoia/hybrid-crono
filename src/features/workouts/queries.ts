@@ -22,19 +22,30 @@ import type {
 export interface PruebaConPartes {
   workout: WorkoutRow;
   parts: WorkoutPartRow[];
+  /** Cuantos heats ya corren esta prueba. `heats.workout_id` es `on delete
+   * restrict`, asi que una prueba con al menos un heat no se puede borrar —
+   * ver `heatsAsignados` en QuitarPrueba. */
+  heatsAsignados: number;
 }
 
 export async function getPruebas(eventId: string): Promise<PruebaConPartes[]> {
   const supabase = await createClient();
 
-  const [{ data: workouts }, { data: parts }] = await Promise.all([
+  const [{ data: workouts }, { data: parts }, { data: heats }] = await Promise.all([
     supabase.from("workouts").select("*").eq("event_id", eventId).order("order_index"),
     supabase.from("workout_parts").select("*").eq("event_id", eventId).order("order_index"),
+    supabase.from("heats").select("workout_id").eq("event_id", eventId),
   ]);
+
+  const heatsPorPrueba = new Map<string, number>();
+  for (const h of heats ?? []) {
+    heatsPorPrueba.set(h.workout_id, (heatsPorPrueba.get(h.workout_id) ?? 0) + 1);
+  }
 
   return (workouts ?? []).map((workout) => ({
     workout,
     parts: (parts ?? []).filter((p) => p.workout_id === workout.id),
+    heatsAsignados: heatsPorPrueba.get(workout.id) ?? 0,
   }));
 }
 
