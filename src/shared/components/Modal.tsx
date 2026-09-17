@@ -59,7 +59,17 @@ export function Modal({
       // `margin: auto` — pero el preflight de Tailwind resetea TODOS los
       // margenes a 0 por defecto, asi que sin esto el dialogo queda pegado a
       // una esquina en vez de centrado.
-      className={`m-auto w-full ${ancho} rounded-2xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 backdrop:bg-black/70`}
+      //
+      // `whitespace-normal` es obligatorio, no cosmetico: `showModal()` saca
+      // el `<dialog>` al "top layer" del navegador para PINTARLO arriba de
+      // todo, pero eso no lo saca del arbol del DOM ni de la cascada de CSS —
+      // sigue siendo hijo de donde React lo monto. Un modal de confirmacion
+      // que vive dentro de una celda de tabla con `whitespace-nowrap` (la
+      // columna de acciones de `GrillaDeAtletas`, por ejemplo) HEREDABA ese
+      // `nowrap`, asi que el mensaje se pintaba en una sola linea sin
+      // envolver, mas ancho que el propio dialogo, con scroll horizontal de
+      // toda la pagina para verlo entero. Bug real, reportado con captura.
+      className={`m-auto w-full ${ancho} whitespace-normal rounded-2xl border border-neutral-800 bg-neutral-950 p-0 text-neutral-100 backdrop:bg-black/70`}
     >
       <div className="flex items-center justify-between gap-3 border-b border-neutral-800 p-4">
         <h3 className="font-semibold">{titulo}</h3>
@@ -73,7 +83,16 @@ export function Modal({
         </button>
       </div>
 
-      <div className="max-h-[75vh] overflow-y-auto p-5">{children}</div>
+      {/* `overflow-x-hidden` es obligatorio junto a `overflow-y-auto`, no
+          cosmetico: la especificacion de CSS dice que si un eje tiene un
+          overflow distinto de `visible` y el otro se deja en `visible` (el
+          default), el navegador fuerza AL OTRO EJE tambien a `auto` — asi
+          que sin esto, cualquier contenido que por lo que sea no llegara a
+          envolver a tiempo (un reflow intermedio, un modal que se abre antes
+          de que el layout se asiente) le agregaba una barra de scroll
+          HORIZONTAL a los modales, ademas de la vertical que si se
+          buscaba. Bug real, reportado con captura en "Quitar atleta/equipo". */}
+      <div className="max-h-[75vh] overflow-x-hidden overflow-y-auto p-5">{children}</div>
     </dialog>
   );
 }
