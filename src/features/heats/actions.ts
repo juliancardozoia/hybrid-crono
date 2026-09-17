@@ -7,7 +7,9 @@ import {
 } from "@/features/events/lib/access";
 import { createClient } from "@/lib/supabase/server";
 import type { HeatInsert, HeatInsertConTrigger } from "@/lib/supabase/types";
+import type { Json } from "@/lib/supabase/database.types";
 import { errorIncluye } from "@/shared/utils/matchError";
+import { tiempoAMs } from "@/shared/utils/tiempo";
 import { recomputeLanes } from "@/features/verification/lib/recompute";
 
 export interface FormState {
@@ -386,6 +388,95 @@ export async function marcarDnf(eventId: string, laneId: string): Promise<FormSt
   });
 
   if (error) return { error: "No se pudo marcar el DNF." };
+
+  await recomputeLanes({ laneId });
+  refrescar(eventId);
+  return { error: null };
+}
+
+/**
+ * Carga manual del tiempo de un carril de circuito, para el organizador que
+ * no cronometro en vivo con el celular del juez (o que solo tiene el tiempo
+ * final de una planilla de papel).
+ *
+ * NO ES UN REEMPLAZO del cronometro en vivo — ese sigue disponible igual que
+ * siempre, en los dos planes (ver CLAUDE.md, "El plan corta por
+ * VISIBILIDAD"). Es un camino ADICIONAL para cuando no se usa un celular por
+ * carril, y pasa por EL MISMO lugar que cualquier otro marcaje
+ * (`ingest_timing_events` + `recomputeLanes`) — mismo criterio que
+ * `marcarDnf`: nunca se escribe `results` a mano.
+ *
+ * Dos modos, elegidos por el campo `modo` del formulario:
+ *  - "estaciones": un tiempo por segmento del circuito (`estacion_0`,
+ *    `estacion_1`, ...), en el ORDEN del circuito. Se convierten en
+ *    `segment_split` de siempre, uno por segmento — el reductor no necesita
+ *    saber que vinieron de un formulario y no de un celular, y el atleta
+ *    conserva sus parciales por estacion.
+ *  - "total": solo el tiempo final, cuando no hay parciales por estacion. Se
+ *    emite un unico `manual_finish` (ver reducer.ts) con ese elapsed.
+ */
+export async function cargarTiempoManual(
+  eventId: string,
+  laneId: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const access = await requireEventAccess(eventId);
+  if (!access.canVerify) return { error: "No tienes permiso para esto." };
+
+  const base = {
+    laneId,
+    segmentId: null,
+    payload: {},
+    deviceId: "panel-organizador",
+    clientCapturedAt: Date.now(),
+    supersedesId: null,
+  };
+
+  // La largada va SIEMPRE: sin ella el carril queda "sin iniciar" aunque
+  // tenga un tiempo cargado — ver la garantia que documenta reducer.ts.
+  // `seq` empieza en 1: la tabla exige `seq > 0`.
+  const eventos: Json[] = [
+    { ...base, id: crypto.randomUUID(), seq: 1, type: "lane_start", elapsedMs: 0 },
+  ];
+
+  if (formData.get("modo") === "total") {
+    const totalMs = tiempoAMs(String(formData.get("total") ?? ""));
+    if (totalMs === null) {
+      return { error: "No entendí ese tiempo. Usá el formato mm:ss (o hh:mm:ss)." };
+    }
+    eventos.push({ ...base, id: crypto.randomUUID(), seq: 2, type: "manual_finish", elapsedMs: totalMs });
+  } else {
+    const duracionesMs: number[] = [];
+    for (let i = 0; formData.has(`estacion_${i}`); i += 1) {
+      const ms = tiempoAMs(String(formData.get(`estacion_${i}`) ?? ""));
+      if (ms === null) {
+        return { error: `No entendí el tiempo de la estación ${i + 1}. Usá el formato mm:ss.` };
+      }
+      duracionesMs.push(ms);
+    }
+    if (duracionesMs.length === 0) return { error: "Cargá al menos un tiempo." };
+
+    // El n-esimo split cierra el n-esimo segmento (ver reducer.ts): el
+    // elapsed de cada evento es ACUMULADO, no la duracion suelta de esa
+    // estacion. `seq` arranca en 2 -- el 1 ya lo usa el lane_start, y hay un
+    // indice unico por (lane_id, device_id, seq).
+    let acumuladoMs = 0;
+    duracionesMs.forEach((duracion, i) => {
+      acumuladoMs += duracion;
+      eventos.push({
+        ...base,
+        id: crypto.randomUUID(),
+        seq: i + 2,
+        type: "segment_split",
+        elapsedMs: acumuladoMs,
+      });
+    });
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("ingest_timing_events", { p_events: eventos });
+  if (error) return { error: "No se pudo cargar el tiempo." };
 
   await recomputeLanes({ laneId });
   refrescar(eventId);

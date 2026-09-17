@@ -369,3 +369,64 @@ describe("rankResults", () => {
     expect(ranked[0].laneId).toBe("adelante");
   });
 });
+
+describe("reduceLaneEvents - manual_finish (carga manual del total)", () => {
+  const manual = (elapsedMs: number) => ev({ type: "manual_finish", elapsedMs });
+
+  it("con largada y el total cargado a mano, termina con ese tiempo", () => {
+    const r = reduceLaneEvents("lane-1", [start(), manual(720_000)], SEGMENTS);
+    expect(r.status).toBe("finished");
+    expect(r.rawMs).toBe(720_000);
+    expect(r.totalMs).toBe(720_000);
+    expect(r.splits).toHaveLength(0);
+    expect(r.nextSegmentIndex).toBeNull();
+  });
+
+  it("sin largada, el total cargado a mano no alcanza -- sigue sin arrancar", () => {
+    // La accion que carga el tiempo a mano siempre manda los dos eventos
+    // juntos; este test documenta por que hace falta el lane_start.
+    const r = reduceLaneEvents("lane-1", [manual(720_000)], SEGMENTS);
+    expect(r.status).toBe("not_started");
+    expect(r.totalMs).toBeNull();
+  });
+
+  it("splits reales COMPLETOS le ganan a un manual_finish sobrante", () => {
+    // El log es la verdad: si el circuito se cerro con marcajes reales, esos
+    // deciden el total aunque por algun motivo tambien exista un evento
+    // manual (nunca deberian coexistir desde la UI, pero el reductor no
+    // depende de esa garantia).
+    const events = [start(), split(300_000), split(480_000), split(800_000), split(950_000), manual(999_000)];
+    const r = reduceLaneEvents("lane-1", events, SEGMENTS);
+    expect(r.status).toBe("finished");
+    expect(r.rawMs).toBe(950_000);
+  });
+
+  it("splits reales INCOMPLETOS no le ganan a un manual_finish", () => {
+    // Un juez dejo un par de marcajes sueltos y el organizador cerro el
+    // carril con el tiempo total de la planilla: el total manual manda.
+    const r = reduceLaneEvents("lane-1", [start(), split(300_000), manual(950_000)], SEGMENTS);
+    expect(r.status).toBe("finished");
+    expect(r.rawMs).toBe(950_000);
+  });
+
+  it("una penalizacion se sigue sumando arriba del total cargado a mano", () => {
+    const r = reduceLaneEvents(
+      "lane-1",
+      [start(), manual(720_000), penalty(720_000, 10)],
+      SEGMENTS,
+    );
+    expect(r.rawMs).toBe(720_000);
+    expect(r.penaltyMs).toBe(10_000);
+    expect(r.totalMs).toBe(730_000);
+  });
+
+  it("un DNF le sigue ganando a un manual_finish", () => {
+    const r = reduceLaneEvents(
+      "lane-1",
+      [start(), manual(720_000), ev({ type: "dnf", elapsedMs: 500_000 })],
+      SEGMENTS,
+    );
+    expect(r.status).toBe("dnf");
+    expect(r.totalMs).toBeNull();
+  });
+});

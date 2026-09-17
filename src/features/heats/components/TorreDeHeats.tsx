@@ -11,6 +11,7 @@ import { Selector } from "@/shared/components/Selector";
 import { Modal } from "@/shared/components/Modal";
 import { RelojDeHeat } from "./RelojDeHeat";
 import { Pestanas } from "./PestanasDePrueba";
+import { CargarTiempoManual, type SegmentoDeCircuito } from "./CargarTiempoManual";
 
 export interface CarrilVista {
   laneId: string;
@@ -25,6 +26,13 @@ export interface CarrilVista {
   eventCount: number;
   /** Tiene atleta, el heat largó y todavía no está en un estado terminal. */
   puedeMarcarDnf: boolean;
+  /**
+   * Tiene atleta, es un circuito, y todavía no tiene NINGÚN marcaje —cargar
+   * un tiempo a mano encima de marcajes reales produciría splits sin
+   * sentido, así que el botón desaparece en cuanto el carril tiene el
+   * primero.
+   */
+  puedeCargarManual: boolean;
 }
 
 export interface HeatVista {
@@ -80,9 +88,11 @@ export function TorreDeHeats({
   pruebas,
   etapasConfirmadas,
   heats,
+  segmentosPorDivision,
   largar,
   deshacer,
   marcarDnfAccion,
+  cargarTiempoManualAccion,
 }: {
   eventId: string;
   timezone: string;
@@ -96,9 +106,16 @@ export function TorreDeHeats({
   /** Etapas con corte YA confirmado (ver el mismo prop en /heats). */
   etapasConfirmadas: number[];
   heats: HeatVista[];
+  /**
+   * Los segmentos del circuito de cada categoría, por `divisionId` — los
+   * necesita la carga manual de tiempo para ofrecer un campo por estación.
+   * Objeto plano, no `Map`: no cruza bien la frontera servidor→cliente.
+   */
+  segmentosPorDivision: Record<string, SegmentoDeCircuito[]>;
   largar: AccionHeat;
   deshacer: AccionHeat;
   marcarDnfAccion: AccionCarril;
+  cargarTiempoManualAccion: AccionCarril;
 }) {
   const confirmadas = useMemo(() => new Set(etapasConfirmadas), [etapasConfirmadas]);
 
@@ -291,9 +308,11 @@ export function TorreDeHeats({
                       timezone={timezone}
                       formato={formato}
                       heat={heat}
+                      segmentos={segmentosPorDivision[heat.divisionId ?? ""] ?? []}
                       largar={largar}
                       deshacer={deshacer}
                       marcarDnfAccion={marcarDnfAccion}
+                      cargarTiempoManualAccion={cargarTiempoManualAccion}
                     />
                   ))}
                 </section>
@@ -336,9 +355,11 @@ export function TorreDeHeats({
                       timezone={timezone}
                       formato={formato}
                       heat={heat}
+                      segmentos={segmentosPorDivision[heat.divisionId ?? ""] ?? []}
                       largar={largar}
                       deshacer={deshacer}
                       marcarDnfAccion={marcarDnfAccion}
+                      cargarTiempoManualAccion={cargarTiempoManualAccion}
                     />
                   ))}
                 </div>
@@ -367,17 +388,21 @@ function TarjetaDeHeat({
   timezone,
   formato,
   heat,
+  segmentos,
   largar,
   deshacer,
   marcarDnfAccion,
+  cargarTiempoManualAccion,
 }: {
   eventId: string;
   timezone: string;
   formato: EventFormat;
   heat: HeatVista;
+  segmentos: SegmentoDeCircuito[];
   largar: AccionHeat;
   deshacer: AccionHeat;
   marcarDnfAccion: AccionCarril;
+  cargarTiempoManualAccion: AccionCarril;
 }) {
   const enCurso = Boolean(heat.startedAt) && !heat.endedAt;
 
@@ -491,6 +516,16 @@ function TarjetaDeHeat({
                   )}
                 </p>
               </div>
+
+              {lane.puedeCargarManual && (
+                <CargarTiempoManual
+                  eventId={eventId}
+                  laneId={lane.laneId}
+                  nombreCarril={lane.athletes ?? lane.teamLabel ?? `carril ${lane.laneNumber}`}
+                  segmentos={segmentos}
+                  accion={cargarTiempoManualAccion}
+                />
+              )}
 
               {lane.puedeMarcarDnf && (
                 <ConfirmarDnf eventId={eventId} lane={lane} marcarDnfAccion={marcarDnfAccion} />

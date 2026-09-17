@@ -8,7 +8,7 @@ import {
 } from "@/features/events/lib/access";
 import { recomputeStandings } from "@/features/verification/lib/standings";
 import { esLimiteDePlan } from "@/features/planes/lib/errores";
-import { tiempoAMs } from "./lib/tiempo";
+import { tiempoAMs } from "@/shared/utils/tiempo";
 import { celdasEnKilos, type CeldaDeSpec } from "./lib/pesos";
 import { aKilos } from "@/shared/unidades/carga";
 import type {

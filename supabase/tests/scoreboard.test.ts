@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { asAnon, asAdmin, asUser } from "./harness";
+import { asAnon, asAdmin, asUser, createUser } from "./harness";
 import { seedScenario, type Scenario } from "./fixtures";
 
 let s: Scenario;
@@ -487,5 +487,106 @@ describe("el gate del plan, aplicado en Postgres", () => {
     const texto = JSON.stringify(doc);
     expect(texto).not.toContain("@box.com");
     expect(texto).not.toContain(s.orgId);
+  });
+});
+
+describe("el atleta ve su propio resultado sin importar el plan", () => {
+  /** Inscribe a un usuario nuevo como integrante de una inscripcion en la
+   *  categoria del fixture -- el mismo camino que ya usan divisions_read,
+   *  events_read y teams_read para "un atleta tambien puede leer su propia
+   *  competencia". */
+  async function inscribirAtleta(): Promise<string> {
+    const atletaId = await createUser(s.db, "atleta.inscripto@test.com");
+    await asAdmin(s.db, async () => {
+      const reg = await s.db.query<{ id: string }>(
+        "insert into registrations (event_id, division_id, created_by) values ($1, $2, $3) returning id",
+        [s.eventId, s.divisionId, atletaId],
+      );
+      await s.db.query(
+        `insert into registration_members (registration_id, event_id, position, profile_id, invited_email)
+         values ($1, $2, 1, $3, 'atleta.inscripto@test.com')`,
+        [reg.rows[0].id, s.eventId, atletaId],
+      );
+    });
+    return atletaId;
+  }
+
+  async function comoAtleta(atletaId: string): Promise<Documento | null> {
+    let doc: Documento | null = null;
+    await asUser(s.db, atletaId, async () => {
+      const res = await s.db.query<{ public_scoreboard: Documento | null }>(
+        "select public_scoreboard($1)",
+        ["copa-test"],
+      );
+      doc = res.rows[0].public_scoreboard;
+    });
+    return doc;
+  }
+
+  it("plan gratuito, evento ni siquiera publicado: el inscripto ve el documento completo", async () => {
+    await setPlan("free");
+    await setStatus("live");
+    const atletaId = await inscribirAtleta();
+
+    const doc = await comoAtleta(atletaId);
+    expect(doc).not.toBeNull();
+    expect(doc!.detalle).toBe(true);
+    expect(doc!.teams).toHaveLength(3);
+  });
+
+  it("plan gratuito, evento todavia en 'ready' (nunca se largo un heat): el inscripto igual lo ve", async () => {
+    // El caso de una competencia cargada 100% a mano, donde `events.status`
+    // nunca lo mueve `start_heat()`.
+    await setPlan("free");
+    await setStatus("ready");
+    const atletaId = await inscribirAtleta();
+
+    const doc = await comoAtleta(atletaId);
+    expect(doc).not.toBeNull();
+  });
+
+  it("un autenticado que NO esta inscripto en el evento sigue sujeto al gate de siempre", async () => {
+    await setPlan("free");
+    await setStatus("live");
+    let doc: Documento | null = null;
+    await asUser(s.db, s.users.forastero, async () => {
+      const res = await s.db.query<{ public_scoreboard: Documento | null }>(
+        "select public_scoreboard($1)",
+        ["copa-test"],
+      );
+      doc = res.rows[0].public_scoreboard;
+    });
+    expect(doc).toBeNull();
+  });
+
+  it("public_leaderboard: el inscripto lo ve aunque el heat nunca haya largado", async () => {
+    await setPlan("free");
+    await setStatus("ready");
+    const atletaId = await inscribirAtleta();
+
+    let filas: unknown[] = [];
+    await asUser(s.db, atletaId, async () => {
+      const res = await s.db.query("select * from public_leaderboard('copa-test')");
+      filas = res.rows;
+    });
+    // Sin resultados cargados la lista viene vacia igual (no hay filas en
+    // `results`), pero la LLAMADA no se corta por el status del evento -- es
+    // lo unico que este test puede verificar sin cargar un resultado.
+    expect(filas).toEqual([]);
+  });
+
+  it("public_event_info: el inscripto ve el evento y su formato aunque no este publicado", async () => {
+    await setPlan("free");
+    await setStatus("ready");
+    const atletaId = await inscribirAtleta();
+
+    let fila: { format: string } | undefined;
+    await asUser(s.db, atletaId, async () => {
+      const res = await s.db.query<{ format: string }>(
+        "select format from public_event_info('copa-test')",
+      );
+      fila = res.rows[0];
+    });
+    expect(fila?.format).toBe("carrera_hibrida");
   });
 });

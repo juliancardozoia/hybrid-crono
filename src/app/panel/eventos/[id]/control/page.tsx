@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getDivisions, getHeats, getJudges } from "@/features/events/config/queries";
+import { getDivisions, getHeats, getJudges, getSegments } from "@/features/events/config/queries";
 import { getEtapasConCorteConfirmado, getPruebas } from "@/features/workouts/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import {
   cancelHeatStart,
+  cargarTiempoManual,
   marcarDnf,
   startHeat,
   type FormState,
@@ -12,6 +13,7 @@ import {
 import { estaPendienteDeVerificar } from "@/features/verification/lib/estado";
 import { getVerificationQueue } from "@/features/verification/queries";
 import { TorreDeHeats, type HeatVista } from "@/features/heats/components/TorreDeHeats";
+import type { SegmentoDeCircuito } from "@/features/heats/components/CargarTiempoManual";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,29 @@ export default async function ControlPage({
   const porCarril = new Map(cola.map((c) => [c.laneId, c]));
   const porJuez = new Map(judges.map((j) => [j.userId, j.label]));
   const nombreDivision = new Map(divisiones.map((d) => [d.id, d.name]));
+
+  // Los segmentos del circuito de cada categoria, para la carga manual de
+  // tiempo (le hace falta un campo por estacion). Solo en carrera hibrida:
+  // un CrossFit no tiene circuito y ya tiene su propia carga manual de WOD.
+  // Objeto plano por `divisionId`, no Map -- no cruza bien la frontera hacia
+  // el componente de cliente.
+  const segmentosPorDivision: Record<string, SegmentoDeCircuito[]> = {};
+  if (event.format === "carrera_hibrida") {
+    const plantillas = [
+      ...new Set(divisiones.map((d) => d.course_template_id).filter((x): x is string => Boolean(x))),
+    ];
+    const listas = await Promise.all(plantillas.map((templateId) => getSegments(templateId)));
+    const porPlantilla = new Map(plantillas.map((templateId, i) => [templateId, listas[i]]));
+
+    for (const d of divisiones) {
+      if (!d.course_template_id) continue;
+      segmentosPorDivision[d.id] = (porPlantilla.get(d.course_template_id) ?? []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        orderIndex: s.order_index,
+      }));
+    }
+  }
 
   // Mismo patron que /heats: el nombre de la prueba se trae plano y se une en
   // memoria, sin agregar un embed `workouts (name)` al ya pesado `getHeats`.
@@ -109,6 +134,14 @@ export default async function ControlPage({
           puedeMarcarDnf: Boolean(
             lane.team_id && heat.started_at && !heat.ended_at && !terminado,
           ),
+          // Solo mientras el carril no tenga NINGUN marcaje: cargar un
+          // tiempo a mano encima de marcajes reales produciria splits sin
+          // sentido (ver el comentario del prop en TorreDeHeats.tsx). No
+          // exige que el heat haya largado -- es justo el camino para el
+          // organizador que nunca uso el celular del juez.
+          puedeCargarManual: Boolean(
+            lane.team_id && event.format === "carrera_hibrida" && (info?.eventCount ?? 0) === 0,
+          ),
         };
       }),
     };
@@ -164,9 +197,11 @@ export default async function ControlPage({
         pruebas={nombresDePruebas}
         etapasConfirmadas={[...etapasConfirmadas]}
         heats={heatsVista}
+        segmentosPorDivision={segmentosPorDivision}
         largar={largar}
         deshacer={deshacer}
         marcarDnfAccion={marcarDnfAccion}
+        cargarTiempoManualAccion={cargarTiempoManual}
       />
     </div>
   );

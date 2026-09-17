@@ -1,0 +1,12 @@
+-- Carga manual del tiempo TOTAL de un circuito, para el organizador que no
+-- cronometro en vivo con la app del juez -- el cronometro en vivo NO se toca
+-- ni se gatea por plan (ver CLAUDE.md, "El plan corta por VISIBILIDAD"): esto
+-- es un camino ADICIONAL, nunca un reemplazo.
+--
+-- Mismo criterio que 20260901100500_marcajes_de_wod.sql: se agrega SOLO un
+-- valor al enum, la tabla `timing_events` no cambia ni una columna ni un
+-- privilegio, y `ingest_timing_events` acepta el tipo nuevo sin tocarse porque
+-- castea contra este enum. El reductor (`src/shared/timing/reducer.ts`) es
+-- quien le da sentido: con `manual_finish`, `elapsedMs` ES el tiempo total,
+-- sin exigir un `segment_split` por cada estacion del circuito.
+alter type public.timing_event_type add value if not exists 'manual_finish';

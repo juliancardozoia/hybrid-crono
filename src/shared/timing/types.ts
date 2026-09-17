@@ -18,6 +18,15 @@ export type TimingEventType =
   // proposito: existe para que quede en el log y la organizacion la lea al
   // verificar.
   | "note"
+  // Carga manual del TIEMPO TOTAL de un circuito, sin pasar por el celular
+  // del juez -- para el organizador que no cronometro en vivo (o que solo
+  // tiene el tiempo final de una planilla de papel). `elapsedMs` ES el tiempo
+  // total: el reductor lo usa igual que usaria el ultimo `segment_split`, sin
+  // exigir que existan marcajes por estacion. Cuando SI hay tiempos por
+  // estacion, la carga manual los manda como `segment_split` de siempre y
+  // este evento no hace falta -- es el fallback para cuando no hay nada mas
+  // que el total.
+  | "manual_finish"
   // --- Marcajes de un WOD de CrossFit ---------------------------------------
   //
   // Comparten tabla, idempotencia, ancla y outbox con los del circuito: un

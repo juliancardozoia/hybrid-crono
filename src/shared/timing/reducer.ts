@@ -71,6 +71,11 @@ export function reduceLaneEvents(
     (e) => e.type === "dq" || (e.type === "penalty" && asPenalty(e)?.kind === "dq"),
   );
   const dnfEvent = active.find((e) => e.type === "dnf");
+  // Carga manual del total (sin marcajes por estacion): ver el comentario del
+  // tipo en types.ts. Si el mismo carril ademas tiene splits reales, esos
+  // siguen contando -- pero en ese caso no hace falta este evento, y no se
+  // emiten los dos juntos desde la accion que carga el tiempo a mano.
+  const manualFinishEvent = active.find((e) => e.type === "manual_finish");
 
   // Splits: el n-esimo marcaje cierra el n-esimo segmento del circuito.
   const splitEvents = active.filter((e) => e.type === "segment_split");
@@ -138,7 +143,14 @@ export function reduceLaneEvents(
     .filter((p) => p.kind === "time_add")
     .reduce((sum, p) => sum + p.seconds * 1000, 0);
 
-  const completed = splits.length >= orderedSegments.length && orderedSegments.length > 0;
+  // Completo "de verdad" es haber cerrado TODOS los segmentos con marcajes
+  // reales -- eso es siempre la fuente de verdad cuando existe. La carga
+  // manual del total es el FALLBACK: solo decide cuando los splits reales no
+  // alcanzan a completar el circuito (lo normal es que en ese caso no haya
+  // ninguno, pero si un juez dejo algunos sueltos, esos no pueden ganarle a
+  // un total que el organizador cargo a proposito para cerrar el carril).
+  const completoPorSegmentos = splits.length >= orderedSegments.length && orderedSegments.length > 0;
+  const completed = completoPorSegmentos || manualFinishEvent !== undefined;
 
   let status: LaneStatus;
   if (dqEvent) status = "dq";
@@ -147,7 +159,10 @@ export function reduceLaneEvents(
   else if (completed) status = "finished";
   else status = "running";
 
-  const rawMs = status === "finished" ? splits[splits.length - 1].cumulativeMs : null;
+  const rawMs =
+    status === "finished"
+      ? (completoPorSegmentos ? splits[splits.length - 1].cumulativeMs : (manualFinishEvent?.elapsedMs ?? null))
+      : null;
 
   // El reloj se congela en el instante en que el carril dejo de correr. Sin esto,
   // un carril en DNF mostraria el tiempo vivo y el numero cambiaria en pantalla.

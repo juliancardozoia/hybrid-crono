@@ -1,6 +1,10 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPublicClient } from "@/lib/supabase/public";
 import { buildScoreboard, type ScoreboardDivisionResult, type ScoreboardInput } from "@/shared/scoring/scoreboard";
-import type { LaneStatus } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/database.types";
+import type { EventFormat, LaneStatus } from "@/lib/supabase/types";
+
+type Cliente = SupabaseClient<Database>;
 
 export interface LeaderboardSplit {
   segmentName: string;
@@ -61,9 +65,22 @@ function mapSplits(raw: unknown): LeaderboardSplit[] {
   });
 }
 
-/** Leaderboard publico de un evento. Vacio si el evento no esta en vivo ni publicado. */
-export async function getLeaderboard(slug: string): Promise<Leaderboard> {
-  const supabase = createPublicClient();
+/**
+ * Leaderboard publico de un evento. Vacio si el evento no esta en vivo ni
+ * publicado.
+ *
+ * Acepta un cliente OPCIONAL: por default es el anonimo (el leaderboard
+ * publico se ve igual para todos, ver `createPublicClient`), pero
+ * `/en-vivo/[slug]/atleta/[bib]` le pasa el cliente con sesion para que un
+ * inscripto o un staff del evento desbloqueen su propio resultado sin
+ * importar el plan (el gate para ESE caso vive en Postgres, en
+ * `puede_ver_resultados_propios` -- ver la migracion
+ * `20260921100000_resultados_propios_sin_gate.sql`).
+ */
+export async function getLeaderboard(
+  slug: string,
+  supabase: Cliente = createPublicClient(),
+): Promise<Leaderboard> {
   const { data, error } = await supabase.rpc("public_leaderboard", { p_public_slug: slug });
 
   if (error || !data) {
@@ -102,12 +119,21 @@ export interface EventInfo {
   name: string;
   venue: string | null;
   eventDate: string | null;
+  format: EventFormat;
   official: boolean;
 }
 
-/** Cabecera del evento. null si el evento no es publico todavia. */
-export async function getEventInfo(slug: string): Promise<EventInfo | null> {
-  const supabase = createPublicClient();
+/**
+ * Cabecera del evento. null si el evento no es publico todavia.
+ *
+ * Mismo cliente opcional que `getLeaderboard`: por default el anonimo, y
+ * `atleta/[bib]` le pasa el de sesion para que el propio inscripto vea el
+ * evento aunque todavia no haya llegado a 'live'.
+ */
+export async function getEventInfo(
+  slug: string,
+  supabase: Cliente = createPublicClient(),
+): Promise<EventInfo | null> {
   const { data, error } = await supabase.rpc("public_event_info", { p_public_slug: slug });
 
   const fila = (data as unknown as Array<Record<string, unknown>> | null)?.[0];
@@ -117,6 +143,7 @@ export async function getEventInfo(slug: string): Promise<EventInfo | null> {
     name: String(fila.name ?? ""),
     venue: (fila.venue as string | null) ?? null,
     eventDate: (fila.event_date as string | null) ?? null,
+    format: fila.format as EventFormat,
     official: Boolean(fila.official),
   };
 }
@@ -155,9 +182,13 @@ const VACIA: TablaGeneral = {
  * gratuito public_scoreboard devuelve null hasta que el evento se publica: el
  * gate vive en Postgres, no en este archivo, asi que no se puede saltear
  * leyendo la respuesta.
+ *
+ * Mismo cliente opcional que `getLeaderboard`/`getEventInfo` -- ver ahi.
  */
-export async function getTablaGeneral(slug: string): Promise<TablaGeneral> {
-  const supabase = createPublicClient();
+export async function getTablaGeneral(
+  slug: string,
+  supabase: Cliente = createPublicClient(),
+): Promise<TablaGeneral> {
   const { data, error } = await supabase.rpc("public_scoreboard", { p_public_slug: slug });
 
   if (error || !data) return { ...VACIA, updatedAt: Date.now() };

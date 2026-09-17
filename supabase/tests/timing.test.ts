@@ -97,6 +97,75 @@ describe("ingest_timing_events - idempotencia", () => {
       expect(res.rows.map((r) => r.accepted)).toEqual([false, true]);
     });
   });
+
+  it("acepta manual_finish -- la carga manual de tiempo del organizador", async () => {
+    // El enum se extiende por migracion (20260922100000_carga_manual_de_circuito),
+    // igual que los tipos del reductor de WODs: este test confirma que el
+    // cast contra el enum realmente acepta el valor nuevo, no solo que el
+    // reductor en TypeScript sepa interpretarlo.
+    await asUser(s.db, s.users.owner, async () => {
+      const res = await s.db.query<{ accepted: boolean }>(
+        "select accepted from ingest_timing_events($1::jsonb)",
+        [
+          lote(
+            marcaje({ id: randomUUID(), laneId: lane, seq: 1, type: "lane_start" }),
+            marcaje({ id: randomUUID(), laneId: lane, seq: 2, type: "manual_finish", elapsedMs: 720_000 }),
+          ),
+        ],
+      );
+      expect(res.rows.map((r) => r.accepted)).toEqual([true, true]);
+    });
+  });
+
+  it("la carga manual por estacion no choca con el indice unico (lane_id, device_id, seq)", async () => {
+    // Mismo `deviceId` ("panel-organizador") para TODO el lote de
+    // cargarTiempoManual: un lane_start en seq 1 y despues un segment_split
+    // por estacion. Si alguno repitiera seq con el mismo device_id, el indice
+    // unico de la tabla lo rechaza -- este test es el que hubiera atrapado
+    // ese bug antes de llegar a produccion.
+    await asUser(s.db, s.users.owner, async () => {
+      const eventos = [
+        marcaje({ id: randomUUID(), laneId: lane, seq: 1, type: "lane_start", deviceId: "panel-organizador" }),
+        marcaje({
+          id: randomUUID(),
+          laneId: lane,
+          seq: 2,
+          type: "segment_split",
+          elapsedMs: 300_000,
+          deviceId: "panel-organizador",
+        }),
+        marcaje({
+          id: randomUUID(),
+          laneId: lane,
+          seq: 3,
+          type: "segment_split",
+          elapsedMs: 480_000,
+          deviceId: "panel-organizador",
+        }),
+        marcaje({
+          id: randomUUID(),
+          laneId: lane,
+          seq: 4,
+          type: "segment_split",
+          elapsedMs: 800_000,
+          deviceId: "panel-organizador",
+        }),
+        marcaje({
+          id: randomUUID(),
+          laneId: lane,
+          seq: 5,
+          type: "segment_split",
+          elapsedMs: 950_000,
+          deviceId: "panel-organizador",
+        }),
+      ];
+      const res = await s.db.query<{ accepted: boolean }>(
+        "select accepted from ingest_timing_events($1::jsonb)",
+        [JSON.stringify(eventos)],
+      );
+      expect(res.rows.every((r) => r.accepted)).toBe(true);
+    });
+  });
 });
 
 describe("ingest_timing_events - autoria", () => {
@@ -373,7 +442,7 @@ describe("public_event_info", () => {
     await asAnon(s.db, async () => {
       const res = await s.db.query("select * from public_event_info('copa-test')");
       const columnas = Object.keys(res.rows[0] as object);
-      expect(columnas).toEqual(["name", "venue", "event_date", "status", "official"]);
+      expect(columnas).toEqual(["name", "venue", "event_date", "status", "format", "official"]);
     });
   });
 });

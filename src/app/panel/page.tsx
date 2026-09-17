@@ -58,7 +58,9 @@ export default async function PanelPage() {
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-10 p-6 lg:p-10">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">
-          {perfil?.fullName ? `Hola, ${perfil.fullName.split(" ")[0]}` : "Tu panel"}
+          {`Hola, ${
+            perfil?.fullName?.split(" ")[0] || perfil?.email.split("@")[0] || "de nuevo"
+          }`}
         </h1>
         <p className="mt-1 text-sm text-neutral-500">
           Con esta misma cuenta compites, juzgas y organizas.
