@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Icono, type NombreDeIcono } from "@/shared/components/Icono";
 import { SelectorDeIdioma } from "@/shared/components/SelectorDeIdioma";
 import { MenuDeCuenta } from "@/features/catalogo/components/MenuDeCuenta";
+import { SelectorDeCompetencias } from "./SelectorDeCompetencias";
 import type { Idioma } from "@/shared/i18n/idiomas";
 import type { EventFormat, EventStatus } from "@/lib/supabase/types";
 
@@ -80,13 +81,6 @@ function seccionesDelEvento(
         label: "Información General",
         icono: "documento",
       },
-      // Es la MISMA pantalla que la pestaña "Resumen" de arriba: el listado de
-      // configuracion (Divisiones, Circuito/Workouts, Atletas, Heats,
-      // Penalizaciones) y el estado de la competencia viven juntos en
-      // `/panel/eventos/[id]`, sin sufijo. `exacto: true` es obligatorio: sin
-      // el, `pathname.startsWith(base)` marcaria este enlace activo en
-      // CUALQUIER pantalla del evento, porque `base` es prefijo de todas.
-      { href: base, label: "Config Competencia", icono: "pesa", exacto: true },
       { href: `${base}/atletas`, label: "Registro Atletas", icono: "personas" },
       // SOLO CrossFit: una carrera hibrida no tiene nada que cargar a mano, el
       // tiempo sale de cronometrar (ver el comentario de EventTabs.tsx sobre
@@ -162,6 +156,7 @@ export function MenuLateral({
   etiquetaIdioma,
   textosCuenta,
   eventos,
+  competenciaActual,
   puedeJuzgar,
 }: {
   nombre: string;
@@ -182,6 +177,14 @@ export function MenuLateral({
   };
   /** Para poder mostrar el nombre y el estado de la competencia abierta. */
   eventos: EventoDelMenu[];
+  /**
+   * La competencia que /panel muestra como panorama -- resuelta en el
+   * layout con `resolverCompetenciaActualId()` (cookie, o la mas reciente si
+   * no hay). Es lo que marca el check en el selector; DISTINTO de `idAbierto`
+   * (abajo), que sale de la URL y solo importa para las pestañas de
+   * configuracion de un evento (`/panel/eventos/[id]/divisiones`, etc).
+   */
+  competenciaActual: string | null;
   /** Igual que en `EncabezadoPublico`: solo staff aprobado con autoasignacion. */
   puedeJuzgar: boolean;
 }) {
@@ -194,8 +197,16 @@ export function MenuLateral({
   const idAbierto = pathname.match(
     /^\/panel\/(?:eventos|asistente)\/([0-9a-f-]{36})/,
   )?.[1];
-  const abiertoEvento = idAbierto
-    ? eventos.find((e) => e.id === idAbierto)
+  // En `/panel` MISMO (sin id en la URL) la competencia se identifica por la
+  // cookie, no por la URL -- ahi es donde vive su panorama desde que se movio
+  // de `/panel/eventos/[id]`. Sin este `??`, entrar a `/panel` y ver el
+  // panorama de una competencia no mostraba sus secciones en la barra
+  // lateral: `idAbierto` daba `undefined` porque la URL no dice nada. Fuera de
+  // `/panel` (perfil, plan) la barra lateral no tiene por que mostrar el
+  // bloque de una competencia -- son pantallas de la CUENTA, no de un evento.
+  const idDelBloque = idAbierto ?? (pathname === "/panel" ? (competenciaActual ?? undefined) : undefined);
+  const abiertoEvento = idDelBloque
+    ? eventos.find((e) => e.id === idDelBloque)
     : undefined;
 
   const cerrar = () => setAbierto(false);
@@ -254,12 +265,15 @@ export function MenuLateral({
             <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
           </svg>
         </button>
-        <Link
-          href="/panel"
-          className="min-w-0 truncate font-bold tracking-tight"
-        >
-          {abiertoEvento ? abiertoEvento.name : "Scora."}
-        </Link>
+        {/* El selector de competencias, estilo el project-switcher de
+            Vercel: reemplaza al nombre estatico que antes iba aca. Sin la
+            marca al lado -- el link a "/" ya esta cubierto por "Inicio" en
+            la barra lateral, y repetirlo aca era ancho de mas para lo unico
+            que importa en este lugar: la competencia abierta. */}
+        <SelectorDeCompetencias
+          competencias={eventos}
+          actualId={competenciaActual ?? undefined}
+        />
 
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <SelectorDeIdioma

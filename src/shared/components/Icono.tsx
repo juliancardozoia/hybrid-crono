@@ -74,6 +74,17 @@ const TRAZOS: Record<string, React.ReactNode> = {
     </>
   ),
   flecha: <path d="M9 6l6 6-6 6" />,
+  buscar: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </>
+  ),
+  // Los tres puntos de un menu de acciones. Puntos DIBUJADOS como trazo
+  // (segmentos de largo cero con `strokeLinecap="round"`), no `<circle>`
+  // relleno: el resto del set fuerza `fill="none"`, asi que un circulo se
+  // veria como un anillo hueco en vez de un punto solido.
+  puntos: <path d="M12 5v.01M12 12v.01M12 19v.01" />,
   // El tilde de "esto ya esta hecho". Dibujado sobre la misma rejilla de 24 y
   // no como el caracter "✓": ese lo resuelve cada sistema con su propia fuente
   // —en Windows sale mas fino y desalineado respecto a la linea base— y no se

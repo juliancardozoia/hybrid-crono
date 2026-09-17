@@ -5,9 +5,11 @@ import type { EventRow } from "@/lib/supabase/types";
  * Eventos visibles para el usuario. RLS ya los limita a lo que puede leer:
  * los de su organizacion, los que colabora, Y (desde
  * `20260914110000_evento_visible_para_inscriptos`) los que corre como
- * ATLETA. Sirve para el sidebar del panel, que solo necesita nombre/estado
- * de la competencia abierta segun la URL — nunca para decidir "esto es mio
- * como organizador", que es exactamente lo que mezclaria las dos cosas.
+ * ATLETA. Nunca sirve para decidir "esto es mio como organizador" ni para
+ * ofrecer un salto de navegacion — eso mezclaria ahi competencias donde el
+ * usuario solo compite. El sidebar del panel dejo de usarla para eso (ver
+ * `listEventosQueOrganizo()`), asi que hoy no tiene ningun llamador; se deja
+ * para el dia que haga falta "todo lo que puedo leer" sin filtrar por rol.
  */
 export async function listEvents(orgId?: string): Promise<EventRow[]> {
   const supabase = await createClient();
@@ -28,6 +30,11 @@ export async function listEvents(orgId?: string): Promise<EventRow[]> {
  * leer, y desde que un atleta puede leer su propia competencia (para ver sus
  * resultados), `listEvents()` sola ya no alcanza para responder "que
  * organizo": mezclaria ahi los eventos donde alguien solo compite.
+ *
+ * Alimenta el selector de competencias del header del panel
+ * (`SelectorDeCompetencias`, estilo el project-switcher de Vercel): es
+ * exactamente la lista entre la que tiene sentido poder saltar, y la misma
+ * que antes vivia sola como seccion "Organizo" en `/panel`.
  */
 export async function listEventosQueOrganizo(): Promise<EventRow[]> {
   const supabase = await createClient();

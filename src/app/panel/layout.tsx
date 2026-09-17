@@ -2,9 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { signOut } from "@/features/auth/actions";
 import { getPerfil } from "@/features/cuenta/queries";
-import { listEvents } from "@/features/events/queries";
+import { listEventosQueOrganizo } from "@/features/events/queries";
 import { puedeJuzgar } from "@/features/judge/queries";
 import { MenuLateral } from "@/features/panel/components/MenuLateral";
+import {
+  competenciaActualId,
+  resolverCompetenciaActualId,
+} from "@/features/panel/lib/competenciaActual";
 import { supabaseConfigured } from "@/lib/supabase/env";
 import { traduccion } from "@/shared/i18n/servidor";
 import { elegirIdioma } from "@/shared/i18n/acciones";
@@ -39,12 +43,24 @@ export default async function PanelLayout({
   ]);
   if (!perfil) redirect("/login");
 
-  // La lista sirve para que la barra sepa el nombre y el estado de la
-  // competencia abierta sin una consulta extra: el id lo saca de la URL.
-  const [eventos, mostrarJuzgar] = await Promise.all([
-    listEvents(),
+  // `listEventosQueOrganizo()`, no `listEvents()`: alimenta el selector de
+  // competencias del header (estilo el project-switcher de Vercel), que
+  // tiene que listar "lo que administro" para poder saltar de una a otra --
+  // mezclar ahi una competencia donde el usuario solo compite como atleta
+  // seria un salto a una pantalla a la que ni siquiera tiene acceso. De paso
+  // sigue sirviendo para que la barra sepa el nombre y el estado de la
+  // competencia abierta segun la URL, sin una consulta extra.
+  const [eventos, mostrarJuzgar, cookieCompetencia] = await Promise.all([
+    listEventosQueOrganizo(),
     puedeJuzgar(),
+    competenciaActualId(),
   ]);
+
+  // La misma resolucion que usa `/panel` para decidir que panorama mostrar:
+  // la cookie si sigue vigente, si no la mas reciente. Aca solo importa para
+  // marcar el check correcto en el selector -- `/panel` la vuelve a resolver
+  // por su cuenta, ver el comentario de `resolverCompetenciaActualId()`.
+  const competenciaActual = resolverCompetenciaActualId(eventos, cookieCompetencia);
 
   return (
     <div className="min-h-dvh lg:pl-64">
@@ -68,6 +84,7 @@ export default async function PanelLayout({
           status: e.status,
           format: e.format,
         }))}
+        competenciaActual={competenciaActual}
         puedeJuzgar={mostrarJuzgar}
       />
       <div className="flex min-h-dvh flex-col">{children}</div>

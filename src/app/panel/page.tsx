@@ -1,6 +1,25 @@
 import Link from "next/link";
+import { getEventAccess, type EventAccess } from "@/features/events/lib/access";
 import { listEventosQueOrganizo } from "@/features/events/queries";
-import { getMisInscripciones } from "@/features/inscripciones/queries";
+import {
+  competenciaActualId,
+  resolverCompetenciaActualId,
+} from "@/features/panel/lib/competenciaActual";
+import {
+  getConfigIssues,
+  getCourseTemplates,
+  getDivisions,
+  getHeats,
+  getPenaltyTypes,
+  getTeams,
+} from "@/features/events/config/queries";
+import { getPruebas } from "@/features/workouts/queries";
+import { getEstadoDelPlan } from "@/features/planes/queries";
+import { PanoramaDeCompetencia } from "@/features/events/components/PanoramaDeCompetencia";
+import {
+  getInscripcionesDelEvento,
+  getMisInscripciones,
+} from "@/features/inscripciones/queries";
 import {
   textoDeEstado,
   claseDePastilla,
@@ -8,43 +27,124 @@ import {
 } from "@/features/inscripciones/lib/estados";
 import { getPerfil } from "@/features/cuenta/queries";
 import { puedeJuzgar, getJudgeLanes } from "@/features/judge/queries";
+import { getLeaderboard } from "@/features/leaderboard/queries";
 import { rangoDeFechas } from "@/features/catalogo/lib/formato";
 import { traduccion } from "@/shared/i18n/servidor";
 import { Icono } from "@/shared/components/Icono";
-import type { EventStatus } from "@/lib/supabase/types";
 
 export const metadata = { title: "Panel — Scora" };
 
 /**
- * Un solo punto de entrada, adaptable por rol.
+ * El inicio de cualquier cuenta -- y, desde este cambio, tambien el
+ * panorama de la competencia que el organizador tiene abierta.
  *
- * Antes esta pantalla era EXCLUSIVA del organizador ("Mis Competencias"), y
- * `/cuenta` era la del atleta -- dos espacios separados a proposito (ver el
- * comentario viejo de `layout.tsx`). Se unifican aca: la misma cuenta compite,
- * organiza y juzga, y las tres cosas conviven en la MISMA pantalla, cada una
- * en su propia seccion que aparece solo si aplica. Un atleta puro ve
- * "Compito" y la invitacion a crear una competencia si quiere; un organizador
- * ve sus eventos; alguien con las tres facetas las ve las tres.
+ * ANTES el panorama (afiche, estado, checklist, leaderboard, inscripciones
+ * sin confirmar) vivia en `/panel/eventos/[id]`, la pestaña "Resumen" de
+ * CADA competencia. Se corrigio ACA: es el inicio de la cuenta, el primer
+ * lugar donde alguien se para a mirar "como viene esto" -- no una pestaña
+ * mas entre Divisiones y Heats. `/panel/eventos/[id]` ahora es solo un
+ * GATE que marca esa competencia como la actual y redirige para aca (ver
+ * `elegirCompetencia()`); el selector del header hace lo mismo al elegir una.
  *
- * Confirmar una inscripcion (`confirmarInscripcionIndividual`) redirige
- * DERECHO ACA: es el destino natural despues de inscribirse, no una pantalla
- * de "tramite completo" separada.
+ * QUE COMPETENCIA SE MUESTRA cuando el organizador tiene mas de una: la que
+ * dice la cookie `competencia_actual` (lo ultimo que eligio, en el selector o
+ * entrando por cualquier pestaña de una competencia puntual), y si no hay
+ * cookie vigente, la mas reciente de `listEventosQueOrganizo()`. Ver
+ * `resolverCompetenciaActualId()`.
+ *
+ * SIN NINGUNA COMPETENCIA PROPIA (un atleta puro, o un organizador que
+ * todavia no creo la primera) esta pantalla vuelve a lo de siempre: las
+ * secciones "Compito" y "Juzgo". Que pasa con esas dos secciones para quien
+ * SI tiene una competencia abierta es algo que queda para otra vuelta --
+ * por ahora, el panorama de la competencia reemplaza al resto.
  */
-
-const ESTADO_EVENTO: Record<EventStatus, { texto: string; clase: string }> = {
-  draft: { texto: "Borrador", clase: "bg-neutral-800 text-neutral-400" },
-  ready: { texto: "Lista", clase: "bg-sky-500/15 text-sky-300" },
-  live: { texto: "En vivo", clase: "bg-lime-500/15 text-lime-300" },
-  verifying: { texto: "Verificando", clase: "bg-amber-500/15 text-amber-300" },
-  published: { texto: "Publicada", clase: "bg-emerald-500/15 text-emerald-300" },
-};
-
 export default async function PanelPage() {
-  const [perfil, { idioma }, inscripciones, eventosQueOrganizo, mostrarJuzgar] = await Promise.all([
+  const [cookieCompetencia, organizadas] = await Promise.all([
+    competenciaActualId(),
+    listEventosQueOrganizo(),
+  ]);
+  const idCompetenciaActual = resolverCompetenciaActualId(organizadas, cookieCompetencia);
+
+  if (idCompetenciaActual) {
+    const acceso = await getEventAccess(idCompetenciaActual);
+    // La cookie puede apuntar a una competencia borrada, o a la que el
+    // usuario perdio acceso entre visitas: si `getEventAccess` no la
+    // reconoce, cae al inicio de siempre en vez de romper la pantalla.
+    if (acceso) return <PanelDeCompetencia eventId={idCompetenciaActual} acceso={acceso} />;
+  }
+
+  return <PanelDeCuenta />;
+}
+
+async function PanelDeCompetencia({
+  eventId,
+  acceso,
+}: {
+  eventId: string;
+  acceso: EventAccess;
+}) {
+  const { event, canManage } = acceso;
+
+  const [
+    templates,
+    divisions,
+    pruebas,
+    penalties,
+    teams,
+    heats,
+    issues,
+    plan,
+    inscripciones,
+    leaderboard,
+    { idioma },
+  ] = await Promise.all([
+    getCourseTemplates(eventId),
+    getDivisions(eventId),
+    getPruebas(eventId),
+    getPenaltyTypes(eventId),
+    getTeams(eventId),
+    getHeats(eventId),
+    getConfigIssues(eventId),
+    getEstadoDelPlan(eventId),
+    getInscripcionesDelEvento(eventId),
+    // Mismo camino que la pestaña "Leaderboard": el RPC publico, sin cliente
+    // autenticado. Vacio hasta que la competencia esta en vivo o publicada.
+    getLeaderboard(event.public_slug),
+    traduccion(),
+  ]);
+
+  return (
+    <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-10">
+      <PanoramaDeCompetencia
+        eventId={eventId}
+        event={event}
+        canManage={canManage}
+        templates={templates}
+        divisions={divisions}
+        pruebas={pruebas}
+        penalties={penalties}
+        teams={teams}
+        heats={heats}
+        issues={issues}
+        plan={plan}
+        inscripciones={inscripciones}
+        leaderboard={leaderboard}
+        idioma={idioma}
+      />
+    </main>
+  );
+}
+
+/**
+ * El inicio de siempre: Compito y Juzgo. Es lo que ve cualquier cuenta sin
+ * ninguna competencia propia -- un atleta puro, o un organizador que
+ * todavia no creo la primera.
+ */
+async function PanelDeCuenta() {
+  const [perfil, { idioma }, inscripciones, mostrarJuzgar] = await Promise.all([
     getPerfil(),
     traduccion(),
     getMisInscripciones(),
-    listEventosQueOrganizo(),
     puedeJuzgar(),
   ]);
 
@@ -181,82 +281,6 @@ export default async function PanelPage() {
           </Link>
         </section>
       )}
-
-      {/* ORGANIZO. Con eventos, la lista; sin ninguno, la invitacion a crear
-          la primera -- el mismo camino que ya existia, ahora una seccion mas
-          en vez de ser lo unico que esta pantalla mostraba. */}
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">Organizo</h2>
-          {eventosQueOrganizo.length > 0 && (
-            <Link
-              href="/panel/eventos/nuevo"
-              className="rounded-xl bg-lime-400 px-5 py-2.5 text-sm font-bold text-lime-950 transition-colors hover:bg-lime-300"
-            >
-              Nueva competencia
-            </Link>
-          )}
-        </div>
-
-        {eventosQueOrganizo.length === 0 ? (
-          <PrimeraVez />
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {eventosQueOrganizo.map((e) => {
-              const estado = ESTADO_EVENTO[e.status];
-              return (
-                <li key={e.id}>
-                  <Link
-                    href={`/panel/eventos/${e.id}`}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-neutral-800 p-4 transition-colors hover:border-neutral-700 hover:bg-neutral-900/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{e.name}</p>
-                      <p className="truncate text-sm text-neutral-500">
-                        {[e.venue, e.event_date].filter(Boolean).join(" · ") || "Sin fecha ni sede"}
-                      </p>
-                    </div>
-                    <span className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium ${estado.clase}`}>
-                      {estado.texto}
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
     </main>
-  );
-}
-
-/**
- * Lo que ve alguien que nunca organizo nada.
- *
- * Un solo camino y bien grande. No crea ninguna organizacion por mostrarse
- * -- eso lo hace recien `panel/eventos/nuevo/page.tsx` cuando de verdad se
- * aprieta el boton.
- */
-function PrimeraVez() {
-  return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/30 p-10 text-center">
-      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-lime-400/10 text-lime-400">
-        <Icono nombre="trofeo" className="h-7 w-7" />
-      </span>
-
-      <h2 className="mt-5 text-xl font-bold">Crea tu primera competencia</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-neutral-400">
-        Te vamos a ir pidiendo los datos por pasos: nombre y fecha, categorías, pruebas y
-        precios. Se guarda como borrador desde el primer paso, así que puedes cerrar y seguir
-        después.
-      </p>
-
-      <Link
-        href="/panel/eventos/nuevo"
-        className="mt-6 inline-block rounded-xl bg-lime-400 px-6 py-3 font-bold text-lime-950 transition-colors hover:bg-lime-300"
-      >
-        Crear competencia
-      </Link>
-    </div>
   );
 }

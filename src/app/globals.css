@@ -27,6 +27,29 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Menos redondeado en TODA la app.
+ *
+ * `rounded-xl` y `rounded-2xl` son las clases mas usadas del proyecto —
+ * tarjetas, secciones, botones, en cientos de lugares— y el radio por
+ * defecto de Tailwind las hacia ver demasiado redondas para el aspecto que
+ * busca la app. Se corrige ACA, en el TOKEN, no clase por clase: un solo
+ * lugar arregla los usos ya escritos de `rounded-*`, y cualquiera nuevo
+ * hereda la regla sin que nadie tenga que acordarse de nada.
+ *
+ * `rounded-full` no esta en esta lista y no se toca: son CIRCULOS (un
+ * avatar, el punto de un interruptor), no "esquinas redondeadas" — ese es
+ * un problema distinto al que esto resuelve.
+ */
+@theme {
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.875rem;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

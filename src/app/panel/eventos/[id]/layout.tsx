@@ -14,7 +14,7 @@ export default async function EventoLayout({
   const { event, canManage } = await requireEventAccess(id);
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-10">
+    <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-10">
       <Link href="/panel" className="text-sm text-neutral-500 hover:text-neutral-300">
         ← Tu panel
       </Link>

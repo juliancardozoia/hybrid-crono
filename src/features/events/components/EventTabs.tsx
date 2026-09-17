@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { EventFormat } from "@/lib/supabase/types";
 
 /**
- * Una sola barra: Resumen, Divisiones, Circuito o Workouts, Atletas, Heats,
+ * Una sola barra: Divisiones, Circuito o Workouts, Atletas, Heats,
  * Penalizaciones.
  *
  * Hubo una version con DOS barras —esta con lo de produccion, y `ConfigTabs`
@@ -13,6 +13,16 @@ import type { EventFormat } from "@/lib/supabase/types";
  * atras: la separacion agregaba una fila mas a la pantalla y una regla extra
  * para acordarse ("¿esta pantalla esta en la barra de arriba o en la de
  * abajo?"). Todo entra en una sola fila sin problema.
+ *
+ * **"Resumen" SE SACO de esta barra.** Era la pestaña que mostraba el
+ * afiche, el estado y el checklist de la competencia — ese panorama se movio
+ * a `/panel` (el inicio del panel, ver `PanoramaDeCompetencia`), y una vez
+ * ahi ya no tenia sentido como pestaña: clickearla sacaba a la persona de
+ * ESTA barra entera, de vuelta al inicio, que es justo lo raro de una
+ * pestaña que "pestañea" hacia otro lado. `/panel/eventos/[id]` (la ruta que
+ * usaba) sigue existiendo como GATE + REDIRECT — marca la competencia como
+ * la actual y manda a `/panel` — asi que un link viejo o "Config
+ * Competencia" en la barra lateral siguen funcionando igual.
  *
  * **"Cargar" se saco.** La carga manual de resultados es un concepto de
  * CrossFit —scores que alguien tipea— y una carrera hibrida no tiene nada que
@@ -27,10 +37,6 @@ import type { EventFormat } from "@/lib/supabase/types";
  * Atletas y Penalizaciones son configuracion de la competencia: un juez o un
  * verificador no tiene nada que hacer ahi, y mostrarselas es superficie de mas
  * en una pantalla que van a usar apurados el dia del evento.
- *
- * **"Config Competencia" (barra lateral) y "Resumen" (esta pestaña) son la
- * MISMA pantalla**, `/panel/eventos/[id]` sin sufijo. No hay una ruta
- * `/configuracion` separada.
  *
  * **QR esta OCULTO por ahora, no eliminado.** La ruta y la pantalla siguen
  * existiendo; solo se saco la pestaña de esta lista. Volver a mostrarla es
@@ -62,7 +68,6 @@ const SIN_PESTANAS = [
 
 function secciones(esHibrida: boolean): Seccion[] {
   return [
-    { slug: "", label: "Resumen" },
     { slug: "divisiones", label: "Categorías" },
     esHibrida ? { slug: "circuito", label: "Circuito" } : { slug: "pruebas", label: "Workouts" },
     { slug: "atletas", label: "Atletas" },
@@ -96,8 +101,8 @@ export function EventTabs({
   return (
     <nav className="tabs-scroll mt-5 flex gap-1 border-b border-neutral-800">
       {visibles.map((seccion) => {
-        const href = seccion.slug ? `${base}/${seccion.slug}` : base;
-        const activo = seccion.slug ? pathname.startsWith(href) : pathname === base;
+        const href = `${base}/${seccion.slug}`;
+        const activo = pathname.startsWith(href);
 
         return (
           <Link

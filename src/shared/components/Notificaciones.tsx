@@ -153,7 +153,7 @@ export function useNotificaciones(): NotificacionesContexto {
  * detectando la transicion pending→sin-error seria fragil (una accion que no
  * cambia nada tambien pasa por ahi) y no vale la pena: donde hace falta un
  * toast de exito explicito, se llama `useNotificaciones().exito(...)` a mano
- * despues del `await`, como en `BotonPublicar`.
+ * despues del `await`, como en `MenuDeAccionesDeCompetencia`.
  */
 export function useToastDeEstado(estado: { error: string | null }) {
   const { error } = useNotificaciones();
