@@ -2,12 +2,11 @@
 
 import { Fragment, useMemo, useState } from "react";
 import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { Bandera } from "@/shared/components/Bandera";
 import { Icono } from "@/shared/components/Icono";
-import { Modal } from "@/shared/components/Modal";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import { Selector } from "@/shared/components/Selector";
 import {
   DetalleDeAtleta,
@@ -336,39 +335,21 @@ function QuitarEquipo({
     <>
       <BotonQuitar onClick={() => setConfirmar(true)} title="Quitar atleta/equipo" />
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Quitar atleta/equipo"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Quitar a <span className="font-medium">{nombre}</span> de la competencia? Se pierde
             su dorsal y su lugar en cualquier heat. Esta acción no se puede deshacer.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            {/* La etiqueta del boton es CORTA a proposito, igual que
-                "Eliminar" en la confirmacion de categoria
-                (ParametrosDeCategoria.tsx): un texto largo aca comparte fila
-                con "Cancelar" en un modal angosto (max-w-sm) y la envolvia a
-                dos lineas, agrandando el contenido lo suficiente para
-                disparar el scroll vertical del Modal que ninguna otra
-                confirmacion corta activa. El titulo mas descriptivo va en
-                `titulo`/`title`, que viven en su propia linea. */}
-            <FormularioDeEstado
-              accion={alQuitar.bind(null, equipo.id)}
-              estadoInicial={{ error: null }}
-              etiqueta="Quitar"
-              mensajeDeCarga="Quitando el equipo…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={alQuitar.bind(null, equipo.id)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Quitar"
+        mensajeDeCarga="Quitando el equipo…"
+      />
     </>
   );
 }

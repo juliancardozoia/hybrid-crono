@@ -5,10 +5,8 @@ import { HeatCard, type TeamOption } from "./HeatCard";
 import { NuevoHeat } from "./NuevoHeat";
 import { DistribuirHeats } from "./DistribuirHeats";
 import { Pestanas } from "./PestanasDePrueba";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonQuitar } from "@/shared/components/BotonQuitar";
-import { Modal } from "@/shared/components/Modal";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import { Selector } from "@/shared/components/Selector";
 import type { HeatWithLanes, JudgeOption } from "@/features/events/config/queries";
 
@@ -373,31 +371,21 @@ function QuitarHeat({
     <>
       <BotonQuitar onClick={() => setConfirmar(true)} title="Quitar heat" />
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Quitar heat"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Quitar <span className="font-medium">{heat.name}</span>? Se borra junto con los
             equipos y jueces ya asignados a sus carriles. Esta acción no se puede deshacer.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={quitarHeat.bind(null, eventId, heat.id)}
-              estadoInicial={{ error: null }}
-              etiqueta="Quitar heat"
-              mensajeDeCarga="Quitando el heat…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={quitarHeat.bind(null, eventId, heat.id)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Quitar heat"
+        mensajeDeCarga="Quitando el heat…"
+      />
     </>
   );
 }

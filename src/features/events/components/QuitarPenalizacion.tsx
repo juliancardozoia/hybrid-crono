@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonQuitar } from "@/shared/components/BotonQuitar";
-import { Modal } from "@/shared/components/Modal";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import type { FormState } from "@/features/events/config/actions";
 
 type AccionEliminar = (
@@ -40,31 +38,21 @@ export function QuitarPenalizacion({
     <>
       <BotonQuitar onClick={() => setConfirmar(true)} title="Eliminar penalización" />
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Eliminar penalización"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Eliminar <span className="font-medium">{label}</span>? El juez deja de verla en el
             menú de PENALIZAR. Esta acción no se puede deshacer.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={eliminar.bind(null, eventId, penaltyId)}
-              estadoInicial={{ error: null }}
-              etiqueta="Eliminar"
-              mensajeDeCarga="Eliminando la penalización…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={eliminar.bind(null, eventId, penaltyId)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Eliminar"
+        mensajeDeCarga="Eliminando la penalización…"
+      />
     </>
   );
 }

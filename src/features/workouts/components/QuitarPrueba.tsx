@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
 import { BotonQuitar } from "@/shared/components/BotonQuitar";
-import { Modal } from "@/shared/components/Modal";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import type { FormState } from "@/features/workouts/actions";
 
 type AccionEliminar = (
@@ -41,31 +39,21 @@ export function QuitarPrueba({
     <>
       <BotonQuitar onClick={() => setConfirmar(true)} title="Quitar prueba" />
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Quitar prueba"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Quitar <span className="font-medium">{label}</span>? Se borra junto con sus bloques,
             movimientos y ajustes por categoría. Esta acción no se puede deshacer.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={eliminar.bind(null, eventId, workoutId)}
-              estadoInicial={{ error: null }}
-              etiqueta="Quitar"
-              mensajeDeCarga="Quitando la prueba…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={eliminar.bind(null, eventId, workoutId)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Quitar"
+        mensajeDeCarga="Quitando la prueba…"
+      />
     </>
   );
 }

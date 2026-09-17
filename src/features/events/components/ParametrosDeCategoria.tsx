@@ -10,10 +10,10 @@ import {
 } from "@/features/events/config/categorias";
 import { desdeKilos } from "@/shared/unidades/carga";
 import { Modal, BotonesDeModal } from "@/shared/components/Modal";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { MensajeDeError } from "@/shared/components/MensajeDeError";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
+import { claseDeBoton } from "@/shared/components/Boton";
 import { BotonQuitar } from "@/shared/components/BotonQuitar";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
 import { Selector } from "@/shared/components/Selector";
@@ -260,31 +260,21 @@ export function FilaDeCategoria({
         </Modal>
 
         {alQuitar && (
-          <Modal
+          <ModalDeConfirmacion
             abierto={confirmar}
             alCerrar={() => setConfirmar(false)}
             titulo="Eliminar categoría"
-            ancho="max-w-sm"
-          >
-            <div className="text-left">
-              <p className="text-sm text-neutral-300">
+            descripcion={
+              <>
                 ¿Eliminar <span className="font-medium">{categoria.name}</span>?
                 Esta acción no se puede deshacer.
-              </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-                  Cancelar
-                </Boton>
-                <FormularioDeEstado
-                  accion={alQuitar}
-                  estadoInicial={{ error: null }}
-                  etiqueta="Eliminar"
-                  mensajeDeCarga="Eliminando la categoría…"
-                  className={claseDeBoton({ variante: "destructive", compacto: true })}
-                />
-              </div>
-            </div>
-          </Modal>
+              </>
+            }
+            accion={alQuitar}
+            estadoInicial={{ error: null }}
+            etiquetaConfirmar="Eliminar"
+            mensajeDeCarga="Eliminando la categoría…"
+          />
         )}
       </td>
     </tr>

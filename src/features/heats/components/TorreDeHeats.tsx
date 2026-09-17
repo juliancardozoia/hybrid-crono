@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import type { EventFormat } from "@/lib/supabase/types";
 import { formatElapsed } from "@/shared/timing/clock";
 import { horaEnEvento } from "@/shared/utils/fecha";
-import { FormularioDeEstado } from "@/shared/components/FormularioDeEstado";
-import { Boton, claseDeBoton } from "@/shared/components/Boton";
+import { Boton } from "@/shared/components/Boton";
 import { Selector } from "@/shared/components/Selector";
-import { Modal } from "@/shared/components/Modal";
+import { ModalDeConfirmacion } from "@/shared/components/ModalDeConfirmacion";
 import { RelojDeHeat } from "./RelojDeHeat";
 import { Pestanas } from "./PestanasDePrueba";
 import { CargarTiempoManual, type SegmentoDeCircuito } from "./CargarTiempoManual";
@@ -591,35 +590,25 @@ function ConfirmarDnf({
         DNF
       </button>
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Marcar DNF"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Marcar a{" "}
             <span className="font-medium">
               {lane.athletes ?? lane.teamLabel ?? `carril ${lane.laneNumber}`}
             </span>{" "}
             como no presentado / no terminó? El reloj de ese carril se congela y esta acción no
             se puede deshacer.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={marcarDnfAccion.bind(null, eventId, lane.laneId)}
-              estadoInicial={{ error: null }}
-              etiqueta="Confirmar DNF"
-              mensajeDeCarga="Marcando DNF…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={marcarDnfAccion.bind(null, eventId, lane.laneId)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Confirmar DNF"
+        mensajeDeCarga="Marcando DNF…"
+      />
     </>
   );
 }
@@ -662,31 +651,21 @@ function DeshacerInicio({
         Deshacer Inicio
       </Boton>
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Deshacer inicio"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Deshacer el inicio de <span className="font-medium">{heat.name}</span>? El heat vuelve
             a quedar sin iniciar y se puede largar de nuevo cuando corresponda.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={deshacer.bind(null, eventId, heat.id)}
-              estadoInicial={{ error: null }}
-              etiqueta="Deshacer Inicio"
-              mensajeDeCarga="Deshaciendo el inicio del heat…"
-              className={claseDeBoton({ variante: "destructive", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={deshacer.bind(null, eventId, heat.id)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Deshacer Inicio"
+        mensajeDeCarga="Deshaciendo el inicio del heat…"
+      />
     </>
   );
 }
@@ -733,32 +712,23 @@ function LargarHeat({
         </p>
       )}
 
-      <Modal
+      <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
         titulo="Largar heat"
-        ancho="max-w-sm"
-      >
-        <div className="text-left">
-          <p className="text-sm text-neutral-300">
+        descripcion={
+          <>
             ¿Largar <span className="font-medium">{heat.name}</span>? El reloj arranca para todos
             los carriles con atleta y esta acción no se puede deshacer una vez que alguien marque
             un tiempo.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <Boton variante="secondary" compacto onClick={() => setConfirmar(false)}>
-              Cancelar
-            </Boton>
-            <FormularioDeEstado
-              accion={largar.bind(null, eventId, heat.id)}
-              estadoInicial={{ error: null }}
-              etiqueta="Confirmar largada"
-              mensajeDeCarga="Largando el heat…"
-              className={claseDeBoton({ variante: "primary", compacto: true })}
-            />
-          </div>
-        </div>
-      </Modal>
+          </>
+        }
+        accion={largar.bind(null, eventId, heat.id)}
+        estadoInicial={{ error: null }}
+        etiquetaConfirmar="Confirmar largada"
+        mensajeDeCarga="Largando el heat…"
+        variante="primary"
+      />
     </div>
   );
 }
