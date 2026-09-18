@@ -196,6 +196,17 @@ export interface FilaDeCarga {
   divisionId: string;
   divisionName: string;
   score: WorkoutScoreRow | null;
+  /** Nombre de quien corrigio, si `score.corregido_en` esta seteado. `null`
+   *  tambien cuando el perfil no se pudo resolver (p. ej. un colaborador de
+   *  otra organizacion, ver RLS de `profiles`) -- la fecha sola alcanza. */
+  corregidoPorNombre: string | null;
+  /** El heat donde este equipo corre ESTA prueba, si ya se le asigno uno.
+   *  Sirve para filtrar la grilla por heat en una categoria grande — cargar
+   *  o corregir "el heat que acaba de terminar" en vez de scrollear todo el
+   *  padron. `lanes_workout_idx` garantiza un unico carril por (workout,
+   *  equipo), asi que no hay ambiguedad posible. */
+  heatId: string | null;
+  heatName: string | null;
 }
 
 /**
@@ -207,6 +218,7 @@ export interface FilaDeCarga {
 export async function getGrillaDeCarga(
   eventId: string,
   partId: string,
+  workoutId: string,
 ): Promise<FilaDeCarga[]> {
   const supabase = await createClient();
 
@@ -236,12 +248,30 @@ export async function getGrillaDeCarga(
   // embed anidado aca seria la cuarta consulta que hay que registrar en
   // verify-queries.mjs, y no aporta nada.
   const teamIds = (equipos ?? []).map((t) => t.id);
-  const { data: integrantes } = teamIds.length
-    ? await supabase
-        .from("team_members")
-        .select("team_id, athletes (first_name, last_name)")
-        .in("team_id", teamIds)
+  const [{ data: integrantes }, { data: carriles }] = await Promise.all([
+    teamIds.length
+      ? supabase
+          .from("team_members")
+          .select("team_id, athletes (first_name, last_name)")
+          .in("team_id", teamIds)
+      : Promise.resolve({ data: [] as Array<{ team_id: string; athletes: unknown }> }),
+    // `lanes_workout_idx (workout_id, team_id)` es unico: a lo sumo un carril
+    // por equipo en ESTA prueba, sin ambiguedad de a que heat pertenece.
+    teamIds.length
+      ? supabase
+          .from("lanes")
+          .select("team_id, heat_id")
+          .eq("workout_id", workoutId)
+          .in("team_id", teamIds)
+      : Promise.resolve({ data: [] as Array<{ team_id: string; heat_id: string }> }),
+  ]);
+
+  const heatIds = [...new Set((carriles ?? []).map((c) => c.heat_id))];
+  const { data: heats } = heatIds.length
+    ? await supabase.from("heats").select("id, name").in("id", heatIds)
     : { data: [] };
+  const nombreDeHeat = new Map((heats ?? []).map((h) => [h.id, h.name]));
+  const heatPorEquipo = new Map((carriles ?? []).map((c) => [c.team_id, c.heat_id]));
 
   const nombresPorEquipo = new Map<string, string[]>();
   for (const fila of (integrantes ?? []) as Array<{
@@ -254,14 +284,39 @@ export async function getGrillaDeCarga(
     nombresPorEquipo.set(fila.team_id, lista);
   }
 
+  // Igual que con los integrantes: una sola consulta batch en vez de un embed
+  // a profiles, que ademas seria una relacion mas de workout_scores.
+  const idsCorrectores = [
+    ...new Set(
+      (scores ?? [])
+        .map((s) => s.corregido_por)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const { data: correctores } = idsCorrectores.length
+    ? await supabase.from("profiles").select("id, full_name, email").in("id", idsCorrectores)
+    : { data: [] };
+  const nombrePorCorrector = new Map(
+    (correctores ?? []).map((p) => [p.id, p.full_name || p.email || null]),
+  );
+
   return (equipos ?? [])
     .filter((t) => t.status !== "withdrawn")
-    .map((t) => ({
-      teamId: t.id,
-      bib: t.bib_number,
-      nombre: t.name ?? (nombresPorEquipo.get(t.id) ?? []).join(" / ") ?? "",
-      divisionId: t.division_id,
-      divisionName: nombreDeDivision.get(t.division_id) ?? "",
-      score: scorePorEquipo.get(t.id) ?? null,
-    }));
+    .map((t) => {
+      const score = scorePorEquipo.get(t.id) ?? null;
+      const heatId = heatPorEquipo.get(t.id) ?? null;
+      return {
+        teamId: t.id,
+        bib: t.bib_number,
+        nombre: t.name ?? (nombresPorEquipo.get(t.id) ?? []).join(" / ") ?? "",
+        divisionId: t.division_id,
+        divisionName: nombreDeDivision.get(t.division_id) ?? "",
+        score,
+        corregidoPorNombre: score?.corregido_por
+          ? (nombrePorCorrector.get(score.corregido_por) ?? null)
+          : null,
+        heatId,
+        heatName: heatId ? (nombreDeHeat.get(heatId) ?? null) : null,
+      };
+    });
 }

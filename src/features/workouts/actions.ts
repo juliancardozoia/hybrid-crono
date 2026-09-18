@@ -1001,22 +1001,16 @@ export async function guardarCapPorCategoria(
 
 // --- Carga manual de resultados ---------------------------------------------
 
-export async function guardarScore(
-  _prev: FormState,
+/**
+ * Arma el payload jsonb que reciben upsert_workout_score() y
+ * corregir_workout_score(): mismos campos, misma validacion, sea carga
+ * inicial o correccion.
+ */
+function construirPayloadDeScore(
   formData: FormData,
-): Promise<FormState> {
-  const eventId = String(formData.get("eventId") ?? "");
-  const partId = String(formData.get("partId") ?? "");
-  const teamId = String(formData.get("teamId") ?? "");
+  scoreUnit: ScoreUnitDb,
+): { payload: Record<string, unknown> } | { error: string } {
   const status = String(formData.get("status") ?? "valido") as ScoreStatusDb;
-  const scoreUnit = String(
-    formData.get("scoreUnit") ?? "tiempo",
-  ) as ScoreUnitDb;
-
-  const acceso = await requireEventAccess(eventId);
-  if (!acceso.canVerify)
-    return { error: "No tienes permiso para cargar resultados." };
-
   const payload: Record<string, unknown> = { status };
 
   if (status === "valido") {
@@ -1048,17 +1042,88 @@ export async function guardarScore(
   const desempate = String(formData.get("tiebreak") ?? "").trim();
   if (desempate) payload.tiebreak = tiempoAMs(desempate) ?? Number(desempate);
 
+  return { payload };
+}
+
+export async function guardarScore(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  const partId = String(formData.get("partId") ?? "");
+  const teamId = String(formData.get("teamId") ?? "");
+  const scoreUnit = String(
+    formData.get("scoreUnit") ?? "tiempo",
+  ) as ScoreUnitDb;
+
+  const acceso = await requireEventAccess(eventId);
+  if (!acceso.canScore)
+    return { error: "No tienes permiso para cargar resultados." };
+
+  const armado = construirPayloadDeScore(formData, scoreUnit);
+  if ("error" in armado) return { error: armado.error };
+
+  // Todavia no hay UI que lo pida (eso es la fase de UX de correccion); el
+  // parametro ya esta listo para cuando la grilla lo ofrezca.
+  const motivo = String(formData.get("motivo") ?? "").trim() || undefined;
+
   const supabase = await createClient();
   const { error } = await supabase.rpc("upsert_workout_score", {
     p_part_id: partId,
     p_team_id: teamId,
-    p_score: payload as never,
+    p_score: armado.payload as never,
+    p_motivo: motivo,
   });
 
   if (error) return { error: traducir(error) };
 
   // El leaderboard general se rearma con el score nuevo. Si falla, el score ya
   // quedo guardado igual: el cache se puede reconstruir, el dato no.
+  void recomputeStandings(eventId).catch(() => {});
+
+  refrescar(eventId);
+  return OK;
+}
+
+/**
+ * Corrige un score YA CARGADO -venga del juez en vivo o de carga manual- por
+ * una impugnacion o reclamo. Distinta de guardarScore(): exige can_verify_event
+ * (no alcanza con poder cargar) y motivo obligatorio, y llama a
+ * corregir_workout_score() -que preserva `source`/`lane_id` y marca la fila
+ * como corregida para que el recalculo automatico nunca la pise en silencio-
+ * en vez de upsert_workout_score().
+ */
+export async function corregirScore(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  const partId = String(formData.get("partId") ?? "");
+  const teamId = String(formData.get("teamId") ?? "");
+  const scoreUnit = String(
+    formData.get("scoreUnit") ?? "tiempo",
+  ) as ScoreUnitDb;
+
+  const acceso = await requireEventAccess(eventId);
+  if (!acceso.canVerify)
+    return { error: "Solo el juez principal o la organización pueden corregir un resultado." };
+
+  const motivo = String(formData.get("motivo") ?? "").trim();
+  if (!motivo) return { error: "Escribe el motivo de la corrección." };
+
+  const armado = construirPayloadDeScore(formData, scoreUnit);
+  if ("error" in armado) return { error: armado.error };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("corregir_workout_score", {
+    p_part_id: partId,
+    p_team_id: teamId,
+    p_score: armado.payload as never,
+    p_motivo: motivo,
+  });
+
+  if (error) return { error: traducir(error) };
+
   void recomputeStandings(eventId).catch(() => {});
 
   refrescar(eventId);

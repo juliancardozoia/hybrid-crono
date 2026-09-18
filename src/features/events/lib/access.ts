@@ -7,6 +7,7 @@ export interface EventAccess {
   role: OrgRole;
   canManage: boolean;
   canVerify: boolean;
+  canScore: boolean;
 }
 
 /**
@@ -30,12 +31,18 @@ export async function getEventAccess(eventId: string): Promise<EventAccess | nul
 
   if (!role) return null;
 
+  // can_score_event() suma el rol scorekeeper y la bandera can_edit_scores de
+  // event_staff sobre event_role() — event_role() por si solo no alcanza para
+  // saber quien puede cargar resultados.
+  const { data: puedeCargar } = await supabase.rpc("can_score_event", { p_event_id: eventId });
+
   const r = role as OrgRole;
   return {
     event: event as EventRow,
     role: r,
     canManage: r === "owner" || r === "admin",
     canVerify: r === "owner" || r === "admin" || r === "head_judge",
+    canScore: Boolean(puedeCargar),
   };
 }
 

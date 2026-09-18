@@ -144,6 +144,7 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(score.status).toBe("valido");
@@ -176,6 +177,7 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(score.status).toBe("capeado");
@@ -208,6 +210,7 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(score.status).toBe("capeado");
@@ -245,6 +248,7 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(scores).toHaveLength(1);
@@ -286,6 +290,7 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(scores).toHaveLength(2);
@@ -324,10 +329,52 @@ describe("calcularScoresDeWod", () => {
       teamId: "t1",
       eventId: "ev1",
       divisionId: "d1",
+      corregidos: new Set(),
     });
 
     expect(scores[0].status).toBe("valido");
     expect(scores[0].value_num).toBe(20_000);
+  });
+
+  it("una parte ya corregida por la organizacion se saltea por completo", () => {
+    // El juez termina su trabajo cuando cierra el carril: de ahi en mas, el
+    // valor de una parte corregida es una decision humana que este recalculo
+    // automatico nunca puede pisar en silencio. corregidos.has(partId) => esa
+    // parte ni siquiera se reduce, no solo "no se sobreescribe".
+    const pA = parte("pA");
+    const pB = parte("pB");
+    const bA = bloque("pA");
+    const bB = bloque("pB");
+    const mA = movimiento("pA", bA.id);
+    const mB = movimiento("pB", bB.id);
+    const { suyas, capPorParte } = partesQueCorreLaCategoria([pA, pB], [
+      { part_id: "pA", time_cap_ms: null },
+      { part_id: "pB", time_cap_ms: null },
+    ]);
+
+    const eventos: TimingEvent[] = [
+      marcaje("lane_start", 0),
+      marcaje("movement_done", 30_000, { partId: "pA", partMovementId: mA.id }),
+      marcaje("movement_done", 90_000, { partId: "pB", partMovementId: mB.id }),
+    ];
+
+    const scores = calcularScoresDeWod({
+      suyas,
+      capPorParte,
+      bloques: [bA, bB],
+      movimientos: [mA, mB],
+      nombres: new Map(),
+      specs: new Map(),
+      nowElapsedMs: undefined,
+      eventos,
+      laneId: "c1",
+      teamId: "t1",
+      eventId: "ev1",
+      divisionId: "d1",
+      corregidos: new Set(["pA"]),
+    });
+
+    expect(scores.map((s) => s.part_id)).toEqual(["pB"]);
   });
 });
 

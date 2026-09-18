@@ -510,6 +510,32 @@ describe("carga manual de un score", () => {
     });
   });
 
+  it("el motivo llega a la auditoria solo cuando se lo pasan", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      // Sin motivo: la columna queda null, igual que hoy.
+      await s.db.query("select * from upsert_workout_score($1, $2, $3::jsonb)", [
+        parteReps,
+        s.teamIds[1],
+        JSON.stringify({ value: 100 }),
+      ]);
+      // Con motivo: la variable de sesion que arma upsert_workout_score() llega
+      // al trigger de auditoria sin que este tenga que conocer los parametros
+      // de la funcion que disparo el UPDATE.
+      await s.db.query(
+        "select * from upsert_workout_score($1, $2, $3::jsonb, $4)",
+        [parteReps, s.teamIds[1], JSON.stringify({ value: 108 }), "Impugnacion revisada"],
+      );
+
+      const filas = await s.db.query<{ motivo: string | null }>(
+        `select motivo from workout_score_audit
+         where part_id = $1 and team_id = $2 order by created_at asc`,
+        [parteReps, s.teamIds[1]],
+      );
+      expect(filas.rows[0].motivo).toBeNull();
+      expect(filas.rows[1].motivo).toBe("Impugnacion revisada");
+    });
+  });
+
   it("un score derivado no puede entrar en una prueba de carga manual", async () => {
     // Es la mitad que falta del par: upsert_workout_score() ya rechaza las
     // pruebas en vivo. Sin esta, un recalculo podria reducir una prueba manual
@@ -538,6 +564,167 @@ describe("carga manual de un score", () => {
         ),
       ),
     );
+  });
+});
+
+describe("correccion de un score por impugnacion", () => {
+  let parteReps = "";
+  let parteEnVivo = "";
+
+  beforeEach(async () => {
+    // Juzgar un WOD en vivo es del plan Pro (ver
+    // workout_parts_en_vivo_requiere_pro); esta suite no prueba ese gate, asi
+    // que sube el plan para poder crear la parte en_vivo del fixture.
+    await asAdmin(s.db, () =>
+      s.db.query("update organizations set plan = 'pro' where id = $1", [s.orgId]),
+    );
+
+    parteReps = await crearParte({
+      nombre: "Evento manual",
+      timeScheme: "ventana",
+      scoreUnit: "reps",
+      scoreDir: "mayor_gana",
+      windowMs: 600_000,
+    });
+    parteEnVivo = await crearParte({
+      nombre: "Evento en vivo",
+      timeScheme: "ventana",
+      scoreUnit: "reps",
+      scoreDir: "mayor_gana",
+      windowMs: 600_000,
+      captureMode: "en_vivo",
+    });
+
+    // Simula lo que ya dejo el juez: un score con source='en_vivo' y su
+    // carril, exactamente lo que produce recalcularWod() en produccion.
+    // Se inserta como admin porque no hay GRANT de insert para authenticated.
+    await asAdmin(s.db, () =>
+      s.db.query(
+        `insert into workout_scores (part_id, team_id, event_id, division_id, score_unit, status, value_num, source, lane_id)
+         values ($1, $2, $3, $4, 'reps', 'valido', 115, 'en_vivo', $5)`,
+        [parteEnVivo, s.teamIds[0], s.eventId, s.divisionId, s.laneIds[0]],
+      ),
+    );
+  });
+
+  it("head judge u organizacion corrigen un score capturado en vivo sin tocar su origen", async () => {
+    await asUser(s.db, s.users.headJudge, async () => {
+      const res = await s.db.query<{
+        value_num: string;
+        source: string;
+        lane_id: string;
+        corregido_en: string | null;
+        corregido_por: string;
+      }>(
+        "select value_num, source, lane_id, corregido_en, corregido_por from corregir_workout_score($1, $2, $3::jsonb, $4)",
+        [parteEnVivo, s.teamIds[0], JSON.stringify({ value: 108 }), "Impugnacion revisada por video"],
+      );
+
+      expect(Number(res.rows[0].value_num)).toBe(108);
+      // El origen NO se toca: sigue siendo el mismo score que capturo el
+      // juez, solo que la organizacion lo ajusto despues.
+      expect(res.rows[0].source).toBe("en_vivo");
+      expect(res.rows[0].lane_id).toBe(s.laneIds[0]);
+      expect(res.rows[0].corregido_en).not.toBeNull();
+      expect(res.rows[0].corregido_por).toBe(s.users.headJudge);
+    });
+  });
+
+  it("un juez sin permiso de verificacion no puede corregir", async () => {
+    const mensaje = await asUser(s.db, s.users.judgeA, () =>
+      expectDenied(() =>
+        s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+          parteEnVivo,
+          s.teamIds[0],
+          JSON.stringify({ value: 108 }),
+          "Impugnacion",
+        ]),
+      ),
+    );
+    expect(mensaje).toMatch(/juez principal o la organización/i);
+  });
+
+  it("exige un motivo: no se puede corregir en silencio", async () => {
+    const mensaje = await asUser(s.db, s.users.headJudge, () =>
+      expectDenied(() =>
+        s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+          parteEnVivo,
+          s.teamIds[0],
+          JSON.stringify({ value: 108 }),
+          "   ",
+        ]),
+      ),
+    );
+    expect(mensaje).toMatch(/motivo/i);
+  });
+
+  it("no se puede corregir un score que todavia no existe", async () => {
+    const mensaje = await asUser(s.db, s.users.headJudge, () =>
+      expectDenied(() =>
+        s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+          parteReps,
+          s.teamIds[1],
+          JSON.stringify({ value: 108 }),
+          "Impugnacion",
+        ]),
+      ),
+    );
+    expect(mensaje).toMatch(/no hay un resultado cargado/i);
+  });
+
+  it("tambien corrige un score cargado a mano, y queda auditado con el motivo", async () => {
+    await asUser(s.db, s.users.owner, async () => {
+      await s.db.query("select * from upsert_workout_score($1, $2, $3::jsonb)", [
+        parteReps,
+        s.teamIds[1],
+        JSON.stringify({ value: 100 }),
+      ]);
+
+      await s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+        parteReps,
+        s.teamIds[1],
+        JSON.stringify({ value: 95 }),
+        "El juez de mesa transcribio mal la planilla",
+      ]);
+
+      const auditoria = await s.db.query<{ motivo: string | null; despues: { value_num: string } }>(
+        `select motivo, despues from workout_score_audit
+         where part_id = $1 and team_id = $2 order by created_at desc limit 1`,
+        [parteReps, s.teamIds[1]],
+      );
+      expect(auditoria.rows[0].motivo).toBe("El juez de mesa transcribio mal la planilla");
+      expect(Number(auditoria.rows[0].despues.value_num)).toBe(95);
+    });
+  });
+
+  it("dos correcciones seguidas quedan las dos en el historial, ninguna se pierde", async () => {
+    await asUser(s.db, s.users.headJudge, async () => {
+      await s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+        parteEnVivo,
+        s.teamIds[0],
+        JSON.stringify({ value: 110 }),
+        "Primera revision",
+      ]);
+      await s.db.query("select * from corregir_workout_score($1, $2, $3::jsonb, $4)", [
+        parteEnVivo,
+        s.teamIds[0],
+        JSON.stringify({ value: 112 }),
+        "Segunda revision, el video mostraba una rep mas",
+      ]);
+
+      const historial = await s.db.query<{ motivo: string }>(
+        `select motivo from workout_score_audit
+         where part_id = $1 and team_id = $2 order by created_at asc`,
+        [parteEnVivo, s.teamIds[0]],
+      );
+      // Insercion original (sin motivo, la puso el fixture como admin) + dos
+      // correcciones: nada se sobreescribe, cada intento queda su propia fila.
+      expect(historial.rows.map((r) => r.motivo)).toEqual([
+        null,
+        "Primera revision",
+        "Segunda revision, el video mostraba una rep mas",
+      ]);
+    });
   });
 });
 

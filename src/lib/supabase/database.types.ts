@@ -1557,6 +1557,7 @@ export type Database = {
           created_at: string
           division_id: string | null
           event_id: string
+          fase: string
           id: string
           key: string
           label: string
@@ -1570,6 +1571,7 @@ export type Database = {
           created_at?: string
           division_id?: string | null
           event_id: string
+          fase?: string
           id?: string
           key: string
           label: string
@@ -1583,6 +1585,7 @@ export type Database = {
           created_at?: string
           division_id?: string | null
           event_id?: string
+          fase?: string
           id?: string
           key?: string
           label?: string
@@ -1612,6 +1615,7 @@ export type Database = {
       registration_members: {
         Row: {
           accepted_terms_at: string | null
+          accepted_terms_offline_by: string | null
           answers: Json
           birth_date: string | null
           box: string | null
@@ -1635,6 +1639,7 @@ export type Database = {
         }
         Insert: {
           accepted_terms_at?: string | null
+          accepted_terms_offline_by?: string | null
           answers?: Json
           birth_date?: string | null
           box?: string | null
@@ -1658,6 +1663,7 @@ export type Database = {
         }
         Update: {
           accepted_terms_at?: string | null
+          accepted_terms_offline_by?: string | null
           answers?: Json
           birth_date?: string | null
           box?: string | null
@@ -1705,8 +1711,10 @@ export type Database = {
           currency: string | null
           division_id: string
           event_id: string
+          hold_expires_at: string | null
           id: string
           price_cents: number | null
+          source: Database["public"]["Enums"]["registration_source"]
           status: Database["public"]["Enums"]["registration_status"]
           submitted_at: string | null
           team_id: string | null
@@ -1721,8 +1729,10 @@ export type Database = {
           currency?: string | null
           division_id: string
           event_id: string
+          hold_expires_at?: string | null
           id?: string
           price_cents?: number | null
+          source?: Database["public"]["Enums"]["registration_source"]
           status?: Database["public"]["Enums"]["registration_status"]
           submitted_at?: string | null
           team_id?: string | null
@@ -1737,8 +1747,10 @@ export type Database = {
           currency?: string | null
           division_id?: string
           event_id?: string
+          hold_expires_at?: string | null
           id?: string
           price_cents?: number | null
+          source?: Database["public"]["Enums"]["registration_source"]
           status?: Database["public"]["Enums"]["registration_status"]
           submitted_at?: string | null
           team_id?: string | null
@@ -2400,6 +2412,8 @@ export type Database = {
       }
       workout_scores: {
         Row: {
+          corregido_en: string | null
+          corregido_por: string | null
           division_id: string
           entered_at: string | null
           entered_by: string | null
@@ -2420,6 +2434,8 @@ export type Database = {
           verified_by: string | null
         }
         Insert: {
+          corregido_en?: string | null
+          corregido_por?: string | null
           division_id: string
           entered_at?: string | null
           entered_by?: string | null
@@ -2440,6 +2456,8 @@ export type Database = {
           verified_by?: string | null
         }
         Update: {
+          corregido_en?: string | null
+          corregido_por?: string | null
           division_id?: string
           entered_at?: string | null
           entered_by?: string | null
@@ -2704,8 +2722,10 @@ export type Database = {
           currency: string | null
           division_id: string
           event_id: string
+          hold_expires_at: string | null
           id: string
           price_cents: number | null
+          source: Database["public"]["Enums"]["registration_source"]
           status: Database["public"]["Enums"]["registration_status"]
           submitted_at: string | null
           team_id: string | null
@@ -2750,6 +2770,7 @@ export type Database = {
         Args: { p_registration_id: string }
         Returns: {
           accepted_terms_at: string | null
+          accepted_terms_offline_by: string | null
           answers: Json
           birth_date: string | null
           box: string | null
@@ -2788,8 +2809,10 @@ export type Database = {
           currency: string | null
           division_id: string
           event_id: string
+          hold_expires_at: string | null
           id: string
           price_cents: number | null
+          source: Database["public"]["Enums"]["registration_source"]
           status: Database["public"]["Enums"]["registration_status"]
           submitted_at: string | null
           team_id: string | null
@@ -2834,6 +2857,42 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      corregir_workout_score: {
+        Args: {
+          p_motivo: string
+          p_part_id: string
+          p_score: Json
+          p_team_id: string
+        }
+        Returns: {
+          corregido_en: string | null
+          corregido_por: string | null
+          division_id: string
+          entered_at: string | null
+          entered_by: string | null
+          event_id: string
+          lane_id: string | null
+          part_id: string
+          round_breakdown: Json | null
+          score_unit: Database["public"]["Enums"]["score_unit"]
+          source: Database["public"]["Enums"]["capture_mode"]
+          status: Database["public"]["Enums"]["score_status"]
+          team_id: string
+          tiebreak_value: number | null
+          updated_at: string
+          value_cap: number | null
+          value_num: number | null
+          value_reps: number | null
+          verified_at: string | null
+          verified_by: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "workout_scores"
           isOneToOne: true
           isSetofReturn: false
         }
@@ -3011,6 +3070,7 @@ export type Database = {
         Args: { p_email: string; p_position: number; p_registration_id: string }
         Returns: {
           accepted_terms_at: string | null
+          accepted_terms_offline_by: string | null
           answers: Json
           birth_date: string | null
           box: string | null
@@ -3145,6 +3205,7 @@ export type Database = {
         Args: { p_public_slug: string }
         Returns: {
           event_date: string
+          format: Database["public"]["Enums"]["event_format"]
           name: string
           official: boolean
           status: Database["public"]["Enums"]["event_status"]
@@ -3288,6 +3349,10 @@ export type Database = {
         Args: { p_registration_id: string }
         Returns: boolean
       }
+      puede_ver_resultados_propios: {
+        Args: { p_event_id: string }
+        Returns: boolean
+      }
       registrar_intento_de_pago: {
         Args: {
           p_amount_cents?: number
@@ -3318,6 +3383,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      registration_readiness: {
+        Args: { p_registration_id: string }
+        Returns: string
       }
       remove_event_staff: { Args: { p_staff_id: string }; Returns: undefined }
       remove_org_member: {
@@ -3369,9 +3438,10 @@ export type Database = {
         }
       }
       save_member_data: {
-        Args: { p_datos: Json; p_member_id: string }
+        Args: { p_datos: Json; p_fase?: string; p_member_id: string }
         Returns: {
           accepted_terms_at: string | null
+          accepted_terms_offline_by: string | null
           answers: Json
           birth_date: string | null
           box: string | null
@@ -3460,8 +3530,10 @@ export type Database = {
           currency: string | null
           division_id: string
           event_id: string
+          hold_expires_at: string | null
           id: string
           price_cents: number | null
+          source: Database["public"]["Enums"]["registration_source"]
           status: Database["public"]["Enums"]["registration_status"]
           submitted_at: string | null
           team_id: string | null
@@ -3485,8 +3557,10 @@ export type Database = {
           currency: string | null
           division_id: string
           event_id: string
+          hold_expires_at: string | null
           id: string
           price_cents: number | null
+          source: Database["public"]["Enums"]["registration_source"]
           status: Database["public"]["Enums"]["registration_status"]
           submitted_at: string | null
           team_id: string | null
@@ -3593,8 +3667,15 @@ export type Database = {
         }
       }
       upsert_workout_score: {
-        Args: { p_part_id: string; p_score: Json; p_team_id: string }
+        Args: {
+          p_motivo?: string
+          p_part_id: string
+          p_score: Json
+          p_team_id: string
+        }
         Returns: {
+          corregido_en: string | null
+          corregido_por: string | null
           division_id: string
           entered_at: string | null
           entered_by: string | null
@@ -3712,6 +3793,7 @@ export type Database = {
         | "fallida"
         | "reembolsada"
         | "vencida"
+        | "procesando"
       org_plan: "free" | "pro"
       org_role: "owner" | "admin" | "head_judge" | "judge"
       payment_provider:
@@ -3728,6 +3810,13 @@ export type Database = {
         | "booleano"
         | "fecha"
       registration_member_status: "invitado" | "completo"
+      registration_source:
+        | "self_service"
+        | "organizer"
+        | "import"
+        | "team_captain"
+        | "api"
+        | "transfer"
       registration_status:
         | "borrador"
         | "esperando_integrantes"
@@ -3785,6 +3874,7 @@ export type Database = {
         | "lift"
         | "tiebreak"
         | "time_cap"
+        | "manual_finish"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3946,6 +4036,7 @@ export const Constants = {
         "fallida",
         "reembolsada",
         "vencida",
+        "procesando",
       ],
       org_plan: ["free", "pro"],
       org_role: ["owner", "admin", "head_judge", "judge"],
@@ -3965,6 +4056,14 @@ export const Constants = {
         "fecha",
       ],
       registration_member_status: ["invitado", "completo"],
+      registration_source: [
+        "self_service",
+        "organizer",
+        "import",
+        "team_captain",
+        "api",
+        "transfer",
+      ],
       registration_status: [
         "borrador",
         "esperando_integrantes",
@@ -4020,6 +4119,7 @@ export const Constants = {
         "lift",
         "tiebreak",
         "time_cap",
+        "manual_finish",
       ],
     },
   },

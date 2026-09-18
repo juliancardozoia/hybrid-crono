@@ -123,6 +123,10 @@ for (const fn of [
   "confirmar_corte_de_etapa", "etapa_previa_completa",
   // El circuito puede declarar su segmento de desempate.
   "marcar_segmento_de_desempate",
+  // Correccion de un score de CrossFit ante una impugnacion: mas restrictiva
+  // que upsert_workout_score() (exige can_verify_event, no can_score_event),
+  // asi que el anonimo tiene que seguir sin poder ni siquiera invocarla.
+  "corregir_workout_score",
 ]) {
   const { error } = await anon.rpc(fn, {});
   error ? ok(`${fn} bloqueada`) : mal(`${fn} es INVOCABLE por anon`);

@@ -435,6 +435,14 @@ export function calcularScoresDeWod(params: {
   teamId: string;
   eventId: string;
   divisionId: string;
+  /**
+   * `part_id` de las partes que la organizacion ya corrigio a mano para este
+   * equipo (`workout_scores.corregido_en is not null`). El juez termina su
+   * trabajo cuando cierra el carril; de ahi en mas, una correccion es una
+   * decision humana que este recalculo automatico nunca puede pisar en
+   * silencio -- se saltea esas partes por completo, sin recalcularlas.
+   */
+  corregidos: Set<string>;
 }): ScoreDeWod[] {
   const {
     suyas,
@@ -449,9 +457,12 @@ export function calcularScoresDeWod(params: {
     teamId,
     eventId,
     divisionId,
+    corregidos,
   } = params;
 
-  return suyas.map((parte): ScoreDeWod => {
+  const pendientes = suyas.filter((parte) => !corregidos.has(parte.id));
+
+  return pendientes.map((parte): ScoreDeWod => {
     // Cada parte cuenta solo sus marcajes. La largada es una sola y vale para
     // todas.
     const suyos = log.filter(
@@ -544,19 +555,31 @@ async function recalcularWod(params: {
 
   const partIds = suyas.map((p) => p.id);
 
-  const [{ data: bloques }, { data: movimientos }, { data: heat }] = await Promise.all([
-    service
-      .from("part_blocks")
-      .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms, cap_ms")
-      .in("part_id", partIds),
-    service
-      .from("part_movements")
-      .select(
-        "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style, max_attempts",
-      )
-      .in("part_id", partIds),
-    service.from("heats").select("started_at").eq("id", lane.heatId).maybeSingle(),
-  ]);
+  const [{ data: bloques }, { data: movimientos }, { data: heat }, { data: corregidasRows }] =
+    await Promise.all([
+      service
+        .from("part_blocks")
+        .select("id, part_id, order_index, kind, repeticiones, duracion_ms, descanso_ms, cap_ms")
+        .in("part_id", partIds),
+      service
+        .from("part_movements")
+        .select(
+          "id, block_id, part_id, order_index, movement_id, custom_name, unit, target_per_round, load_kg, load_unit, max_reps, es_tiebreak, capture_style, max_attempts",
+        )
+        .in("part_id", partIds),
+      service.from("heats").select("started_at").eq("id", lane.heatId).maybeSingle(),
+      // Partes que la organizacion ya corrigio a mano para ESTE equipo. El
+      // recalculo automatico las saltea por completo -- ver el comentario de
+      // `calcularScoresDeWod` sobre por que nunca puede pisar una correccion.
+      service
+        .from("workout_scores")
+        .select("part_id")
+        .eq("team_id", lane.teamId)
+        .in("part_id", partIds)
+        .not("corregido_en", "is", null),
+    ]);
+
+  const corregidos = new Set((corregidasRows ?? []).map((r) => r.part_id));
 
   const movementIds = [
     ...new Set(
@@ -597,6 +620,7 @@ async function recalcularWod(params: {
     teamId: lane.teamId,
     eventId: lane.eventId,
     divisionId,
+    corregidos,
   });
 
   for (const score of scores) {
