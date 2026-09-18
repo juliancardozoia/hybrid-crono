@@ -129,37 +129,27 @@ export function FichaDelEvento({
   const prefijo = PAISES.find((p) => p.codigo === pais)?.prefijo ?? "";
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form id="ficha-evento" action={formAction} className="flex flex-col gap-6">
       {Object.entries(hidden).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}
       <input type="hidden" name="timezone" value={huso} />
 
       <Seccion titulo="Identidad">
-        <Etiqueta texto="Nombre de la competencia">
-          <input
-            name="name"
-            required
-            minLength={3}
-            defaultValue={evento?.name ?? ""}
-            placeholder="ej: GAMES/HYROX"
-            className={campo}
-          />
-        </Etiqueta>
+        {/* Nombre, formato y modalidad en una fila desde `md`: el nombre pide
+            mas ancho que los dos selectores. Por debajo se apilan. */}
+        <div className="grid gap-4 md:grid-cols-[2fr_1fr_1fr]">
+          <Etiqueta texto="Nombre de la competencia">
+            <input
+              name="name"
+              required
+              minLength={3}
+              defaultValue={evento?.name ?? ""}
+              placeholder="ej: GAMES/HYROX"
+              className={campo}
+            />
+          </Etiqueta>
 
-        <Etiqueta
-          texto="Descripción"
-          ayuda="Lo que va a leer un atleta antes de inscribirse."
-        >
-          <textarea
-            name="description"
-            rows={4}
-            defaultValue={evento?.description ?? ""}
-            className={campo}
-          />
-        </Etiqueta>
-
-        <div className="grid gap-4 sm:grid-cols-2">
           <Etiqueta texto="Formato">
             <Selector
               name="format"
@@ -188,6 +178,18 @@ export function FichaDelEvento({
             </Selector>
           </Etiqueta>
         </div>
+
+        <Etiqueta
+          texto="Descripción"
+          ayuda="Lo que va a leer un atleta antes de inscribirse."
+        >
+          <textarea
+            name="description"
+            rows={4}
+            defaultValue={evento?.description ?? ""}
+            className={campo}
+          />
+        </Etiqueta>
 
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium">Afiche de la competencia</span>
@@ -282,7 +284,7 @@ export function FichaDelEvento({
       </Seccion>
 
       <Seccion titulo="Dónde">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Etiqueta texto="País">
             <Selector
               name="country"
@@ -310,9 +312,6 @@ export function FichaDelEvento({
               className={campo}
             />
           </Etiqueta>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
           <Etiqueta texto="Ciudad">
             <input
               name="city"
@@ -320,6 +319,9 @@ export function FichaDelEvento({
               className={campo}
             />
           </Etiqueta>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <Etiqueta texto="Sede">
             <input
               name="venue"
@@ -328,43 +330,46 @@ export function FichaDelEvento({
               className={campo}
             />
           </Etiqueta>
+          <Etiqueta texto="Dirección">
+            <input
+              name="address"
+              defaultValue={evento?.address ?? ""}
+              className={campo}
+            />
+          </Etiqueta>
         </div>
-
-        <Etiqueta texto="Dirección">
-          <input
-            name="address"
-            defaultValue={evento?.address ?? ""}
-            className={campo}
-          />
-        </Etiqueta>
       </Seccion>
 
       <Seccion titulo="Contacto y redes">
-        <Etiqueta texto="Organiza">
-          <input
-            name="organizerName"
-            defaultValue={evento?.organizer_name ?? ""}
-            className={campo}
-          />
-        </Etiqueta>
-
-        <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
-          <Etiqueta texto="Prefijo">
+        {/* Organiza + telefono (prefijo y numero juntos) en una fila, y las dos
+            redes en otra: en escritorio son dos renglones en vez de cuatro. En
+            celular cada bloque se apila. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Etiqueta texto="Organiza">
             <input
-              name="organizerPhoneCountry"
-              defaultValue={evento?.organizer_phone_country ?? prefijo}
-              key={prefijo}
-              placeholder="+57"
+              name="organizerName"
+              defaultValue={evento?.organizer_name ?? ""}
               className={campo}
             />
           </Etiqueta>
-          <Etiqueta texto="Teléfono">
-            <input
-              name="organizerPhone"
-              defaultValue={evento?.organizer_phone ?? ""}
-              className={campo}
-            />
-          </Etiqueta>
+          <div className="grid grid-cols-[6rem_1fr] gap-3">
+            <Etiqueta texto="Prefijo">
+              <input
+                name="organizerPhoneCountry"
+                defaultValue={evento?.organizer_phone_country ?? prefijo}
+                key={prefijo}
+                placeholder="+57"
+                className={`${campo} min-w-0`}
+              />
+            </Etiqueta>
+            <Etiqueta texto="Teléfono">
+              <input
+                name="organizerPhone"
+                defaultValue={evento?.organizer_phone ?? ""}
+                className={`${campo} min-w-0`}
+              />
+            </Etiqueta>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

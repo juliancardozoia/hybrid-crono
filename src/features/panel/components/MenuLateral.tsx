@@ -52,11 +52,15 @@ interface Enlace {
 // "Inicio" y no "Mis Competencias": esta fila deja de ser exclusiva del
 // organizador -- /panel es el punto de entrada de toda cuenta, con "Compito",
 // "Juzgo" y "Organizo" como secciones propias ahi (ver panel/page.tsx).
-// "Mi perfil" vive aca y no en un enlace suelto del encabezado: es una
-// pantalla mas del panel, con la misma barra lateral que el resto.
 const CUENTA: Enlace[] = [
   { href: "/panel", label: "Descripción general", icono: "trofeo", exacto: true },
-  { href: "/panel/perfil", label: "Mi perfil", icono: "personas" },
+];
+
+// "Plan" va al pie de la barra, separado por una linea: es un ajuste de la
+// cuenta, no un destino de trabajo, y no tiene por que competir con las
+// secciones de la competencia abierta. "Mi perfil" ya no esta en la barra:
+// se llega desde el menu de cuenta del encabezado.
+const PIE: Enlace[] = [
   { href: "/panel/organizacion/plan", label: "Plan", icono: "inscripcion" },
 ];
 
@@ -81,7 +85,7 @@ function seccionesDelEvento(
         label: "Información General",
         icono: "documento",
       },
-      { href: `${base}/atletas`, label: "Registro Atletas", icono: "personas" },
+      { href: `${base}/atletas`, label: "Registro atletas", icono: "personas" },
       // SOLO CrossFit: una carrera hibrida no tiene nada que cargar a mano, el
       // tiempo sale de cronometrar (ver el comentario de EventTabs.tsx sobre
       // por que "Cargar" se saco de la barra de pestañas). La pantalla
@@ -230,6 +234,10 @@ export function MenuLateral({
           alElegir={cerrar}
         />
       )}
+
+      <div className="mt-auto border-t border-neutral-800 pt-3">
+        <Grupo enlaces={PIE} pathname={pathname} alElegir={cerrar} />
+      </div>
     </div>
   );
 
