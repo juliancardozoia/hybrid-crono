@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createPublicClient } from "@/lib/supabase/public";
 import type { Readiness } from "./lib/estados";
 import type {
+  EventFormat,
+  EventStatus,
   RegistrationFieldType,
   RegistrationMemberRow,
   RegistrationRow,
@@ -178,6 +180,16 @@ export interface ResumenDeInscripcion {
   teamName: string | null;
   eventName: string;
   eventSlug: string;
+  /** Para el widget de "mi proxima competencia": el afiche, si lo cargaron. */
+  logoUrl: string | null;
+  venue: string | null;
+  /**
+   * Estado de la COMPETENCIA, no del tramite (eso ya lo dice `status`). Sin
+   * esto no hay forma de saber si conviene mostrarle al atleta un widget de
+   * leaderboard/resultados o si el evento todavia ni arranco.
+   */
+  eventStatus: EventStatus;
+  eventFormat: EventFormat;
   divisionName: string;
   startsAt: string | null;
   timezone: string;
@@ -232,7 +244,7 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
   const [{ data: eventos }, { data: divisiones }, { data: equipos }] = await Promise.all([
     supabase
       .from("events")
-      .select("id, name, public_slug, starts_at, timezone")
+      .select("id, name, public_slug, starts_at, timezone, status, format, logo_url, venue")
       .in("id", [...new Set(registros.map((r) => r.event_id))]),
     supabase
       .from("divisions")
@@ -258,6 +270,10 @@ export async function getMisInscripciones(): Promise<ResumenDeInscripcion[]> {
         teamName: r.team_name,
         eventName: e.name,
         eventSlug: e.public_slug,
+        logoUrl: e.logo_url,
+        venue: e.venue,
+        eventStatus: e.status,
+        eventFormat: e.format,
         divisionName: division.get(r.division_id) ?? "",
         startsAt: e.starts_at,
         timezone: e.timezone,

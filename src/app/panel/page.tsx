@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
 import { getEventAccess, type EventAccess } from "@/features/events/lib/access";
 import { listEventosQueOrganizo } from "@/features/events/queries";
 import {
@@ -16,19 +17,20 @@ import {
 import { getPruebas } from "@/features/workouts/queries";
 import { getEstadoDelPlan } from "@/features/planes/queries";
 import { PanoramaDeCompetencia } from "@/features/events/components/PanoramaDeCompetencia";
+import { PanoramaDeAtleta } from "@/features/inscripciones/components/PanoramaDeAtleta";
 import {
   getInscripcionesDelEvento,
   getMisInscripciones,
 } from "@/features/inscripciones/queries";
-import {
-  textoDeEstado,
-  claseDePastilla,
-  mensajeDeReadiness,
-} from "@/features/inscripciones/lib/estados";
+import { elegirDestacada } from "@/features/inscripciones/lib/panorama";
 import { getPerfil } from "@/features/cuenta/queries";
 import { puedeJuzgar, getJudgeLanes } from "@/features/judge/queries";
-import { getLeaderboard } from "@/features/leaderboard/queries";
-import { rangoDeFechas } from "@/features/catalogo/lib/formato";
+import {
+  getLeaderboard,
+  getResultadoDeAtleta,
+  type Leaderboard,
+  type ResultadoDeAtleta,
+} from "@/features/leaderboard/queries";
 import { traduccion } from "@/shared/i18n/servidor";
 import { Icono } from "@/shared/components/Icono";
 
@@ -136,9 +138,15 @@ async function PanelDeCompetencia({
 }
 
 /**
- * El inicio de siempre: Compito y Juzgo. Es lo que ve cualquier cuenta sin
- * ninguna competencia propia -- un atleta puro, o un organizador que
- * todavia no creo la primera.
+ * El inicio de siempre: mi panorama como atleta, y Juzgo. Es lo que ve
+ * cualquier cuenta sin ninguna competencia propia -- un atleta puro, o un
+ * organizador que todavia no creo la primera.
+ *
+ * "Compito" (la lista plana de inscripciones) se reemplazo por
+ * `PanoramaDeAtleta`: mismo concepto que el panorama del organizador, del
+ * otro lado -- un widget destacado con la competencia mas urgente (afiche,
+ * cuenta regresiva, mi categoria, mi dorsal) mas sus resultados si ya los
+ * hay, y debajo la lista completa de todas mis inscripciones con su estado.
  */
 async function PanelDeCuenta() {
   const [perfil, { idioma }, inscripciones, mostrarJuzgar] = await Promise.all([
@@ -154,8 +162,32 @@ async function PanelDeCuenta() {
     perfil && perfil.avatarUrl && perfil.phone && perfil.birthDate && perfil.country,
   );
 
+  const destacada = elegirDestacada(inscripciones);
+
+  // Cliente CON SESION, no el anonimo: el propio inscripto ve su resultado y
+  // el de su categoria aunque el evento todavia no sea publico ni el plan
+  // muestre nada en vivo -- el bypass vive en Postgres
+  // (`puede_ver_resultados_propios`), mismo mecanismo que ya usa
+  // `/en-vivo/[slug]/atleta/[bib]`. Es justo lo que pedia "habilitar los
+  // resultados si el atleta esta en la competencia".
+  let resultado: ResultadoDeAtleta = null;
+  let leaderboardCircuito: Leaderboard | null = null;
+
+  const puedeTenerResultados =
+    destacada &&
+    destacada.bib !== null &&
+    ["live", "verifying", "published"].includes(destacada.eventStatus);
+
+  if (puedeTenerResultados && destacada) {
+    const supabase = await createClient();
+    resultado = await getResultadoDeAtleta(destacada.eventSlug, destacada.bib!, supabase);
+    if (destacada.eventFormat !== "crossfit") {
+      leaderboardCircuito = await getLeaderboard(destacada.eventSlug, supabase);
+    }
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-col gap-10 p-6 lg:p-10">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 p-6 lg:p-10">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">
           {`Hola, ${
@@ -180,89 +212,13 @@ async function PanelDeCuenta() {
         </Link>
       )}
 
-      {/* COMPITO. Siempre visible, aunque este vacia: un selector ausente no
-          dice nada, uno vacio invita a buscar una competencia. */}
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h2 className="text-lg font-semibold">Compito</h2>
-          <Link href="/" className="text-sm text-lime-400 hover:underline">
-            Buscar competencias
-          </Link>
-        </div>
-
-        {inscripciones.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-neutral-800 p-10 text-center">
-            <p className="text-neutral-400">Todavía no te inscribiste en ninguna.</p>
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {inscripciones.map((i) => {
-              // "PAGADO no significa LISTO": una vez confirmada, este
-              // mensaje es lo que distingue "ya pagaste, pero..." de "no
-              // falta nada". Antes de confirmarse, el badge de status ya
-              // cuenta toda la historia ("falta pagar", "faltan
-              // integrantes") y esto no agrega nada nuevo.
-              const mensaje = mensajeDeReadiness(i.status, i.readiness);
-              return (
-                <li
-                  key={i.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-neutral-800 p-4 transition-colors hover:border-neutral-700 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-                >
-                  <Link href={`/inscripcion/${i.id}`} className="min-w-0 flex-1">
-                    <p className="truncate font-semibold">{i.eventName}</p>
-                    <p className="truncate text-sm text-neutral-500">
-                      {[i.divisionName, rangoDeFechas(i.startsAt, null, i.timezone, idioma, "")]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                    {mensaje && (
-                      <p
-                        className={`mt-1 text-sm font-medium ${
-                          i.readiness === "listo" ? "text-lime-400" : "text-amber-400"
-                        }`}
-                      >
-                        {i.readiness === "listo" ? "✓ " : "○ "}
-                        {mensaje}
-                      </p>
-                    )}
-                  </Link>
-                  <div className="flex shrink-0 items-center gap-3">
-                    {i.bib !== null && (
-                      <Link
-                        href={`/en-vivo/${i.eventSlug}/atleta/${i.bib}`}
-                        className="text-sm font-medium text-lime-400 hover:underline"
-                      >
-                        Ver resultados
-                      </Link>
-                    )}
-                    {i.status === "esperando_pago" && (
-                      <Link
-                        href={`/inscripcion/${i.id}`}
-                        className="text-sm font-medium text-lime-400 hover:underline"
-                      >
-                        Completar pago
-                      </Link>
-                    )}
-                    {i.status === "confirmada" && i.readiness === "accion_requerida" && (
-                      <Link
-                        href={`/inscripcion/${i.id}`}
-                        className="text-sm font-medium text-amber-400 hover:underline"
-                      >
-                        Completar mi inscripción
-                      </Link>
-                    )}
-                    <span
-                      className={`rounded-lg px-2.5 py-1 text-xs font-medium ${claseDePastilla(i.status)}`}
-                    >
-                      {textoDeEstado(i.status)}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <PanoramaDeAtleta
+        inscripciones={inscripciones}
+        destacada={destacada}
+        resultado={resultado}
+        leaderboardCircuito={leaderboardCircuito}
+        idioma={idioma}
+      />
 
       {/* JUZGO. Solo si tiene algo que juzgar -- ver EncabezadoPublico, mismo gate. */}
       {mostrarJuzgar && (

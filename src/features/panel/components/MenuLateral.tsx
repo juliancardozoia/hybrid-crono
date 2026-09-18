@@ -55,7 +55,7 @@ interface Enlace {
 // "Mi perfil" vive aca y no en un enlace suelto del encabezado: es una
 // pantalla mas del panel, con la misma barra lateral que el resto.
 const CUENTA: Enlace[] = [
-  { href: "/panel", label: "Inicio", icono: "trofeo", exacto: true },
+  { href: "/panel", label: "Descripción general", icono: "trofeo", exacto: true },
   { href: "/panel/perfil", label: "Mi perfil", icono: "personas" },
   { href: "/panel/organizacion/plan", label: "Plan", icono: "inscripcion" },
 ];
