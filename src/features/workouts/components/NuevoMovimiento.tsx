@@ -159,15 +159,15 @@ export function NuevoMovimiento({
               disabled={elegido ? !elegido.allowsLoad : false}
               placeholder={elegido && !elegido.allowsLoad ? "sin carga" : ""}
             />
-            <select
+            <Selector
               name="loadUnit"
               defaultValue="kg"
               disabled={elegido ? !elegido.allowsLoad : false}
-              className={`${campo} w-16`}
+              className="w-24 shrink-0 py-2 text-sm"
             >
               <option value="kg">kg</option>
               <option value="lb">lb</option>
-            </select>
+            </Selector>
           </div>
         </label>
 
