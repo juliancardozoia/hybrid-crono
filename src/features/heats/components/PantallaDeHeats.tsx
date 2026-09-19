@@ -76,7 +76,17 @@ export function PantallaDeHeats({
 
   const etapas = useMemo(() => {
     const todas = [...new Set(pruebas.map((p) => p.stage))].sort((a, b) => a - b);
-    return todas.filter((e) => e === primeraEtapa || confirmadas.has(e));
+    const habilitadas = todas.filter((e) => e === primeraEtapa || confirmadas.has(e));
+
+    // NUNCA vacio, y no es una defensa teorica: un evento sin ninguna prueba
+    // cargada —una carrera hibrida a la que todavia no se le creo la parte de
+    // circuito— dejaba esto en `[]`, y con eso el ajuste de render de mas
+    // abajo entraba en bucle infinito ("Too many re-renders"). Un `setState`
+    // durante el render NO tiene el bailout por valor igual que si tiene uno
+    // normal: React vuelve a renderizar igual, asi que corregir `etapaActiva`
+    // a un valor que `etapas` nunca puede contener repite el setState hasta
+    // que React corta con ese error.
+    return habilitadas.length > 0 ? habilitadas : [primeraEtapa];
   }, [pruebas, primeraEtapa, confirmadas]);
   const variasEtapas = etapas.length > 1;
   const [etapaActiva, setEtapaActiva] = useState(primeraEtapa);
@@ -87,8 +97,12 @@ export function PantallaDeHeats({
   // nada externo, es corregir una seleccion que dejo de ser valida cuando
   // `etapas` cambia (por ejemplo, se confirma un corte y aparece una etapa
   // nueva).
-  if (!etapas.includes(etapaActiva)) {
-    setEtapaActiva(etapas[0] ?? primeraEtapa);
+  // La correccion se calcula primero y solo se escribe si DE VERDAD cambia:
+  // `etapas` ya garantiza al menos un elemento, asi que esto siempre converge
+  // en un render.
+  const etapaCorregida = etapas.includes(etapaActiva) ? etapaActiva : etapas[0]!;
+  if (etapaCorregida !== etapaActiva) {
+    setEtapaActiva(etapaCorregida);
   }
 
   // Las pruebas de la etapa elegida. Se filtra SIEMPRE por `etapaActiva` —no

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPublicClient } from "@/lib/supabase/public";
 import { buildScoreboard, type ScoreboardDivisionResult, type ScoreboardInput } from "@/shared/scoring/scoreboard";
 import { tablaDeDivision, type FilaDeEquipo, type TablaDeDivision } from "./lib/tabla";
+import type { SegmentoDeCircuito } from "./lib/circuito";
 import type { Database } from "@/lib/supabase/database.types";
 import type { EventFormat, LaneStatus } from "@/lib/supabase/types";
 
@@ -269,4 +270,106 @@ export async function getResultadoDeAtleta(
     row,
     rivales,
   };
+}
+
+/**
+ * La estructura del circuito de cada categoria, y cuando largo cada equipo.
+ *
+ * Es lo que le falta al leaderboard para poder decir EN QUE ESTACION esta un
+ * atleta: `public_leaderboard` devuelve solo los parciales ya cerrados, y la
+ * estacion en curso es el primer segmento que todavia no tiene ninguno. Sin la
+ * lista completa de segmentos no hay con que compararlos.
+ *
+ * NO es publica: la consulta el panel del organizador con el cliente de la
+ * sesion y RLS decide. El publico no la necesita —su leaderboard muestra el
+ * resultado, no la produccion del evento— y abrirla seria superficie nueva por
+ * nada.
+ *
+ * Consultas PLANAS, sin ningun embed, a proposito: los embeds de PostgREST no
+ * los cubren los tests de base (PGlite no tiene PostgREST) y un embed invalido
+ * devuelve una pantalla vacia sin ningun error. Cruzar cinco listas cortas en
+ * TypeScript no tiene ese riesgo.
+ */
+export interface CircuitosDelEvento {
+  /** Los segmentos de cada categoria, por NOMBRE: es como vienen las filas del leaderboard. */
+  porCategoria: Record<string, SegmentoDeCircuito[]>;
+  /**
+   * Epoch en milisegundos de la largada del heat de cada dorsal, o null si su
+   * heat todavia no arranco. Es el ancla del indicador en vivo.
+   */
+  largadaPorDorsal: Record<number, number | null>;
+  /**
+   * El box de cada dorsal (varios integrantes de gimnasios distintos se unen
+   * con " / "), o null si nadie lo cargo. `public_leaderboard` no lo devuelve
+   * y no hace falta abrirselo al publico: el box lo lee solo el organizador.
+   */
+  boxPorDorsal: Record<number, string | null>;
+}
+
+export async function getCircuitosDelEvento(
+  eventId: string,
+  supabase: Cliente,
+): Promise<CircuitosDelEvento> {
+  const [divisiones, segmentos, resultados, heats, equipos, integrantes, atletas] =
+    await Promise.all([
+    supabase.from("divisions").select("id, name, course_template_id").eq("event_id", eventId),
+    supabase
+      .from("segments")
+      .select("id, name, kind, order_index, course_template_id")
+      .eq("event_id", eventId)
+      .order("order_index"),
+    supabase.from("results").select("team_id, heat_id").eq("event_id", eventId),
+    supabase.from("heats").select("id, started_at").eq("event_id", eventId),
+    supabase.from("teams").select("id, bib_number").eq("event_id", eventId),
+    supabase.from("team_members").select("team_id, athlete_id").eq("event_id", eventId),
+    supabase.from("athletes").select("id, box").eq("event_id", eventId),
+  ]);
+
+  const porPlantilla = new Map<string, SegmentoDeCircuito[]>();
+  for (const s of segmentos.data ?? []) {
+    const lista = porPlantilla.get(s.course_template_id) ?? [];
+    lista.push({ id: s.id, name: s.name, kind: s.kind, orderIndex: s.order_index });
+    porPlantilla.set(s.course_template_id, lista);
+  }
+
+  const porCategoria: Record<string, SegmentoDeCircuito[]> = {};
+  for (const d of divisiones.data ?? []) {
+    // `divisions.course_template_id` y NO `part_divisions.course_template_id`:
+    // los splits que se van a cruzar contra esta lista los genero el recalculo
+    // (`recompute.ts`), que resuelve el circuito por ahi. Tomarlo de otro lado
+    // daria dos listas de estaciones que pueden no coincidir, y el atleta
+    // apareceria en una estacion que no es.
+    const segs = d.course_template_id ? porPlantilla.get(d.course_template_id) : undefined;
+    if (segs?.length) porCategoria[d.name] = segs;
+  }
+
+  const largadaDelHeat = new Map<string, number | null>(
+    (heats.data ?? []).map((h) => [h.id, h.started_at ? new Date(h.started_at).getTime() : null]),
+  );
+  const dorsalDelEquipo = new Map((equipos.data ?? []).map((t) => [t.id, t.bib_number]));
+
+  const largadaPorDorsal: Record<number, number | null> = {};
+  for (const r of resultados.data ?? []) {
+    const dorsal = r.team_id ? dorsalDelEquipo.get(r.team_id) : undefined;
+    if (dorsal == null) continue;
+    largadaPorDorsal[dorsal] = largadaDelHeat.get(r.heat_id) ?? null;
+  }
+
+  const boxDelAtleta = new Map((atletas.data ?? []).map((a) => [a.id, a.box?.trim() || null]));
+  const boxesDelEquipo = new Map<string, string[]>();
+  for (const m of integrantes.data ?? []) {
+    const box = boxDelAtleta.get(m.athlete_id);
+    if (!box) continue;
+    const lista = boxesDelEquipo.get(m.team_id) ?? [];
+    if (!lista.includes(box)) lista.push(box);
+    boxesDelEquipo.set(m.team_id, lista);
+  }
+
+  const boxPorDorsal: Record<number, string | null> = {};
+  for (const t of equipos.data ?? []) {
+    const boxes = boxesDelEquipo.get(t.id);
+    boxPorDorsal[t.bib_number] = boxes?.length ? boxes.join(" / ") : null;
+  }
+
+  return { porCategoria, largadaPorDorsal, boxPorDorsal };
 }

@@ -1,8 +1,14 @@
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
 import { requireEventAccess } from "@/features/events/lib/access";
+import { LeaderboardDeCircuito } from "@/features/leaderboard/components/LeaderboardDeCircuito";
 import { LeaderboardLive } from "@/features/leaderboard/components/LeaderboardLive";
 import { TablaGeneral } from "@/features/leaderboard/components/TablaGeneral";
-import { getLeaderboard, getTablaGeneral } from "@/features/leaderboard/queries";
+import {
+  getCircuitosDelEvento,
+  getLeaderboard,
+  getTablaGeneral,
+} from "@/features/leaderboard/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +35,17 @@ export default async function LeaderboardPage({
   const { id } = await params;
   const { event } = await requireEventAccess(id);
 
-  const [leaderboard, general] = await Promise.all([
+  // Una carrera hibrida se sigue estacion por estacion; un CrossFit no tiene
+  // circuito que recorrer, asi que ahi la estructura no se pide siquiera.
+  const esCircuito = event.format !== "crossfit";
+  const supabase = await createClient();
+
+  const [leaderboard, general, circuitos] = await Promise.all([
     getLeaderboard(event.public_slug),
     getTablaGeneral(event.public_slug),
+    esCircuito
+      ? getCircuitosDelEvento(event.id, supabase)
+      : Promise.resolve({ porCategoria: {}, largadaPorDorsal: {}, boxPorDorsal: {} }),
   ]);
 
   const vacio = leaderboard.rows.length === 0 && general.divisiones.length === 0;
@@ -79,14 +93,20 @@ export default async function LeaderboardPage({
               propio cartel de "todavia no hay resultados" que nunca se va:
               no aporta nada y le roba el lugar a la tabla general, que es la
               unica que si tiene datos. Se omite entero en ese caso. */}
-          {leaderboard.rows.length > 0 && (
-            <LeaderboardLive
-              slug={event.public_slug}
-              inicial={leaderboard}
-              eventName={event.name}
-              compacto
-            />
-          )}
+          {leaderboard.rows.length > 0 &&
+            (esCircuito ? (
+              /* La version de la ORGANIZACION: la misma tabla que ve el publico
+                 mas la columna de "¿en que estacion va?" y los parciales
+                 desplegables. Ver `LeaderboardDeCircuito`. */
+              <LeaderboardDeCircuito leaderboard={leaderboard} circuitos={circuitos} />
+            ) : (
+              <LeaderboardLive
+                slug={event.public_slug}
+                inicial={leaderboard}
+                eventName={event.name}
+                compacto
+              />
+            ))}
           {/* Se esconde sola solo cuando es redundante con el leaderboard de
               tiempos de arriba: una sola prueba y ademas de circuito. */}
           <TablaGeneral slug={event.public_slug} inicial={general} />
