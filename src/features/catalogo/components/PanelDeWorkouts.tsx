@@ -279,9 +279,13 @@ function Movimiento({ mov, rondas }: { mov: MovimientoPublico; rondas: number })
 
       {mov.notas && <p className="text-sm text-neutral-500">{mov.notas}</p>}
 
-      {/* El peso de cada categoria. Es el dato por el que se entra a esta
-          pantalla, asi que va debajo del movimiento y no en una tabla aparte:
-          se lee junto a lo que modifica. */}
+      {/* El peso, las reps Y LA VARIANTE de cada categoria. Es el dato por el
+          que se entra a esta pantalla, asi que va debajo del movimiento y no
+          en una tabla aparte: se lee junto a lo que modifica. Cuando la
+          categoria corre OTRO movimiento (single unders donde la fila dice
+          double unders), el nombre va primero y resaltado: sin eso el atleta
+          leeria "25" al lado de "Double Under" sin enterarse de que en su
+          categoria son saltos simples. */}
       {mov.porCategoria.length > 0 && (
         <ul className="mt-0.5 flex flex-wrap gap-1.5">
           {mov.porCategoria.map((c) => (
@@ -290,6 +294,9 @@ function Movimiento({ mov, rondas }: { mov: MovimientoPublico; rondas: number })
               className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-xs"
             >
               <span className="text-neutral-400">{c.division}</span>
+              {c.nombre && (
+                <span className="ml-1.5 font-semibold text-lime-300">{c.nombre}</span>
+              )}
               <span className="ml-1.5 font-medium text-neutral-100">
                 {[
                   c.objetivo?.length ? c.objetivo.join("-") : null,
@@ -298,7 +305,7 @@ function Movimiento({ mov, rondas }: { mov: MovimientoPublico; rondas: number })
                     : null,
                 ]
                   .filter(Boolean)
-                  .join(" · ") || "—"}
+                  .join(" · ") || (c.nombre ? null : "—")}
               </span>
             </li>
           ))}

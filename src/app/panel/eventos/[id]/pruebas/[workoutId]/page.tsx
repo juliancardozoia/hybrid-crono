@@ -524,6 +524,13 @@ function SeccionDeParte({
                 id: d.divisionId,
                 nombre: nombreDivision.get(d.divisionId) ?? "Categoría",
               }))}
+              catalogo={catalogo.map((m) => ({
+                id: m.id,
+                name: m.name,
+                category: m.category,
+                defaultUnit: m.default_unit,
+                allowsLoad: m.allows_load,
+              }))}
               iniciales={Object.fromEntries(
                 [...parte.specs.entries()].map(([clave, spec]) => [
                   clave,
@@ -533,6 +540,11 @@ function SeccionDeParte({
                       spec.loadKg === null
                         ? ""
                         : String(desdeKilos(spec.loadKg, spec.loadUnit)),
+                    // "otro" cuando la categoria escribio un nombre libre; el
+                    // id del catalogo cuando eligio uno de ahi; "" cuando no
+                    // varia el movimiento de la fila.
+                    movimientoId: spec.customName ? "otro" : (spec.movementId ?? ""),
+                    movimientoTexto: spec.customName ?? "",
                   },
                 ]),
               )}

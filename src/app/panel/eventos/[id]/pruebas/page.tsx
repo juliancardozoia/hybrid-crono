@@ -9,6 +9,7 @@ import {
 } from "@/features/workouts/actions";
 import { NuevaPrueba } from "@/features/workouts/components/NuevaPrueba";
 import { QuitarPrueba } from "@/features/workouts/components/QuitarPrueba";
+import { BotonesDeOrden } from "@/features/workouts/components/BotonesDeOrden";
 import { describirParte } from "@/features/workouts/lib/describir";
 import { getEstadoDelPlan } from "@/features/planes/queries";
 import { AvisoDePlan } from "@/features/planes/components/AvisoDePlan";
@@ -128,6 +129,13 @@ export default async function PruebasPage({
 
                 {canManage && (
                   <div className="flex shrink-0 items-center gap-1">
+                    <BotonesDeOrden
+                      eventId={id}
+                      contenedorId={id}
+                      ids={pruebas.map((p) => p.workout.id)}
+                      actual={workout.id}
+                      tipo="prueba"
+                    />
                     <FormularioDeEstado
                       accion={alternarPublicacion.bind(
                         null,

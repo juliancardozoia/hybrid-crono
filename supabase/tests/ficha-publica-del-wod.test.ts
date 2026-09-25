@@ -26,6 +26,7 @@ interface MovimientoPublico {
     division: string;
     cargaKg: string | number | null;
     cargaUnidad: string;
+    nombre: string | null;
   }>;
 }
 
@@ -145,6 +146,74 @@ describe("el peso sale en la unidad en la que se escribió", () => {
     const [categoria] = (await fran()).blocks[0].movimientos[0].porCategoria;
     expect(categoria.cargaUnidad).toBe("lb");
     expect(Number(categoria.cargaKg)).toBeCloseTo(29.48, 2);
+  });
+});
+
+describe("la variante de movimiento por categoría", () => {
+  it("nombre viene null cuando la categoría no cambia el movimiento", async () => {
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: movimientoId,
+            objetivo: null,
+            cargaKg: 30,
+            cargaUnidad: "kg",
+          },
+        ]),
+      ]),
+    );
+
+    const [categoria] = (await fran()).blocks[0].movimientos[0].porCategoria;
+    expect(categoria.nombre).toBeNull();
+  });
+
+  it("nombre trae el del catálogo cuando la categoría elige otro movimiento", async () => {
+    const pullUp = await asUser(s.db, s.users.owner, () =>
+      s.db.query<{ id: string }>("select id from movements where name = 'Pull-up'"),
+    );
+
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: movimientoId,
+            objetivo: null,
+            cargaKg: null,
+            cargaUnidad: "kg",
+            movementId: pullUp.rows[0].id,
+          },
+        ]),
+      ]),
+    );
+
+    const [categoria] = (await fran()).blocks[0].movimientos[0].porCategoria;
+    expect(categoria.nombre).toBe("Pull-up");
+  });
+
+  it("nombre trae el texto libre cuando la categoría lo escribe a mano", async () => {
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: movimientoId,
+            objetivo: null,
+            cargaKg: null,
+            cargaUnidad: "kg",
+            customName: "Double Crossover",
+          },
+        ]),
+      ]),
+    );
+
+    const [categoria] = (await fran()).blocks[0].movimientos[0].porCategoria;
+    expect(categoria.nombre).toBe("Double Crossover");
   });
 });
 

@@ -99,6 +99,10 @@ export interface SpecDeCategoria {
   targetPerRound: number[] | null;
   loadKg: number | null;
   loadUnit: LoadUnit;
+  /** La variante de movimiento de esta categoría; `null` los dos = el mismo
+   *  movimiento que ya tiene la fila. */
+  movementId: string | null;
+  customName: string | null;
 }
 
 export interface PruebaCompleta {
@@ -147,7 +151,9 @@ export async function getPruebaCompleta(
       // justifique el ida y vuelta.
       supabase
         .from("division_movement_specs")
-        .select("division_id, part_movement_id, target_per_round, load_kg, load_unit")
+        .select(
+          "division_id, part_movement_id, target_per_round, load_kg, load_unit, movement_id, custom_name",
+        )
         .eq("event_id", workout.event_id),
     ]);
 
@@ -171,6 +177,8 @@ export async function getPruebaCompleta(
               targetPerRound: s.target_per_round,
               loadKg: s.load_kg,
               loadUnit: s.load_unit,
+              movementId: s.movement_id,
+              customName: s.custom_name,
             },
           ]),
       ),

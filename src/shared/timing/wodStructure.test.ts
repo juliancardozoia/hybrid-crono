@@ -139,6 +139,119 @@ describe("Rx contra Scaled: la categoría manda", () => {
   });
 });
 
+describe("la variante de movimiento por categoría", () => {
+  const SALTO: FilaDeMovimiento = {
+    ...THRUSTER,
+    movement_id: "cat-double-under",
+    custom_name: null,
+    load_kg: null,
+  };
+  const NOMBRES_CON_SALTOS = new Map([
+    ["cat-double-under", "Double Under"],
+    ["cat-single-under", "Single Under"],
+  ]);
+
+  it("sin spec, el movimiento es el de la fila", () => {
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs: new Map(),
+    });
+    expect(e.blocks[0].movements[0].name).toBe("Double Under");
+  });
+
+  it("con un movement_id propio, la categoría corre OTRO movimiento del catálogo", () => {
+    // El caso del pedido real: Scaled salta single unders donde RX salta
+    // double unders, mismo patrón de salto, mismo objetivo de reps.
+    const specs = new Map([
+      ["m1", { target_per_round: null, load_kg: null, movement_id: "cat-single-under" }],
+    ]);
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs,
+    });
+    expect(e.blocks[0].movements[0].name).toBe("Single Under");
+  });
+
+  it("con un custom_name propio, la categoría escribe su propio texto libre", () => {
+    const specs = new Map([
+      ["m1", { target_per_round: null, load_kg: null, custom_name: "Double Crossover" }],
+    ]);
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs,
+    });
+    expect(e.blocks[0].movements[0].name).toBe("Double Crossover");
+  });
+
+  it("custom_name manda sobre movement_id si por error vinieran los dos", () => {
+    const specs = new Map([
+      [
+        "m1",
+        {
+          target_per_round: null,
+          load_kg: null,
+          movement_id: "cat-single-under",
+          custom_name: "Double Crossover",
+        },
+      ],
+    ]);
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs,
+    });
+    expect(e.blocks[0].movements[0].name).toBe("Double Crossover");
+  });
+
+  it("un movement_id de spec que el catálogo no trae no rompe, cae al nombre base", () => {
+    const specs = new Map([
+      ["m1", { target_per_round: null, load_kg: null, movement_id: "no-existe" }],
+    ]);
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs,
+    });
+    expect(e.blocks[0].movements[0].name).toBe("Double Under");
+  });
+
+  it("la variante no toca el peso ni las reps: son ajustes independientes", () => {
+    const specs = new Map([
+      [
+        "m1",
+        {
+          target_per_round: [50],
+          load_kg: null,
+          custom_name: "Double Crossover",
+        },
+      ],
+    ]);
+    const e = armarEstructuraDeWod({
+      parte: PARTE,
+      bloques: [BLOQUE],
+      movimientos: [SALTO],
+      nombres: NOMBRES_CON_SALTOS,
+      specs,
+    });
+    const m = e.blocks[0].movements[0];
+    expect(m.name).toBe("Double Crossover");
+    expect(m.targetPerRound).toEqual([50]);
+  });
+});
+
 describe("el tope de tiempo", () => {
   it("sin cap de categoría vale el de la parte", () => {
     expect(armar().timeCapMs).toBe(600_000);

@@ -50,6 +50,8 @@ function celda(overrides: Partial<CeldaDeSpec> = {}): CeldaDeSpec {
     objetivo: null,
     cargaKg: null,
     cargaUnidad: "kg",
+    movementId: null,
+    customName: null,
     ...overrides,
   };
 }
@@ -81,19 +83,21 @@ describe("celdasEnKilos", () => {
     expect(r.objetivo).toEqual([21, 15, 9]);
   });
 
-  it("no altera divisionId, partMovementId, objetivo ni cargaUnidad", () => {
+  it("no altera divisionId, partMovementId, objetivo, cargaUnidad ni la variante de movimiento", () => {
     const original = celda({
       divisionId: "elite",
       partMovementId: "thruster",
       objetivo: [10, 8, 6],
       cargaKg: 61,
       cargaUnidad: "kg",
+      movementId: "double-under",
     });
     const [r] = celdasEnKilos([original]);
     expect(r.divisionId).toBe("elite");
     expect(r.partMovementId).toBe("thruster");
     expect(r.objetivo).toEqual([10, 8, 6]);
     expect(r.cargaUnidad).toBe("kg");
+    expect(r.movementId).toBe("double-under");
   });
 
   it("convierte cada celda de forma independiente", () => {

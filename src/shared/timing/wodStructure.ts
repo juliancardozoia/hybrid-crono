@@ -64,6 +64,14 @@ export interface EspecificacionDeCategoria {
   target_per_round: number[] | null;
   load_kg: number | null;
   load_unit?: string | null;
+  /**
+   * La VARIANTE del movimiento para esta categoria: mismo patron (saltos,
+   * levantamiento) con otro movimiento puntual -- "single unders" en Scaled,
+   * "double unders" en RX. `null` en los dos = la categoria hace el mismo
+   * movimiento que ya tiene la fila.
+   */
+  movement_id?: string | null;
+  custom_name?: string | null;
 }
 
 export function armarEstructuraDeWod(params: {
@@ -111,10 +119,16 @@ export function armarEstructuraDeWod(params: {
           // con la etiqueta "kg".
           const loadKg = spec?.load_kg ?? m.load_kg;
           const loadUnit = (spec?.load_kg != null ? spec.load_unit : m.load_unit) ?? "kg";
+          // La variante de la categoria pisa el nombre de la fila, igual que
+          // ya pisa el peso y las reps: mismo patron de salto, otro movimiento
+          // puntual segun quien corre.
+          const nombreVariante =
+            spec?.custom_name ??
+            (spec?.movement_id ? nombres.get(spec.movement_id) : undefined);
           return {
             id: m.id,
             orderIndex: m.order_index,
-            name: m.custom_name ?? nombres.get(m.movement_id ?? "") ?? "Movimiento",
+            name: nombreVariante ?? m.custom_name ?? nombres.get(m.movement_id ?? "") ?? "Movimiento",
             unit: m.unit as MovementUnit,
             targetPerRound: spec?.target_per_round ?? m.target_per_round,
             loadKg,
