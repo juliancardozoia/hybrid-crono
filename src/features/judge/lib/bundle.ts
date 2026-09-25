@@ -282,18 +282,16 @@ async function armarPartesDeWod(
       .order("order_index"),
   ]);
 
-  // Los nombres del catalogo y los pesos de la categoria, en dos consultas mas.
-  const movementIds = [
-    ...new Set((movimientos ?? []).map((m) => m.movement_id).filter((id): id is string => Boolean(id))),
-  ];
-
+  // Los nombres del catalogo y los pesos de la categoria, en dos consultas
+  // mas. El catalogo se trae ENTERO (es chico, ~150 filas) y no solo los ids
+  // que usa la fila base: una categoria puede pedir una VARIANTE de
+  // movimiento que la fila no referencia -- filtrar por los ids de
+  // `movimientos` se quedaria afuera justo del dato que la categoria eligio.
   const [{ data: catalogo }, { data: specs }] = await Promise.all([
-    movementIds.length > 0
-      ? supabase.from("movements").select("id, name").in("id", movementIds)
-      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+    supabase.from("movements").select("id, name"),
     supabase
       .from("division_movement_specs")
-      .select("part_movement_id, target_per_round, load_kg, load_unit")
+      .select("part_movement_id, target_per_round, load_kg, load_unit, movement_id, custom_name")
       .eq("division_id", divisionId),
   ]);
 

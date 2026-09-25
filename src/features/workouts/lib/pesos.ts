@@ -16,6 +16,14 @@ export interface CeldaDeSpec {
   /** El numero CRUDO que escribio el organizador, en `cargaUnidad` — no kilos. */
   cargaKg: number | null;
   cargaUnidad: LoadUnit;
+  /**
+   * La VARIANTE de movimiento para esta categoria: mismo patron, otro
+   * movimiento puntual ("single unders" en Scaled, "double unders" en RX).
+   * Uno de los dos, o ninguno -- los dos en `null` significa "el mismo
+   * movimiento que ya tiene la fila".
+   */
+  movementId: string | null;
+  customName: string | null;
 }
 
 /**

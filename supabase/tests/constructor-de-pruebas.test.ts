@@ -208,12 +208,14 @@ describe("los pesos y cantidades por categoría", () => {
     load_kg: string | null;
     load_unit: string;
     target_per_round: number[] | null;
+    movement_id: string | null;
+    custom_name: string | null;
   }
 
   async function specs(): Promise<Spec[]> {
     const res = await asUser(s.db, s.users.owner, () =>
       s.db.query<Spec>(
-        `select part_movement_id, load_kg, load_unit, target_per_round
+        `select part_movement_id, load_kg, load_unit, target_per_round, movement_id, custom_name
          from division_movement_specs where event_id = $1
          order by part_movement_id`,
         [s.eventId],
@@ -342,6 +344,183 @@ describe("los pesos y cantidades por categoría", () => {
         s.db.query("select guardar_specs_de_parte($1, '[]'::jsonb)", [p.partId]),
       );
       expect(msg).toContain("No tienes permiso");
+    });
+  });
+});
+
+describe("la variante de movimiento por categoría", () => {
+  interface Spec {
+    part_movement_id: string;
+    load_kg: string | null;
+    target_per_round: number[] | null;
+    movement_id: string | null;
+    custom_name: string | null;
+  }
+
+  async function specs(): Promise<Spec[]> {
+    const res = await asUser(s.db, s.users.owner, () =>
+      s.db.query<Spec>(
+        `select part_movement_id, load_kg, target_per_round, movement_id, custom_name
+         from division_movement_specs where event_id = $1
+         order by part_movement_id`,
+        [s.eventId],
+      ),
+    );
+    return res.rows;
+  }
+
+  async function idDe(nombre: string): Promise<string> {
+    const res = await asUser(s.db, s.users.owner, () =>
+      s.db.query<{ id: string }>("select id from movements where name = $1", [nombre]),
+    );
+    return res.rows[0].id;
+  }
+
+  it("una categoría puede correr OTRO movimiento del catálogo, mismo patrón", async () => {
+    // El caso real: un AMRAP con "single unders" en Scaled y "double unders"
+    // en RX -- mismo patrón de salto, sin crear un WOD por categoría.
+    const pullUpId = await idDe("Pull-up");
+
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        p.partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: p.movimientos[0],
+            objetivo: null,
+            cargaKg: null,
+            cargaUnidad: "kg",
+            movementId: pullUpId,
+          },
+        ]),
+      ]),
+    );
+
+    const filas = await specs();
+    expect(filas).toHaveLength(1);
+    expect(filas[0].movement_id).toBe(pullUpId);
+    expect(filas[0].custom_name).toBeNull();
+  });
+
+  it("una categoría puede escribir su propio texto libre", async () => {
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        p.partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: p.movimientos[0],
+            objetivo: null,
+            cargaKg: null,
+            cargaUnidad: "kg",
+            customName: "Double Crossover",
+          },
+        ]),
+      ]),
+    );
+
+    const filas = await specs();
+    expect(filas).toHaveLength(1);
+    expect(filas[0].movement_id).toBeNull();
+    expect(filas[0].custom_name).toBe("Double Crossover");
+  });
+
+  it("una fila SOLO con variante -- sin objetivo ni carga -- también cuenta como ajuste", async () => {
+    // Regresión: el filtro de "celda vacía" original solo miraba objetivo y
+    // carga. Cambiar nada más que el movimiento no tenía ningún campo que la
+    // salvara de perderse en silencio.
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        p.partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: p.movimientos[0],
+            objetivo: null,
+            cargaKg: null,
+            cargaUnidad: "kg",
+            customName: "Double Crossover",
+          },
+        ]),
+      ]),
+    );
+
+    expect(await specs()).toHaveLength(1);
+  });
+
+  it("una variante vacía borra el ajuste, igual que el peso", async () => {
+    const pullUpId = await idDe("Pull-up");
+    const guardar = (movementId: string | null) =>
+      asUser(s.db, s.users.owner, () =>
+        s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+          p.partId,
+          JSON.stringify([
+            {
+              divisionId: s.divisionId,
+              partMovementId: p.movimientos[0],
+              objetivo: null,
+              cargaKg: null,
+              cargaUnidad: "kg",
+              movementId,
+            },
+          ]),
+        ]),
+      );
+
+    await guardar(pullUpId);
+    expect(await specs()).toHaveLength(1);
+
+    await guardar(null);
+    expect(await specs()).toHaveLength(0);
+  });
+
+  it("la variante convive con un peso propio de la categoría, sin pisarse", async () => {
+    const pullUpId = await idDe("Pull-up");
+
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+        p.partId,
+        JSON.stringify([
+          {
+            divisionId: s.divisionId,
+            partMovementId: p.movimientos[0],
+            objetivo: [10, 8, 6],
+            cargaKg: 30,
+            cargaUnidad: "kg",
+            movementId: pullUpId,
+          },
+        ]),
+      ]),
+    );
+
+    const filas = await specs();
+    expect(filas).toHaveLength(1);
+    expect(filas[0].movement_id).toBe(pullUpId);
+    expect(Number(filas[0].load_kg)).toBe(30);
+    expect(filas[0].target_per_round).toEqual([10, 8, 6]);
+  });
+
+  it("movementId y customName a la vez violan la constraint: no hay variante ambigua", async () => {
+    const pullUpId = await idDe("Pull-up");
+
+    await asUser(s.db, s.users.owner, async () => {
+      await expectDenied(() =>
+        s.db.query("select guardar_specs_de_parte($1, $2::jsonb)", [
+          p.partId,
+          JSON.stringify([
+            {
+              divisionId: s.divisionId,
+              partMovementId: p.movimientos[0],
+              objetivo: null,
+              cargaKg: null,
+              cargaUnidad: "kg",
+              movementId: pullUpId,
+              customName: "Double Crossover",
+            },
+          ]),
+        ]),
+      );
     });
   });
 });

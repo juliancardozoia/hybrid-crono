@@ -154,6 +154,9 @@ export interface MovimientoPublico {
     cargaKg: number | null;
     cargaUnidad: LoadUnit;
     notas: string | null;
+    /** La VARIANTE de movimiento de esta categoria ("Single Under" donde la
+     *  fila dice "Double Under"). `null` = corre el mismo movimiento de la fila. */
+    nombre: string | null;
   }>;
 }
 

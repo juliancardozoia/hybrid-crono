@@ -265,28 +265,34 @@ export type Database = {
       }
       division_movement_specs: {
         Row: {
+          custom_name: string | null
           division_id: string
           event_id: string
           load_kg: number | null
           load_unit: Database["public"]["Enums"]["load_unit"]
+          movement_id: string | null
           notes: string | null
           part_movement_id: string
           target_per_round: number[] | null
         }
         Insert: {
+          custom_name?: string | null
           division_id: string
           event_id: string
           load_kg?: number | null
           load_unit?: Database["public"]["Enums"]["load_unit"]
+          movement_id?: string | null
           notes?: string | null
           part_movement_id: string
           target_per_round?: number[] | null
         }
         Update: {
+          custom_name?: string | null
           division_id?: string
           event_id?: string
           load_kg?: number | null
           load_unit?: Database["public"]["Enums"]["load_unit"]
+          movement_id?: string | null
           notes?: string | null
           part_movement_id?: string
           target_per_round?: number[] | null
@@ -298,6 +304,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "divisions"
             referencedColumns: ["id", "event_id"]
+          },
+          {
+            foreignKeyName: "division_movement_specs_movement_id_fkey"
+            columns: ["movement_id"]
+            isOneToOne: false
+            referencedRelation: "movements"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "division_movement_specs_part_movement_id_event_id_fkey"

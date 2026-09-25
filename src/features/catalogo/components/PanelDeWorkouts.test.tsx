@@ -85,13 +85,60 @@ describe("el peso", () => {
     // Scaled sí, y es lo que decide en cuál se anota alguien.
     const conCategorias = evento();
     conCategorias.workouts[0].parts[0].blocks[0].movimientos[0].porCategoria = [
-      { division: "Scaled", objetivo: [15, 12, 9], cargaKg: 29.48, cargaUnidad: "lb", notas: null },
+      {
+        division: "Scaled",
+        objetivo: [15, 12, 9],
+        cargaKg: 29.48,
+        cargaUnidad: "lb",
+        notas: null,
+        nombre: null,
+      },
     ];
 
     render(<PanelDeWorkouts evento={conCategorias} />);
 
     expect(screen.getByText("95 lb")).toBeTruthy();
     expect(screen.getByText("15-12-9 · 65 lb")).toBeTruthy();
+  });
+});
+
+describe("la variante de movimiento por categoría", () => {
+  it("una categoría sin variante no muestra ningún nombre extra", () => {
+    const conCategorias = evento();
+    conCategorias.workouts[0].parts[0].blocks[0].movimientos[0].porCategoria = [
+      { division: "Scaled", objetivo: [25], cargaKg: null, cargaUnidad: "kg", notas: null, nombre: null },
+    ];
+
+    render(<PanelDeWorkouts evento={conCategorias} />);
+
+    expect(screen.queryByText("Double Under")).toBeNull();
+  });
+
+  it("una categoría que corre OTRO movimiento muestra su nombre, no el de la fila", () => {
+    // El caso real que motivó esto: un AMRAP con "double unders" en la fila,
+    // "single unders" en Scaled -- el atleta tiene que leer QUÉ salta, no solo
+    // cuántas reps.
+    const conVariante = evento();
+    conVariante.workouts[0].parts[0].blocks[0].movimientos[0] = {
+      ...MOVIMIENTO,
+      nombre: "Double Under",
+      porCategoria: [
+        {
+          division: "Scaled",
+          objetivo: [25],
+          cargaKg: null,
+          cargaUnidad: "kg",
+          notas: null,
+          nombre: "Single Under",
+        },
+      ],
+    };
+
+    render(<PanelDeWorkouts evento={conVariante} />);
+
+    expect(screen.getByText("Double Under")).toBeTruthy();
+    expect(screen.getByText("Single Under")).toBeTruthy();
+    expect(screen.getByText("25")).toBeTruthy();
   });
 });
 

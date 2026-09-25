@@ -23,7 +23,8 @@ export interface OpcionDeMovimiento {
   allowsLoad: boolean;
 }
 
-const CATEGORIA: Record<string, string> = {
+/** También la usa `PesosPorCategoria` para agrupar el mismo catálogo. */
+export const CATEGORIA: Record<string, string> = {
   levantamiento: "Levantamiento",
   gimnastico: "Gimnásticos",
   monoestructural: "Cardio",
