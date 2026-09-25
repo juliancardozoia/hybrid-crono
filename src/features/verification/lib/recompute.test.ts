@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { calcularScoresDeWod, carrilesTerminados, partesQueCorreLaCategoria } from "./recompute";
+import {
+  calcularScoresDeWod,
+  carrilesTerminados,
+  eventosDeLaLargadaVigente,
+  partesQueCorreLaCategoria,
+} from "./recompute";
 import type {
   FilaDeBloque,
   FilaDeMovimiento,
   FilaDeParte,
 } from "@/shared/timing/wodStructure";
-import type { TimingEvent, TimingEventType } from "@/shared/timing/types";
+import type { Segment, TimingEvent, TimingEventType } from "@/shared/timing/types";
+import { reduceLaneEvents } from "@/shared/timing/reducer";
+import { scoreFromLaneResult } from "@/shared/scoring/fromTiming";
+import { rankPart } from "@/shared/scoring/place";
+import { TABLA_TIEMPO_TOTAL } from "@/shared/scoring/points";
+import type { PartSpec } from "@/shared/scoring/types";
 
 let seq = 0;
 
@@ -375,6 +385,149 @@ describe("calcularScoresDeWod", () => {
     });
 
     expect(scores.map((s) => s.part_id)).toEqual(["pB"]);
+  });
+});
+
+describe("eventosDeLaLargadaVigente", () => {
+  const fila = (id: string, start_generation: number) => ({ id, start_generation });
+
+  it("deja solo los marcajes de la largada vigente del heat", () => {
+    const vigentes = eventosDeLaLargadaVigente(
+      [fila("viejo", 0), fila("nuevo-1", 1), fila("nuevo-2", 1)],
+      1,
+    );
+
+    expect(vigentes.map((e) => e.id)).toEqual(["nuevo-1", "nuevo-2"]);
+  });
+
+  // Un tap atrasado de una largada que la organizacion ya deshizo llega cuando
+  // el celular recupera señal: queda guardado, pero no puede tocar el resultado.
+  it("un tap atrasado de la largada anterior no entra al resultado", () => {
+    const vigentes = eventosDeLaLargadaVigente([fila("tap-atrasado", 0)], 1);
+
+    expect(vigentes).toEqual([]);
+  });
+
+  it("si no se conoce la generacion del heat no filtra (no inventa un resultado vacio)", () => {
+    expect(eventosDeLaLargadaVigente([fila("a", 0), fila("b", 3)], undefined)).toHaveLength(2);
+  });
+});
+
+// La cadena completa que arma un resultado oficial, con un tap fantasma de una
+// largada que la organizacion deshizo: eventos -> reductor -> score -> posicion.
+describe("un tap atrasado de una largada deshecha no mueve tiempos ni podio", () => {
+  const SEGMENTOS: Segment[] = [
+    { id: "s1", orderIndex: 0, kind: "run", name: "Run 1" },
+    { id: "s2", orderIndex: 1, kind: "run", name: "Run 2" },
+  ];
+
+  type Fila = {
+    id: string;
+    lane_id: string;
+    seq: number;
+    type: TimingEventType;
+    elapsed_ms: number;
+    start_generation: number;
+  };
+
+  const fila = (
+    lane: string,
+    n: number,
+    type: TimingEventType,
+    elapsed_ms: number,
+    start_generation: number,
+  ): Fila => ({ id: `${lane}-${n}`, lane_id: lane, seq: n, type, elapsed_ms, start_generation });
+
+  // Lo mismo que hace `recomputeLanes` con cada fila del servidor.
+  const aLog = (filas: Fila[]): TimingEvent[] =>
+    filas.map((e) => ({
+      id: e.id,
+      laneId: e.lane_id,
+      seq: e.seq,
+      type: e.type,
+      segmentId: null,
+      elapsedMs: e.elapsed_ms,
+      payload: {},
+      recordedBy: "juez",
+      deviceId: "d1",
+      clientCapturedAt: 0,
+      supersedesId: null,
+      voided: false,
+      voidReason: null,
+    }));
+
+  // El heat ya va por la generacion 1 (se deshizo la largada una vez).
+  const VIGENTE = 1;
+
+  // A termina en 130 s y B en 150 s: gana A.
+  const corridaA = [
+    fila("A", 1, "lane_start", 0, VIGENTE),
+    fila("A", 2, "segment_split", 60_000, VIGENTE),
+    fila("A", 3, "segment_split", 130_000, VIGENTE),
+  ];
+  const corridaB = [
+    fila("B", 1, "lane_start", 0, VIGENTE),
+    fila("B", 2, "segment_split", 70_000, VIGENTE),
+    fila("B", 3, "segment_split", 150_000, VIGENTE),
+  ];
+  // Dos taps de la largada ANTERIOR que recien llegan: con esos tiempos B
+  // "terminaria" en 2 s y le ganaria a todos.
+  const fantasmas = [
+    fila("B", 4, "segment_split", 1_000, 0),
+    fila("B", 5, "segment_split", 2_000, 0),
+  ];
+
+  const total = (filas: Fila[], lane: string) =>
+    reduceLaneEvents(lane, aLog(filas), SEGMENTOS).totalMs;
+
+  it("sin el filtro el fantasma SI cambiaria el tiempo (por eso existe)", () => {
+    expect(total([...corridaB, ...fantasmas], "B")).toBe(2_000);
+  });
+
+  it("con el filtro, el tiempo es exactamente el de la carrera limpia", () => {
+    const vigentes = eventosDeLaLargadaVigente([...corridaB, ...fantasmas], VIGENTE);
+
+    expect(total(vigentes, "B")).toBe(150_000);
+    expect(total(vigentes, "B")).toBe(total(corridaB, "B"));
+  });
+
+  it("el podio no se altera: gana A aunque B tenga el fantasma", () => {
+    const score = (filas: Fila[], lane: string) =>
+      scoreFromLaneResult({
+        partId: "p1",
+        teamId: lane,
+        lane: reduceLaneEvents(lane, aLog(eventosDeLaLargadaVigente(filas, VIGENTE)), SEGMENTOS),
+      });
+
+    const parte: PartSpec = {
+      id: "p1",
+      orderIndex: 0,
+      scoreUnit: "tiempo",
+      scoreDir: "menor_gana",
+      capUnit: null,
+      tiebreakUnit: null,
+      tiebreakDir: null,
+      tiebreakPartId: null,
+    };
+
+    const posiciones = rankPart({
+      part: parte,
+      table: TABLA_TIEMPO_TOTAL,
+      teamIds: ["A", "B"],
+      scores: [score(corridaA, "A"), score([...corridaB, ...fantasmas], "B")],
+    });
+
+    expect(posiciones.find((p) => p.teamId === "A")?.position).toBe(1);
+    expect(posiciones.find((p) => p.teamId === "B")?.position).toBe(2);
+  });
+
+  it("un carril cuya unica actividad es de la largada vieja queda sin arrancar, no con un tiempo", () => {
+    const solo = eventosDeLaLargadaVigente(
+      [fila("B", 1, "lane_start", 0, 0), fila("B", 2, "segment_split", 60_000, 0)],
+      VIGENTE,
+    );
+
+    expect(reduceLaneEvents("B", aLog(solo), SEGMENTOS).status).toBe("not_started");
   });
 });
 

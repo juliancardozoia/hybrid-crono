@@ -4,14 +4,14 @@ import { getDivisions, getHeats, getJudges, getSegments } from "@/features/event
 import { getEtapasConCorteConfirmado, getPruebas } from "@/features/workouts/queries";
 import { requireEventAccess } from "@/features/events/lib/access";
 import {
-  cancelHeatStart,
   cargarTiempoManual,
+  deshacerLargada,
   marcarDnf,
   startHeat,
   type FormState,
 } from "@/features/heats/actions";
 import { estaPendienteDeVerificar } from "@/features/verification/lib/estado";
-import { getVerificationQueue } from "@/features/verification/queries";
+import { getMarcajesActivosPorHeat, getVerificationQueue } from "@/features/verification/queries";
 import { TorreDeHeats, type HeatVista } from "@/features/heats/components/TorreDeHeats";
 import type { SegmentoDeCircuito } from "@/features/heats/components/CargarTiempoManual";
 
@@ -27,9 +27,11 @@ export default async function ControlPage({
 
   if (!canVerify) redirect(`/panel/eventos/${id}`);
 
-  const [heats, cola, judges, divisiones, pruebas, etapasConfirmadas] = await Promise.all([
+  const [heats, cola, marcajesPorHeat, judges, divisiones, pruebas, etapasConfirmadas] =
+    await Promise.all([
     getHeats(id),
     getVerificationQueue(id),
+    getMarcajesActivosPorHeat(id),
     getJudges(id),
     getDivisions(id),
     getPruebas(id),
@@ -96,10 +98,6 @@ export default async function ControlPage({
   // vivo, DNF). Los Maps se resuelven aca porque no viajan bien a traves de
   // esa frontera, y porque es el unico lugar que ya tiene RLS de su lado.
   const heatsVista: HeatVista[] = heats.map((heat) => {
-    const marcajesDelHeat = heat.lanes.reduce(
-      (n, l) => n + (porCarril.get(l.id)?.eventCount ?? 0),
-      0,
-    );
     const conAtleta = heat.lanes.filter((l) => l.team_id !== null);
 
     return {
@@ -112,7 +110,7 @@ export default async function ControlPage({
       divisionName: heat.division_id ? (nombreDivision.get(heat.division_id) ?? null) : null,
       workoutId: heat.workout_id,
       workoutName: nombresDePruebas.find((p) => p.id === heat.workout_id)?.name ?? null,
-      marcajesTotales: marcajesDelHeat,
+      marcajesActivos: marcajesPorHeat[heat.id] ?? 0,
       conAtletaCount: conAtleta.length,
       sinJuezCount: conAtleta.filter((l) => l.judge_id === null).length,
       lanes: heat.lanes.map((lane) => {
@@ -266,10 +264,10 @@ async function deshacer(
   eventId: string,
   heatId: string,
   _prev: FormState,
-  _formData: FormData,
+  formData: FormData,
 ) {
   "use server";
-  return cancelHeatStart(eventId, heatId);
+  return deshacerLargada(eventId, heatId, formData);
 }
 
 async function marcarDnfAccion(

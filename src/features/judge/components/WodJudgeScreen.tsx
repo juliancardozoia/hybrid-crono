@@ -12,6 +12,7 @@ import {
   type WodStructure,
 } from "@/shared/timing/wod";
 import { formatearCarga } from "@/shared/unidades/carga";
+import type { HeatStartCheck } from "../lib/bundle";
 import { startHeartbeat, useRaceStore } from "../lib/store";
 import { startSyncLoop, supabaseTransport, type SyncOutcome, type Transport } from "../lib/sync";
 import { useDetectarLargadaDeshecha } from "../lib/useDetectarLargadaDeshecha";
@@ -61,7 +62,9 @@ export interface WodJudgeScreenProps {
   startOffsetMs?: number;
   recordedBy?: string;
   transport?: Transport;
-  onCheckStart?: () => Promise<number | null>;
+  onCheckStart?: () => Promise<HeatStartCheck | null>;
+  /** `heats.start_generation` con el que se bajo el carril. */
+  startGeneration?: number | null;
   localStart?: "offline" | "siempre" | "nunca";
 }
 
@@ -93,6 +96,7 @@ export function WodJudgeScreen({
   recordedBy = "",
   transport = supabaseTransport,
   onCheckStart,
+  startGeneration = null,
   localStart = "nunca",
 }: WodJudgeScreenProps) {
   const {
@@ -104,7 +108,7 @@ export function WodJudgeScreen({
     undoTarget,
     anchorDriftMs,
     init,
-    applyServerStart,
+    applyHeatCheck,
     startLocally,
     markWod,
     undoLast,
@@ -136,8 +140,15 @@ export function WodJudgeScreen({
   useEffect(() => {
     // El WOD no tiene segmentos: el reductor de circuitos queda inerte y el
     // store solo aporta el ancla, el log y el outbox.
-    void init({ laneId, segments: [], heatStartEpochMs, startOffsetMs, recordedBy });
-  }, [init, laneId, heatStartEpochMs, startOffsetMs, recordedBy]);
+    void init({
+      laneId,
+      segments: [],
+      heatStartEpochMs,
+      startOffsetMs,
+      recordedBy,
+      startGeneration,
+    });
+  }, [init, laneId, heatStartEpochMs, startOffsetMs, recordedBy, startGeneration]);
 
   const onSync = useCallback(
     (outcome: SyncOutcome) => {
@@ -271,9 +282,9 @@ export function WodJudgeScreen({
   );
 
   const checkStart = useCallback(async () => {
-    const epoch = await onCheckStart?.();
-    if (epoch !== null && epoch !== undefined) await applyServerStart(epoch);
-  }, [onCheckStart, applyServerStart]);
+    const check = await onCheckStart?.();
+    if (check) await applyHeatCheck(check);
+  }, [onCheckStart, applyHeatCheck]);
 
   if (!hydrated || !parte || !resultado) {
     return (

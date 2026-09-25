@@ -167,6 +167,24 @@ export async function markAttemptFailed(ids: string[], error: string): Promise<v
   });
 }
 
+/**
+ * Suelta el ancla y el latido del carril SIN tocar su log.
+ *
+ * Es lo que pasa cuando la organizacion deshace la largada: el reloj deja de
+ * correr, pero los marcajes de esa largada NO se borran. Los que todavia no
+ * subieron siguen en la cola y se suben igual -quedan en el servidor con su
+ * generacion vieja, sin contar para la carrera nueva-. Borrarlos aca seria
+ * perder un tiempo por una decision que la organizacion tomo mirando solo lo
+ * que ya habia llegado al servidor.
+ */
+export async function releaseAnchor(laneId: string): Promise<void> {
+  const db = getDb();
+  await db.transaction("rw", db.anchors, db.heartbeats, async () => {
+    await db.anchors.delete(laneId);
+    await db.heartbeats.delete(laneId);
+  });
+}
+
 /** Solo para el spike y para el modo entrenamiento: borra el estado local del carril. */
 export async function resetLane(laneId: string): Promise<void> {
   const db = getDb();

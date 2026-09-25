@@ -772,6 +772,7 @@ export type Database = {
           name: string
           scheduled_at: string | null
           scheduled_end_at: string | null
+          start_generation: number
           start_source: Database["public"]["Enums"]["start_source"] | null
           started_at: string | null
           started_by: string | null
@@ -789,6 +790,7 @@ export type Database = {
           name: string
           scheduled_at?: string | null
           scheduled_end_at?: string | null
+          start_generation?: number
           start_source?: Database["public"]["Enums"]["start_source"] | null
           started_at?: string | null
           started_by?: string | null
@@ -806,6 +808,7 @@ export type Database = {
           name?: string
           scheduled_at?: string | null
           scheduled_end_at?: string | null
+          start_generation?: number
           start_source?: Database["public"]["Enums"]["start_source"] | null
           started_at?: string | null
           started_by?: string | null
@@ -2193,6 +2196,7 @@ export type Database = {
           segment_id: string | null
           seq: number
           server_received_at: string
+          start_generation: number
           supersedes_id: string | null
           type: Database["public"]["Enums"]["timing_event_type"]
           void_reason: string | null
@@ -2213,6 +2217,7 @@ export type Database = {
           segment_id?: string | null
           seq: number
           server_received_at?: string
+          start_generation?: number
           supersedes_id?: string | null
           type: Database["public"]["Enums"]["timing_event_type"]
           void_reason?: string | null
@@ -2233,6 +2238,7 @@ export type Database = {
           segment_id?: string | null
           seq?: number
           server_received_at?: string
+          start_generation?: number
           supersedes_id?: string | null
           type?: Database["public"]["Enums"]["timing_event_type"]
           void_reason?: string | null
@@ -2686,6 +2692,15 @@ export type Database = {
       can_register_event: { Args: { p_event_id: string }; Returns: boolean }
       can_score_event: { Args: { p_event_id: string }; Returns: boolean }
       can_verify_event: { Args: { p_event_id: string }; Returns: boolean }
+      heat_marcajes_activos: { Args: { p_heat_id: string }; Returns: number }
+      event_heat_marcajes: {
+        Args: { p_event_id: string }
+        Returns: { heat_id: string; marcajes: number }[]
+      }
+      deshacer_largada_completa: {
+        Args: { p_heat_id: string; p_reason: string }
+        Returns: number
+      }
       cancel_heat_start: {
         Args: { p_heat_id: string }
         Returns: {
@@ -2699,6 +2714,7 @@ export type Database = {
           name: string
           scheduled_at: string | null
           scheduled_end_at: string | null
+          start_generation: number
           start_source: Database["public"]["Enums"]["start_source"] | null
           started_at: string | null
           started_by: string | null
@@ -3147,6 +3163,7 @@ export type Database = {
           segment_id: string | null
           seq: number
           server_received_at: string
+          start_generation: number
           supersedes_id: string | null
           type: Database["public"]["Enums"]["timing_event_type"]
           void_reason: string | null
@@ -3507,6 +3524,7 @@ export type Database = {
           name: string
           scheduled_at: string | null
           scheduled_end_at: string | null
+          start_generation: number
           start_source: Database["public"]["Enums"]["start_source"] | null
           started_at: string | null
           started_by: string | null
@@ -3745,6 +3763,7 @@ export type Database = {
           segment_id: string | null
           seq: number
           server_received_at: string
+          start_generation: number
           supersedes_id: string | null
           type: Database["public"]["Enums"]["timing_event_type"]
           void_reason: string | null

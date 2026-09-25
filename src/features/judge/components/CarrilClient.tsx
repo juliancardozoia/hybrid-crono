@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { fetchHeatStart, resolveLaneBundle, type LaneBundle } from "../lib/bundle";
+import {
+  fetchHeatStart,
+  resolveLaneBundle,
+  type HeatStartCheck,
+  type LaneBundle,
+} from "../lib/bundle";
 import { JudgeScreen } from "./JudgeScreen";
 import { WodJudgeScreen } from "./WodJudgeScreen";
 
@@ -65,11 +70,10 @@ export function CarrilClient() {
   const bundle = estado.fase === "listo" ? estado.bundle : null;
   const heatId = bundle?.heatId;
 
-  const checkStart = useCallback(async (): Promise<number | null> => {
+  const checkStart = useCallback(async (): Promise<HeatStartCheck | null> => {
     if (!heatId) return null;
     try {
-      const iso = await fetchHeatStart(heatId);
-      return iso ? new Date(iso).getTime() : null;
+      return await fetchHeatStart(heatId);
     } catch {
       return null;
     }
@@ -120,6 +124,7 @@ export function CarrilClient() {
         startOffsetMs={estado.bundle.startOffsetMs}
         recordedBy={estado.bundle.judgeId ?? ""}
         onCheckStart={checkStart}
+        startGeneration={estado.bundle.startGeneration ?? null}
         localStart="offline"
       />
     );
@@ -152,6 +157,7 @@ export function CarrilClient() {
       startOffsetMs={estado.bundle.startOffsetMs}
       recordedBy={estado.bundle.judgeId ?? ""}
       onCheckStart={checkStart}
+      startGeneration={estado.bundle.startGeneration ?? null}
       localStart="offline"
     />
   );

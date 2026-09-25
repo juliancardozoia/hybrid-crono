@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { scorePendiente } from "./normalize";
 import { assignPhysicalPositions, rankPart } from "./place";
 import { TABLA_TIEMPO_TOTAL, tablaDinamica } from "./points";
 
@@ -129,6 +130,21 @@ describe("rankPart", () => {
     const pendiente = placements.find((p) => p.teamId === "sin-marca");
     expect(pendiente?.status).toBe("pendiente");
     expect(pendiente?.position).toBe(3);
+  });
+
+  // Al deshacer una largada el recalculo deja al carril con un score "pendiente"
+  // explicito (el reductor dice not_started). Tiene que ser INDISTINGUIBLE de
+  // un equipo que nunca corrio: mismo estado, misma posicion, mismos puntos, y
+  // sin mover a nadie mas.
+  it("un score pendiente explicito equivale a no tener score (largada deshecha)", () => {
+    const base = { part: POR_REPS, table: tablaDinamica(3), teamIds: ["a", "b", "c"] };
+    const sinFila = rankPart({ ...base, scores: [reps("a", 100), reps("b", 90)] });
+    const conFilaPendiente = rankPart({
+      ...base,
+      scores: [reps("a", 100), reps("b", 90), scorePendiente("p1", "c")],
+    });
+
+    expect(conFilaPendiente).toEqual(sinFila);
   });
 
   it("un equipo sin marca no cobra puntos de la curva, aunque comparta posicion con pocos rivales", () => {

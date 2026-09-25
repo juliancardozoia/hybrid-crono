@@ -49,6 +49,9 @@ function toDomainEvent(record: OutboxEvent): TimingEvent {
     supersedesId: record.supersedesId,
     voided: record.voided,
     voidReason: record.voidReason,
+    // Sin esto el servidor asumiria la generacion vigente, y un tap atrasado
+    // de una largada deshecha se colaria en la carrera nueva.
+    ...(record.startGeneration !== undefined ? { startGeneration: record.startGeneration } : {}),
   };
 }
 

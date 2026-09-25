@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { formatElapsed } from "@/shared/timing/clock";
 import { SUSPICIOUS_SPLIT_MS } from "@/shared/timing/reducer";
 import type { PenaltyPayload, Segment } from "@/shared/timing/types";
+import type { HeatStartCheck } from "../lib/bundle";
 import { startHeartbeat, UNDO_WINDOW_MS, useRaceStore } from "../lib/store";
 import { startSyncLoop, supabaseTransport, type SyncOutcome, type Transport } from "../lib/sync";
 import { useDetectarLargadaDeshecha } from "../lib/useDetectarLargadaDeshecha";
@@ -27,8 +28,13 @@ export interface JudgeScreenProps {
   startOffsetMs?: number;
   recordedBy?: string;
   transport?: Transport;
-  /** Vuelve a consultar la largada al servidor. Devuelve epoch ms o null. */
-  onCheckStart?: () => Promise<number | null>;
+  /**
+   * Vuelve a consultar la largada al servidor. `null` es "no hubo respuesta";
+   * un heat que todavia no largo responde con `epochMs: null`.
+   */
+  onCheckStart?: () => Promise<HeatStartCheck | null>;
+  /** `heats.start_generation` con el que se bajo el carril. */
+  startGeneration?: number | null;
   /**
    * Cuando ofrecer la largada desde el dispositivo.
    * "offline": solo sin señal, porque la largada oficial la estampa el servidor.
@@ -50,6 +56,7 @@ export function JudgeScreen({
   recordedBy = "",
   transport = supabaseTransport,
   onCheckStart,
+  startGeneration = null,
   localStart = "nunca",
   allowReset = false,
 }: JudgeScreenProps) {
@@ -62,7 +69,7 @@ export function JudgeScreen({
     undoTarget,
     anchorDriftMs,
     init,
-    applyServerStart,
+    applyHeatCheck,
     startLocally,
     markSplit,
     applyPenalty,
@@ -92,8 +99,8 @@ export function JudgeScreen({
   useSincronizarEventosRemotos(laneId, online);
 
   useEffect(() => {
-    void init({ laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy });
-  }, [init, laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy]);
+    void init({ laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy, startGeneration });
+  }, [init, laneId, segments, heatStartEpochMs, startOffsetMs, recordedBy, startGeneration]);
 
   const onSync = useCallback(
     (outcome: SyncOutcome) => {
@@ -118,9 +125,9 @@ export function JudgeScreen({
   }, [hydrated, laneId, onSync, transport]);
 
   const checkStart = useCallback(async () => {
-    const epoch = await onCheckStart?.();
-    if (epoch !== null && epoch !== undefined) await applyServerStart(epoch);
-  }, [onCheckStart, applyServerStart]);
+    const check = await onCheckStart?.();
+    if (check) await applyHeatCheck(check);
+  }, [onCheckStart, applyHeatCheck]);
 
   /**
    * Un tap simple marca, sin confirmacion: la velocidad importa mas que el

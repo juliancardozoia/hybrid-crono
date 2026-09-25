@@ -81,6 +81,16 @@ export type TimingEvent = {
   supersedesId: string | null;
   voided: boolean;
   voidReason: string | null;
+  /**
+   * De que "largada" del heat es este marcaje (`heats.start_generation`).
+   *
+   * Lo estampa el CELULAR desde su ancla, no el servidor: un tap atrasado de
+   * una largada que la organizacion ya deshizo tiene que llegar CON la
+   * generacion vieja para que no se cuente en la carrera nueva. Opcional
+   * porque los marcajes guardados antes de esto no la traen; el servidor
+   * asume la vigente.
+   */
+  startGeneration?: number;
 }
 
 export type SegmentKind = "run" | "station" | "transition";

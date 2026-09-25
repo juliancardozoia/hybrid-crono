@@ -78,8 +78,18 @@ export async function recomputeLanes(filtro: {
     return id;
   }
 
+  // Que largada del heat es la vigente. Un heat conserva su id y sus carriles
+  // cuando la organizacion deshace su largada, asi que sin este filtro un
+  // marcaje atrasado de la largada anterior -que llega recien cuando el celular
+  // recupera señal- se contaria en la carrera nueva.
+  const { data: largadas } = await service
+    .from("heats")
+    .select("id, start_generation")
+    .in("id", [...new Set(lanes.map((l) => l.heat_id))]);
+  const generacionDelHeat = new Map((largadas ?? []).map((h) => [h.id, h.start_generation]));
+
   for (const lane of lanes) {
-    const [{ data: eventos }, { data: equipo }] = await Promise.all([
+    const [{ data: todosLosEventos }, { data: equipo }] = await Promise.all([
       service.from("timing_events").select("*").eq("lane_id", lane.id).order("seq"),
       lane.team_id
         ? service
@@ -96,6 +106,13 @@ export async function recomputeLanes(filtro: {
     } | null;
 
     if (!info) continue;
+
+    // Se guardan TODOS (el log es append-only); solo cuentan los de la largada
+    // vigente. Lo demas queda ahi, inerte, para auditar.
+    const eventos = eventosDeLaLargadaVigente(
+      todosLosEventos ?? [],
+      generacionDelHeat.get(lane.heat_id),
+    );
 
     // Un carril de CrossFit no tiene circuito: sus marcajes se reducen con el
     // otro motor. Se resuelve primero para no quedar atrapado en el camino del
@@ -221,6 +238,22 @@ export async function recomputeLanes(filtro: {
   await Promise.all(heatIds.map((heatId) => actualizarCierreDeHeat(service, heatId)));
 
   return { recalculados };
+}
+
+/**
+ * Deja solo los marcajes de la largada VIGENTE del heat.
+ *
+ * Pura y exportada para probarla sin tocar la base. Un marcaje de una
+ * generacion anterior sigue en `timing_events` (append-only: un tiempo no se
+ * pierde) pero no puede alimentar un resultado: pertenece a una carrera que la
+ * organizacion ya deshizo.
+ */
+export function eventosDeLaLargadaVigente<T extends { start_generation: number }>(
+  eventos: T[],
+  generacionVigente: number | undefined,
+): T[] {
+  if (generacionVigente === undefined) return eventos;
+  return eventos.filter((e) => e.start_generation === generacionVigente);
 }
 
 const TERMINAL_CIRCUITO = new Set(["finished", "dnf", "dq"]);

@@ -22,12 +22,14 @@ import {
   appendRemoteEvent,
   loadAnchor,
   loadEvents,
+  releaseAnchor,
   requestPersistentStorage,
   resetLane,
   saveAnchor,
   writeHeartbeat,
   type OutboxEvent,
 } from "./db";
+import type { HeatStartCheck } from "./bundle";
 import { getDeviceId } from "./sync";
 
 /** Ventana para deshacer un marcaje sin pedirle permiso a nadie. */
@@ -38,6 +40,23 @@ interface UndoTarget {
   expiresAt: number;
 }
 
+/**
+ * Los marcajes que pertenecen a la largada VIGENTE.
+ *
+ * El celular guarda TODO lo que marco, de la largada que sea (nada se borra:
+ * un tiempo no se pierde), pero solo una parte cuenta para lo que se muestra
+ * y para el resultado: la de la generacion actual del heat. Un marcaje sin
+ * generacion -guardado antes de que existiera- se toma como vigente, igual que
+ * hace el servidor.
+ */
+export function eventosDeLaLargada<T extends { startGeneration?: number }>(
+  events: T[],
+  generation: number | null | undefined,
+): T[] {
+  if (generation === null || generation === undefined) return events;
+  return events.filter((e) => e.startGeneration === undefined || e.startGeneration === generation);
+}
+
 export interface InitConfig {
   laneId: string;
   segments: Segment[];
@@ -46,6 +65,8 @@ export interface InitConfig {
   startOffsetMs?: number;
   /** Permite al spike trabajar sin sesion. */
   recordedBy?: string;
+  /** `heats.start_generation` que conocia el dispositivo. null en el spike. */
+  startGeneration?: number | null;
 }
 
 interface RaceState {
@@ -64,10 +85,32 @@ interface RaceState {
    * significa que el heat arranco sin señal y despues se reconcilio.
    */
   anchorDriftMs: number | null;
+  /**
+   * Ultima `start_generation` que se sabe del heat. Sirve para estampar los
+   * marcajes cuando todavia no hay ancla (largada local sin señal) y para
+   * detectar que la organizacion deshizo la largada.
+   */
+  knownGeneration: number | null;
+  /**
+   * Mayor `seq` de TODO el log local, de la largada que sea. `seq` es parte de
+   * un indice unico en el servidor (carril, dispositivo, seq): si al volver a
+   * largar se reiniciara desde 1, chocaria con los marcajes de la largada
+   * deshecha y `ingest_timing_events` rechazaria el lote ENTERO.
+   */
+  maxSeq: number;
 
   init: (config: InitConfig) => Promise<void>;
   /** Ancla al reloj oficial del heat. Idempotente. */
-  applyServerStart: (heatStartEpochMs: number) => Promise<void>;
+  applyServerStart: (heatStartEpochMs: number, generation?: number) => Promise<void>;
+  /**
+   * Compara la generacion que informa el servidor con la del ancla. Si es
+   * MAYOR, la organizacion deshizo esa largada: suelta el ancla y deja de
+   * mostrar sus marcajes, sin borrar ninguno. Devuelve true si habia un reloj
+   * corriendo que hubo que soltar.
+   */
+  syncGeneration: (generation: number) => Promise<boolean>;
+  /** Aplica lo que el servidor dice de la largada: generacion primero, despues el ancla. */
+  applyHeatCheck: (check: HeatStartCheck) => Promise<boolean>;
   /** Largada local, para cuando el heat arranca sin señal. */
   startLocally: () => Promise<void>;
   markSplit: () => Promise<void>;
@@ -116,6 +159,8 @@ export const useRaceStore = create<RaceState>((set, get) => ({
   undoTarget: null,
   recordedBy: "",
   anchorDriftMs: null,
+  knownGeneration: null,
+  maxSeq: 0,
 
   /**
    * Elapsed con el que se estampa un marcaje.
@@ -158,19 +203,53 @@ export const useRaceStore = create<RaceState>((set, get) => ({
   // `loadEvents()` de la segunda llamada ocurra DESPUES de que la primera ya
   // termino de punta a punta -incluida su propia escritura- asi que ve el
   // lane_start real y no lo pisa.
-  init: ({ laneId, segments, heatStartEpochMs, startOffsetMs = 0, recordedBy = "" }) =>
+  init: ({
+    laneId,
+    segments,
+    heatStartEpochMs,
+    startOffsetMs = 0,
+    recordedBy = "",
+    startGeneration = null,
+  }) =>
     encolar(async () => {
       const persisted = await requestPersistentStorage();
-      const [storedAnchor, events] = await Promise.all([loadAnchor(laneId), loadEvents(laneId)]);
+      const [storedAnchor, todos] = await Promise.all([loadAnchor(laneId), loadEvents(laneId)]);
 
       // Re-anclar es lo que hace que refresh, reapertura y reboot devuelvan el
       // tiempo correcto: performance.now() arranco de cero en este documento.
       let anchor = storedAnchor ? rehydrateAnchor(storedAnchor) : null;
       let driftMs: number | null = null;
 
+      // La organizacion deshizo esa largada mientras la app estaba cerrada: el
+      // ancla guardada es de una carrera que ya no existe. Se suelta (el log
+      // no se toca) y, si el heat ya volvio a largar, se ancla de nuevo abajo.
+      if (
+        anchor &&
+        startGeneration !== null &&
+        anchor.startGeneration !== undefined &&
+        startGeneration > anchor.startGeneration
+      ) {
+        await releaseAnchor(laneId);
+        anchor = null;
+      }
+
+      // Un ancla guardada antes de que existieran las generaciones adopta la
+      // que informa el servidor, para poder detectar una largada deshecha.
+      if (anchor && anchor.startGeneration === undefined && startGeneration !== null) {
+        anchor = { ...anchor, startGeneration };
+      }
+
+      const events = eventosDeLaLargada(todos, anchor?.startGeneration ?? startGeneration);
+
       if (heatStartEpochMs !== null) {
         if (!anchor) {
-          anchor = createAnchor({ laneId, heatStartEpochMs, startOffsetMs, source: "server" });
+          anchor = createAnchor({
+            laneId,
+            heatStartEpochMs,
+            startOffsetMs,
+            source: "server",
+            startGeneration: startGeneration ?? undefined,
+          });
         } else if (anchor.heatStartEpochMs !== heatStartEpochMs) {
           // El heat habia arrancado en el dispositivo y ahora llego la largada
           // oficial. Los parciales no se tocan: son relativos al ancla, asi que
@@ -195,20 +274,27 @@ export const useRaceStore = create<RaceState>((set, get) => ({
         undoTarget: null,
         recordedBy,
         anchorDriftMs: driftMs,
+        knownGeneration: anchor?.startGeneration ?? startGeneration,
+        maxSeq: todos.reduce((max, e) => Math.max(max, e.seq), 0),
       });
 
       await ensureLaneStartSinEncolar();
     }),
 
-  applyServerStart: async (heatStartEpochMs) => {
-    const { laneId, anchor } = get();
+  applyServerStart: async (heatStartEpochMs, generation) => {
+    const { laneId, anchor, knownGeneration } = get();
     if (!laneId) return;
     if (anchor && anchor.heatStartEpochMs === heatStartEpochMs) return;
 
     if (!anchor) {
-      const fresh = createAnchor({ laneId, heatStartEpochMs, source: "server" });
+      const fresh = createAnchor({
+        laneId,
+        heatStartEpochMs,
+        source: "server",
+        startGeneration: generation ?? knownGeneration ?? undefined,
+      });
       await saveAnchor(fresh);
-      set({ anchor: fresh });
+      set({ anchor: fresh, knownGeneration: fresh.startGeneration ?? knownGeneration });
       await ensureLaneStart();
       return;
     }
@@ -219,8 +305,63 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     await ensureLaneStart();
   },
 
+  syncGeneration: (generation) =>
+    encolar(async () => {
+      const { laneId, anchor, knownGeneration, segments } = get();
+      if (!laneId) return false;
+
+      const actual = anchor?.startGeneration ?? knownGeneration;
+
+      // Primer contacto con el servidor desde que hay generaciones: no hay con
+      // que comparar, asi que se adopta la que informa.
+      if (actual === null || actual === undefined) {
+        set({ knownGeneration: generation });
+        if (anchor && anchor.startGeneration === undefined) {
+          const adoptada = { ...anchor, startGeneration: generation };
+          await saveAnchor(adoptada);
+          set({ anchor: adoptada });
+        }
+        return false;
+      }
+
+      if (generation <= actual) {
+        if (anchor && anchor.startGeneration === undefined) {
+          const adoptada = { ...anchor, startGeneration: actual };
+          await saveAnchor(adoptada);
+          set({ anchor: adoptada });
+        }
+        return false;
+      }
+
+      // La organizacion deshizo la largada de este ancla. Se suelta el reloj y
+      // se cambia la vista a la generacion nueva, pero el log NO se toca: lo
+      // que todavia no subio sigue en la cola y sube igual.
+      const habiaReloj = anchor !== null;
+      if (habiaReloj) await releaseAnchor(laneId);
+
+      const vigentes = eventosDeLaLargada(await loadEvents(laneId), generation);
+
+      clearTimeout(undoTimer);
+      set({
+        anchor: null,
+        knownGeneration: generation,
+        events: vigentes,
+        result: reduceLaneEvents(laneId, vigentes, segments),
+        pendingCount: vigentes.filter((e) => e.syncState === "pending").length,
+        undoTarget: null,
+        anchorDriftMs: null,
+      });
+      return habiaReloj;
+    }),
+
+  applyHeatCheck: async (check) => {
+    const deshecha = await get().syncGeneration(check.generation);
+    if (check.epochMs !== null) await get().applyServerStart(check.epochMs, check.generation);
+    return deshecha;
+  },
+
   startLocally: async () => {
-    const { laneId, anchor } = get();
+    const { laneId, anchor, knownGeneration } = get();
     if (!laneId || anchor) return;
 
     // Sin señal la largada la estampa el dispositivo. Cuando vuelva la red,
@@ -229,6 +370,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       laneId,
       heatStartEpochMs: Date.now(),
       source: "device_offline",
+      startGeneration: knownGeneration ?? undefined,
     });
     await saveAnchor(fresh);
     set({ anchor: fresh });
@@ -285,9 +427,12 @@ export const useRaceStore = create<RaceState>((set, get) => ({
   },
 
   refreshPending: async () => {
-    const { laneId } = get();
+    const { laneId, anchor, knownGeneration } = get();
     if (!laneId) return;
-    const events = await loadEvents(laneId);
+    const events = eventosDeLaLargada(
+      await loadEvents(laneId),
+      anchor?.startGeneration ?? knownGeneration,
+    );
     set({ events, pendingCount: events.filter((e) => e.syncState === "pending").length });
   },
 
@@ -323,6 +468,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       pendingCount: 0,
       undoTarget: null,
       anchorDriftMs: null,
+      maxSeq: 0,
     });
   },
 }));
@@ -401,11 +547,15 @@ async function appendUnaVez(
   partial: Partial<TimingEvent> & { type: TimingEvent["type"] },
 ): Promise<OutboxEvent> {
   const state = useRaceStore.getState();
-  const { laneId, segments, events, recordedBy } = state;
+  const { laneId, segments, events, recordedBy, anchor, knownGeneration } = state;
   if (!laneId) throw new Error("El carril no esta inicializado.");
 
   const elapsedMs = partial.elapsedMs ?? state.currentElapsed();
-  const seq = events.reduce((max, e) => Math.max(max, e.seq), 0) + 1;
+  // `maxSeq` y no el maximo de `events`: `events` solo tiene la largada
+  // vigente, y `seq` no puede repetirse contra lo que ya se guardo de una
+  // largada anterior (indice unico carril + dispositivo + seq en el servidor).
+  const seq = Math.max(state.maxSeq, events.reduce((max, e) => Math.max(max, e.seq), 0)) + 1;
+  const startGeneration = anchor?.startGeneration ?? knownGeneration ?? undefined;
 
   const event: TimingEvent = {
     id: crypto.randomUUID(),
@@ -422,6 +572,7 @@ async function appendUnaVez(
     supersedesId: null,
     voided: false,
     voidReason: null,
+    ...(startGeneration !== undefined ? { startGeneration } : {}),
     ...partial,
   };
 
@@ -432,6 +583,7 @@ async function appendUnaVez(
     events: nextEvents,
     result: reduceLaneEvents(laneId, nextEvents, segments),
     pendingCount: nextEvents.filter((e) => e.syncState === "pending").length,
+    maxSeq: seq,
   });
 
   return stored;

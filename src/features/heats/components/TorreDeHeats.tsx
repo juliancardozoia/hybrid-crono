@@ -44,7 +44,12 @@ export interface HeatVista {
   divisionName: string | null;
   workoutId: string;
   workoutName: string | null;
-  marcajesTotales: number;
+  /**
+   * Marcajes REALES que lleva el heat en curso: lo que se anula al deshacer su
+   * largada. No incluye el `lane_start` automatico de cada juez. 0 si el heat
+   * no largo o ya termino.
+   */
+  marcajesActivos: number;
   conAtletaCount: number;
   sinJuezCount: number;
   lanes: CarrilVista[];
@@ -371,15 +376,25 @@ export function TorreDeHeats({
   );
 }
 
-// "Deshacer Inicio" es para el error de apretar "Largar" por accidente, no
-// para reabrir un heat que ya lleva un rato corriendo: pasado este margen, la
-// salida en falso ya no es la explicacion mas probable y un click ahi es mas
-// riesgo (reiniciar un heat que si arranco de verdad) que beneficio.
-const VENTANA_DESHACER_MS = 60_000;
+/**
+ * Cuantos carriles del heat ya tienen un tiempo REAL cerrado (terminaron, o
+ * tienen DNF/DQ). Con uno solo, deshacer la largada completa ya no es
+ * corregir "una largada por error": la base lo rechaza, y la pantalla lo
+ * explica en vez de ofrecer un boton que va a fallar.
+ */
+function carrilesTerminados(heat: HeatVista): number {
+  return heat.lanes.filter(
+    (lane) => lane.status === "finished" || lane.status === "dnf" || lane.status === "dq",
+  ).length;
+}
 
-function puedeDeshacerInicio(heat: HeatVista): boolean {
-  if (!heat.startedAt || heat.endedAt || heat.marcajesTotales > 0) return false;
-  return Date.now() - new Date(heat.startedAt).getTime() <= VENTANA_DESHACER_MS;
+/** "hace 4 min 12 s", para que el aviso diga cuanto lleva corriendo lo que se va a deshacer. */
+function haceCuanto(desdeIso: string): string {
+  const segundos = Math.max(0, Math.floor((Date.now() - new Date(desdeIso).getTime()) / 1000));
+  if (segundos < 60) return `hace ${segundos} s`;
+  const minutos = Math.floor(segundos / 60);
+  const resto = segundos % 60;
+  return resto === 0 ? `hace ${minutos} min` : `hace ${minutos} min ${resto} s`;
 }
 
 function TarjetaDeHeat({
@@ -460,10 +475,10 @@ function TarjetaDeHeat({
         {!heat.startedAt ? (
           <LargarHeat eventId={eventId} heat={heat} largar={largar} />
         ) : (
-          puedeDeshacerInicio(heat) && (
-            // Todavia no llego ningun marcaje, el heat no termino, y no paso
-            // mucho desde la largada: se puede deshacer sin destruir tiempos
-            // de nadie ni reabrir un heat que ya cerro.
+          // Visible mientras el heat siga en curso, sin limite de tiempo: se
+          // oculta solo cuando termina. Antes desaparecia al minuto, y una
+          // largada por error que se descubre tarde quedaba sin salida.
+          !heat.endedAt && (
             <div className="shrink-0">
               <DeshacerInicio eventId={eventId} heat={heat} deshacer={deshacer} />
             </div>
@@ -621,9 +636,13 @@ function ConfirmarDnf({
  * categoría" en `ParametrosDeCategoria.tsx`), que siempre piden confirmar en
  * un segundo paso. Un click accidental reiniciaba el heat sin aviso.
  *
- * Solo aparece cuando `heat.marcajesTotales === 0` (ver el llamador), asi que
- * deshacer nunca destruye un tiempo ya tomado — el riesgo real es reiniciar
- * un heat que en realidad SI arranco, no perder datos.
+ * PIDE UN MOTIVO. Si algun juez ya marco algo, esos marcajes se anulan todos
+ * de una vez y el motivo queda en cada uno (no se borra nada: quedan `voided`
+ * en el registro, con quien y cuando). Viene precargado con el caso comun para
+ * que confirmar sea un toque, pero se puede escribir otro.
+ *
+ * Los relojes de los jueces se sueltan solos en unos segundos: no hay que
+ * avisarles.
  */
 function DeshacerInicio({
   eventId,
@@ -636,6 +655,15 @@ function DeshacerInicio({
 }) {
   const [confirmar, setConfirmar] = useState(false);
 
+  const terminados = carrilesTerminados(heat);
+  const bloqueado = terminados > 0;
+
+  // Jueces DISTINTOS con reloj en este heat: un juez puede cubrir varios carriles.
+  const jueces = new Set(
+    heat.lanes.filter((l) => l.judgeId !== null && l.athletes !== null).map((l) => l.judgeId),
+  ).size;
+  const n = heat.marcajesActivos;
+
   return (
     <>
       {/* variante secondary normaliza el texto a `text-neutral-100` (antes
@@ -646,25 +674,76 @@ function DeshacerInicio({
         variante="secondary"
         compacto
         className="w-full sm:w-auto"
+        disabled={bloqueado}
         onClick={() => setConfirmar(true)}
       >
         Deshacer Inicio
       </Boton>
 
+      {/* Un boton gris que dice POR QUE es mejor que uno que falla al tocarlo. */}
+      {bloqueado && (
+        <p className="mt-1.5 max-w-xs text-xs text-neutral-500">
+          {terminados === 1 ? "1 carril ya terminó" : `${terminados} carriles ya terminaron`}: ese
+          tiempo es real y no se puede deshacer la largada completa. Corrige esos resultados desde
+          Verificación.
+        </p>
+      )}
+
       <ModalDeConfirmacion
         abierto={confirmar}
         alCerrar={() => setConfirmar(false)}
-        titulo="Deshacer inicio"
+        titulo="Deshacer la largada"
         descripcion={
           <>
-            ¿Deshacer el inicio de <span className="font-medium">{heat.name}</span>? El heat vuelve
-            a quedar sin iniciar y se puede largar de nuevo cuando corresponda.
+            <span className="block">
+              Vas a deshacer la largada de <span className="font-medium">{heat.name}</span>, que
+              arrancó {heat.startedAt ? haceCuanto(heat.startedAt) : "hace un momento"}.
+            </span>
+            <ul className="mt-3 list-disc space-y-1.5 pl-5">
+              <li>
+                El heat vuelve a <span className="font-medium">«Sin iniciar»</span>. Se puede largar
+                de nuevo cuando corresponda, y los atletas empiezan de cero.
+              </li>
+              {jueces > 0 && (
+                <li>
+                  {jueces === 1
+                    ? "El reloj del juez se detiene"
+                    : `Los relojes de los ${jueces} jueces se detienen`}{" "}
+                  solos en unos segundos.
+                </li>
+              )}
+              <li>
+                {n > 0 ? (
+                  <>
+                    Se <span className="font-medium text-red-300">
+                      {n === 1 ? "anula el marcaje" : `anulan los ${n} marcajes`}
+                    </span>{" "}
+                    que ya hicieron los jueces en este heat. Quedan guardados en el registro con tu
+                    motivo, pero no cuentan para ningún resultado.
+                  </>
+                ) : (
+                  <>Todavía no hay marcajes de tiempo, así que no se pierde ningún dato.</>
+                )}
+              </li>
+            </ul>
           </>
+        }
+        campos={
+          <label className="block text-sm text-neutral-300">
+            Motivo
+            <input
+              name="motivo"
+              required
+              minLength={3}
+              defaultValue="Largada por error de la organización"
+              className="mt-1 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100"
+            />
+          </label>
         }
         accion={deshacer.bind(null, eventId, heat.id)}
         estadoInicial={{ error: null }}
-        etiquetaConfirmar="Deshacer Inicio"
-        mensajeDeCarga="Deshaciendo el inicio del heat…"
+        etiquetaConfirmar="Sí, deshacer la largada"
+        mensajeDeCarga="Deshaciendo la largada del heat…"
       />
     </>
   );
@@ -680,8 +759,8 @@ function DeshacerInicio({
  *
  * PIDE CONFIRMAR. Antes disparaba la largada directo al click — a diferencia de
  * "Deshacer Inicio" y el DNF, que ya pedian un segundo paso. Largar un heat es
- * tan dificil de revertir como esos dos (solo se puede deshacer mientras nadie
- * marco nada) y esta al lado de la lista de carriles, en la misma tarjeta que
+ * tan dificil de revertir como esos dos (solo se puede deshacer mientras el
+ * heat siga en curso y nadie haya terminado) y esta al lado de la lista de carriles, en la misma tarjeta que
  * el organizador toca para revisar quien falta: un click apenas desviado larga
  * la carrera de verdad.
  */
@@ -719,8 +798,8 @@ function LargarHeat({
         descripcion={
           <>
             ¿Largar <span className="font-medium">{heat.name}</span>? El reloj arranca para todos
-            los carriles con atleta y esta acción no se puede deshacer una vez que alguien marque
-            un tiempo.
+            los carriles con atleta. Si fue un error, puedes deshacer la largada mientras el heat
+            siga en curso y ningún atleta haya terminado.
           </>
         }
         accion={largar.bind(null, eventId, heat.id)}

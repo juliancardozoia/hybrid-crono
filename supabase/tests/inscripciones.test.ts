@@ -70,6 +70,9 @@ const DATOS_OK = {
   lastName: "Pérez",
   gender: "female",
   shirtSize: "M",
+  // Desde 20260914170000 el pais es requisito para que un integrante quede
+  // 'completo'; sin el, el tramite no se puede enviar ni confirmar.
+  country: "CO",
   acceptTerms: true,
 };
 

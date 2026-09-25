@@ -95,7 +95,7 @@ describe("buildScoreboard", () => {
       { partId: "p1", divisionId: "d1" },
     ];
     const [categoria] = buildScoreboard(doc);
-    expect(categoria.parts.map((p) => p.workoutName)).toEqual(["Evento 1", "Evento 2"]);
+    expect(categoria.parts.map((p) => p.workoutName)).toEqual(["WOD #1 - Fran", "Evento 2"]);
   });
 
   it("sin snapshot, la curva se adapta al field que hay", () => {

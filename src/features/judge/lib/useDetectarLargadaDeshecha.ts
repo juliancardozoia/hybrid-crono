@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import type { HeatStartCheck } from "./bundle";
 import { useRaceStore } from "./store";
+
+/** Cada cuanto se le pregunta al servidor si la largada sigue en pie. */
+export const INTERVALO_DE_LARGADA_MS = 2_000;
 
 /**
  * Detecta si la organización deshizo la largada de un heat DESPUÉS de que el
@@ -9,57 +13,50 @@ import { useRaceStore } from "./store";
  *
  * `EsperandoLargada` solo pregunta la largada ANTES de que exista el ancla.
  * Una vez que existe, nada volvía a preguntar — y el ancla se pone sola en
- * cuanto llega `heatStartEpochMs`, sin que el juez tenga que tocar nada, así
- * que un heat recién largado y sin ningún marcaje todavía puede tener el
- * reloj de un juez corriendo. `cancel_heat_start` justamente solo funciona
- * en ese estado (heat sin marcajes). Sin este chequeo, una falsa largada
- * deshecha por la organización dejaba el reloj del juez corriendo sobre un
- * heat que en la base ya no arrancó — y cualquier marcaje que hiciera
- * después quedaba huérfano de una largada inexistente.
+ * cuanto llega `heatStartEpochMs`, sin que el juez tenga que tocar nada. Sin
+ * este chequeo, una largada deshecha por la organización dejaba el reloj del
+ * juez corriendo sobre un heat que en la base ya no arrancó.
  *
- * TRES RESPUESTAS SEGUIDAS EN "NO ARRANCÓ", no una sola. `onCheckStart` come
- * un error de red y lo devuelve como `null` (ver `checkStart` en
- * CarrilClient.tsx) para que el polling de espera no se corte por un bache
- * de señal — pero eso significa que un `null` solo no distingue "la
- * organización deshizo la largada" de "no hubo señal por diez segundos". Se
- * exige que se repita tres veces (15s) antes de reiniciar el carril.
+ * LA SEÑAL ES LA GENERACIÓN, no la ausencia de respuesta. Cada vez que se
+ * deshace una largada `heats.start_generation` sube, y el ancla recuerda con
+ * cuál se creó: si el servidor informa una MAYOR, esa largada se deshizo y no
+ * hay otra lectura posible. Antes se leía "el heat no arrancó" y como un
+ * error de red se veía igual hacían falta tres respuestas seguidas (15s)
+ * para no resetear a un juez por un bache de señal. Con la generación una
+ * sola respuesta alcanza, y una respuesta que no llegó (`null`) simplemente no
+ * concluye nada.
+ *
+ * Al soltar el reloj NO se borra ningún marcaje (ver `syncGeneration` en el
+ * store): lo que todavía no subió sigue en la cola y sube igual.
  */
 export function useDetectarLargadaDeshecha(
-  onCheckStart: (() => Promise<number | null>) | undefined,
+  onCheckStart: (() => Promise<HeatStartCheck | null>) | undefined,
   online: boolean,
-  /** Se llama justo antes de reiniciar, para que la pantalla pueda avisar. */
+  /** Se llama cuando se suelta el reloj, para que la pantalla pueda avisar. */
   onDeshecha?: () => void,
 ): void {
-  const anchor = useRaceStore((s) => s.anchor);
+  const hayReloj = useRaceStore((s) => s.anchor !== null);
   const status = useRaceStore((s) => s.result?.status);
-  const reset = useRaceStore((s) => s.reset);
+  const syncGeneration = useRaceStore((s) => s.syncGeneration);
 
   const terminado = status === "finished" || status === "dnf" || status === "dq";
 
   useEffect(() => {
-    if (!onCheckStart || !online || !anchor || terminado) return;
+    if (!onCheckStart || !online || !hayReloj || terminado) return;
 
     let cancelado = false;
-    let nulosSeguidos = 0;
 
     const timer = setInterval(async () => {
-      const epoch = await onCheckStart();
-      if (cancelado) return;
+      const check = await onCheckStart();
+      if (cancelado || !check) return;
 
-      if (epoch === null) {
-        nulosSeguidos += 1;
-        if (nulosSeguidos >= 3) {
-          onDeshecha?.();
-          await reset();
-        }
-      } else {
-        nulosSeguidos = 0;
-      }
-    }, 5_000);
+      const deshecha = await syncGeneration(check.generation);
+      if (!cancelado && deshecha) onDeshecha?.();
+    }, INTERVALO_DE_LARGADA_MS);
 
     return () => {
       cancelado = true;
       clearInterval(timer);
     };
-  }, [onCheckStart, online, anchor, terminado, reset, onDeshecha]);
+  }, [onCheckStart, online, hayReloj, terminado, syncGeneration, onDeshecha]);
 }

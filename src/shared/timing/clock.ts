@@ -23,6 +23,13 @@ export interface ClockAnchor {
   /** performance.now() en el MISMO instante que capturedEpochMs. */
   capturedPerfMs: number;
   source: AnchorSource;
+  /**
+   * `heats.start_generation` con el que se anclo este reloj. Si el servidor
+   * informa una MAYOR, la organizacion deshizo esa largada despues de anclar.
+   * Opcional: un ancla guardada antes de esto no la tiene y la adopta al
+   * primer contacto con el servidor.
+   */
+  startGeneration?: number;
 }
 
 export interface ClockNow {
@@ -40,6 +47,7 @@ export function createAnchor(params: {
   heatStartEpochMs: number;
   startOffsetMs?: number;
   source: AnchorSource;
+  startGeneration?: number;
   now?: ClockNow;
 }): ClockAnchor {
   const now = params.now ?? readClock();
@@ -50,6 +58,7 @@ export function createAnchor(params: {
     capturedEpochMs: now.epochMs,
     capturedPerfMs: now.perfMs,
     source: params.source,
+    ...(params.startGeneration !== undefined ? { startGeneration: params.startGeneration } : {}),
   };
 }
 

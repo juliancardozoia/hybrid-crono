@@ -16,6 +16,13 @@ import type { WodStructure } from "@/shared/timing/wod";
 import { armarEstructuraDeWod } from "@/shared/timing/wodStructure";
 import { getDb } from "./db";
 
+/** Lo que el servidor dice hoy de la largada de un heat. */
+export interface HeatStartCheck {
+  /** Largada oficial en epoch ms, o null si el heat todavia no largo. */
+  epochMs: number | null;
+  generation: number;
+}
+
 export interface LaneBundle {
   laneId: string;
   eventId: string;
@@ -24,6 +31,12 @@ export interface LaneBundle {
   heatName: string;
   /** Largada oficial del heat en ISO, o null si todavia no largo. */
   heatStartedAt: string | null;
+  /**
+   * `heats.start_generation` al bajar el bundle: cuantas veces la organizacion
+   * deshizo la largada de este heat. OPCIONAL, igual que `wod`: un bundle
+   * guardado antes de esto no la trae y se adopta al primer contacto.
+   */
+  startGeneration?: number;
   laneNumber: number;
   startOffsetMs: number;
   bib: number | null;
@@ -117,6 +130,15 @@ export async function fetchLaneBundle(laneId: string): Promise<LaneBundle | null
   const row = data[0] as LaneQueryRow;
   const divisionId = row.division_id;
 
+  // No viaja en `judge_lane_bundle`: cambiar el retorno de esa funcion pide un
+  // drop + create de algo que ya usa cada juez. Una lectura de una columna del
+  // heat (que el juez ya puede leer, como en `fetchHeatStart`) sale igual.
+  const { data: largada } = await supabase
+    .from("heats")
+    .select("start_generation")
+    .eq("id", row.heat_id)
+    .maybeSingle();
+
   // Un carril sin equipo no tiene division, y sin division no sabemos que
   // corre. No hay nada que cronometrar.
   if (!divisionId) return null;
@@ -181,6 +203,7 @@ export async function fetchLaneBundle(laneId: string): Promise<LaneBundle | null
     heatId: row.heat_id,
     heatName: row.heat_name,
     heatStartedAt: row.heat_started_at,
+    startGeneration: largada?.start_generation,
     laneNumber: row.lane_number,
     startOffsetMs: row.start_offset_ms,
     bib: row.bib_number,
@@ -353,11 +376,29 @@ export async function resolveLaneBundle(
   return { bundle: cached ?? null, fromCache: cached !== undefined };
 }
 
-/** Vuelve a consultar solo la largada del heat, para el estado de espera. */
-export async function fetchHeatStart(heatId: string): Promise<string | null> {
+/**
+ * Vuelve a consultar la largada del heat: para el estado de espera y para
+ * saber si la organizacion deshizo la que este dispositivo tiene anclada.
+ *
+ * `null` es "no hubo respuesta" (sin red, o el heat no se puede leer) y NO
+ * quiere decir "todavia no largo": para eso esta `epochMs: null`. Confundirlos
+ * era lo que obligaba a pedir tres respuestas seguidas antes de creerle a un
+ * "no largo" -un bache de señal se leia igual que una largada deshecha-.
+ */
+export async function fetchHeatStart(heatId: string): Promise<HeatStartCheck | null> {
   const supabase = createClient();
-  const { data } = await supabase.from("heats").select("started_at").eq("id", heatId).maybeSingle();
-  return data?.started_at ?? null;
+  const { data, error } = await supabase
+    .from("heats")
+    .select("started_at, start_generation")
+    .eq("id", heatId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  return {
+    epochMs: data.started_at ? new Date(data.started_at).getTime() : null,
+    generation: data.start_generation,
+  };
 }
 
 /**
@@ -389,6 +430,7 @@ export async function fetchLaneEvents(laneId: string): Promise<TimingEvent[]> {
       supersedes_id: string | null;
       voided: boolean;
       void_reason: string | null;
+      start_generation: number;
     }>
   ).map((e) => ({
     id: e.id,
@@ -404,5 +446,6 @@ export async function fetchLaneEvents(laneId: string): Promise<TimingEvent[]> {
     supersedesId: e.supersedes_id,
     voided: e.voided,
     voidReason: e.void_reason,
+    startGeneration: e.start_generation,
   }));
 }

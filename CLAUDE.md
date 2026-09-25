@@ -1249,20 +1249,12 @@ alguien tenga que acordarse de tocarla a mano.
   en `TorreDeHeats` (cliente), que agrega el filtro por categoría, el reloj
   en vivo del heat en curso (`RelojDeHeat`, mismo patrón que `LiveClock` del
   juez: al DOM directo, sin pasar por React) y el botón de DNF por carril.
-- **`cancel_heat_start` no cambió sus reglas** —sigue exigiendo cero
-  marcajes— pero el JUEZ ahora vuelve a preguntar si sigue vigente. Antes
-  `EsperandoLargada` solo consultaba la largada ANTES de anclar el reloj; una
-  vez anclado —que pasa solo, sin que el juez toque nada, en cuanto llega
-  `heatStartEpochMs`— nada volvía a preguntar. Una salida en falso deshecha
-  por la organización dejaba el reloj de cada juez corriendo sobre un heat
-  que ya no existía en la base. `useDetectarLargadaDeshecha` (en
-  `judge/lib/`, usado por `JudgeScreen` y `WodJudgeScreen`) vuelve a
-  preguntar cada 5s mientras el carril siga sin terminar, y reinicia el
-  carril solo si la respuesta es "no arrancó" **tres veces seguidas** — no
-  una: `onCheckStart` ya devuelve `null` también cuando falla la red (para no
-  cortar el polling de espera), así que una sola respuesta no alcanza para
-  distinguir "la organización deshizo la largada" de "hubo un bache de
-  señal".
+- **Deshacer la largada tiene su propia sección**: ver
+  [Deshacer la largada](#deshacer-la-largada-con-jueces-adentro-con-marcajes-y-con-marcajes-atrasados).
+  El JUEZ vuelve a preguntar si su largada sigue vigente (`useDetectarLargadaDeshecha`,
+  usado por `JudgeScreen` y `WodJudgeScreen`): antes `EsperandoLargada` solo consultaba ANTES
+  de anclar el reloj, y una salida en falso deshecha por la organización dejaba el reloj de
+  cada juez corriendo sobre un heat que ya no existía en la base.
 
 ### Distribución automática de heats
 
@@ -3179,23 +3171,104 @@ sistema base (`useNotificaciones()`, un array de toasts con `id: crypto.randomUU
 este bug — es específico de "efecto que reacciona al VALOR de un campo devuelto por
 `useActionState`", no del sistema de notificaciones en sí.
 
-## "Deshacer Inicio" pide confirmación, y limpia `ended_at` por las dudas
+## Deshacer la largada: con jueces adentro, con marcajes, y con marcajes atrasados
 
-Dos ajustes a `cancel_heat_start` y su botón en `TorreDeHeats.tsx` (la pantalla de Control):
+Tres cosas que fallaban juntas, todas detectadas probando el flujo real de un heat largado por
+error.
 
-- **El botón abre un `Modal` de confirmación antes de ejecutar** — mismo patrón que "Eliminar
-  categoría" en `ParametrosDeCategoria.tsx`. Antes disparaba la acción directo al click, sin nada
-  de por medio; un click accidental reiniciaba el heat sin aviso. Sigue sin poder usarse si ya hay
-  marcajes (`heat.marcajesTotales === 0` en el llamador, `v_marcajes = 0` en la función), así que
-  la confirmación es sobre "¿de verdad querés reiniciar el heat?", no sobre perder tiempos.
-- **`cancel_heat_start` ahora pone `ended_at = null` explícitamente.** No había ningún caso real en
-  que esto importara —`ended_at` solo se llena cuando TODOS los carriles con atleta llegan a un
-  estado terminal, y eso siempre implica al menos un `timing_event`, que es justo lo que la función
-  exige en cero para dejar deshacer— pero es un acoplamiento frágil, no una garantía explícita.
-  Se agregó como defensa: si el día de mañana un estado terminal deja de depender de un
-  `timing_event`, deshacer el inicio no puede dejar pegada una fecha de cierre en un heat que
-  volvió a "sin iniciar". Después de deshacer, `start_heat()` puede volver a correr sin ningún
-  residuo: no lee `ended_at` del heat que arranca, solo de OTROS heats del mismo juez.
+**1. El botón desaparecía justo cuando hacía falta.** `cancel_heat_start` exigía CERO filas en
+`timing_events`, pero el celular del juez escribe un `lane_start` (`elapsedMs = 0`, sin payload)
+apenas ancla el reloj, **sin que el juez toque nada** — y los jueces abren el cronómetro ANTES de
+la largada, que es como está pensada la app. `puedeDeshacerInicio` (`TorreDeHeats.tsx`) tenía el
+mismo problema del lado de la UI: miraba `marcajesTotales`, que también cuenta ese `lane_start`.
+
+- **El guard cuenta solo lo que sería PERDER un tiempo**: no `lane_start` (marcador sintético), no
+  `undo` (contabilidad), no lo `voided`, no lo reemplazado por un `undo` (`supersedes_id`, aunque
+  ese `undo` esté anulado: el reductor tampoco lo mira). Es exactamente la lista de "activos" de
+  `reduceLaneEvents`, así que "no hay nada que perder" significa lo mismo en los dos lados.
+- **Un tap real sigue bloqueando `cancel_heat_start`**, y el mensaje lo cuenta sin el `lane_start`.
+
+**2. Con taps reales de por medio no había salida.** `deshacer_largada_completa(heat, motivo)`
+anula (`voided`, con motivo, quién y cuándo) TODOS los marcajes de la largada vigente de TODOS los
+carriles, y después delega en `cancel_heat_start` — una sola copia de "qué se resetea". Es
+atómica: si falla, no queda nada anulado.
+
+- **El botón de Control ahora es este**, y siempre pide un motivo (precargado, editable). La acción
+  de servidor es `deshacerLargada` (`heats/actions.ts`) y después recalcula los carriles del heat:
+  el cache de `results`/`workout_scores` seguía diciendo lo de la largada anterior. Si ese
+  recálculo falla, la acción lo dice (la largada YA se deshizo, pero el leaderboard podría mostrar
+  parciales de una carrera que no existe) en vez de callarlo.
+- **El botón se ve MIENTRAS EL HEAT ESTÉ EN CURSO, sin límite de tiempo, y se oculta solo cuando
+  termina** (`endedAt`). Hubo una ventana de 60 s (`VENTANA_DESHACER_MS`) que se eliminó: una
+  largada por error descubierta a los dos minutos quedaba sin salida, y la función SQL nunca la
+  exigió. Lo que frena una largada que ya no es "un error" no es el reloj sino que haya tiempos
+  reales cerrados.
+- **La base se niega si algún atleta ya terminó o tiene DNF** (`results`/`workout_scores`
+  terminales): ese tiempo es real. En ese caso el botón queda **deshabilitado y dice por qué**
+  ("1 carril ya terminó… corrige esos resultados desde Verificación") — un botón gris que explica
+  es mejor que uno que falla al tocarlo. La garantía está en la función, no en la UI.
+- **El aviso dice exactamente qué se hace, con números**: qué heat, cuánto lleva corriendo, que
+  vuelve a «Sin iniciar» y los atletas empiezan de cero, cuántos relojes se detienen (jueces
+  DISTINTOS: uno puede cubrir varios carriles) y **cuántos marcajes se anulan**. Ese número sale de
+  `heat_marcajes_activos()` (vía `event_heat_marcajes` → `getMarcajesActivosPorHeat`), la MISMA
+  definición que usa `cancel_heat_start` para bloquear — está en una sola función porque una regla
+  que decide si se pierde un tiempo escrita en tres lugares termina diciendo cosas distintas.
+  **No usar `eventCount` para esto**: incluye el `lane_start` automático de cada juez y contaría
+  "1 marcaje" en un heat sin un solo tap.
+
+**3. Un tap atrasado podía colarse en la carrera nueva.** Al deshacer, el heat CONSERVA su id y
+sus carriles. Un tap que quedó atrapado en el celular de un juez sin señal llega horas después —
+cuando el mismo heat ya volvió a largar — y el servidor no tenía cómo distinguirlo de uno legítimo:
+se mezclaba en el log de la carrera nueva y el reductor (que ordena por `elapsedMs`) armaba los
+splits con tiempos de otra largada.
+
+- **`heats.start_generation`** sube cada vez que se deshace una largada (`cancel_heat_start`).
+  **La estampa el CELULAR** (viaja en `ClockAnchor.startGeneration` y en cada `TimingEvent`), **no el
+  servidor**: si la estampara el servidor al insertar, el tap atrasado llegaría "con la generación
+  nueva" y se colaría igual. `ingest_timing_events` solo la acota a `[0, vigente]`, y si falta (app
+  vieja en caché, o el panel marcando DNF) asume la vigente.
+- **Un marcaje de una generación vieja SE GUARDA igual** — el log es append-only y un tiempo no se
+  pierde — pero no cuenta para nada: `recompute.ts` (`eventosDeLaLargadaVigente`),
+  `judge_lane_events`, `verification_queue` y el guard de `cancel_heat_start` comparan por
+  igualdad con `heats.start_generation`. Si agregás un lector nuevo de `timing_events` para armar un
+  resultado, tiene que filtrar por generación.
+- **El celular NO borra sus marcajes al enterarse.** `syncGeneration` (store) suelta el ancla
+  (`releaseAnchor`, que no toca el log), deja de MOSTRAR lo de esa largada
+  (`eventosDeLaLargada`) y sigue subiendo lo pendiente: llega con su generación vieja y queda
+  inerte en el servidor. Borrarlo sería perder un tiempo por una decisión que la organización
+  tomó mirando solo lo que ya había llegado.
+- **`seq` sale de `maxSeq`, no de `events`.** `events` del store solo tiene la largada vigente, y
+  `seq` es parte del índice único `(carril, dispositivo, seq)` del servidor: reiniciarlo desde 1 al
+  volver a largar chocaría con los marcajes de la largada deshecha y `ingest_timing_events`
+  rechazaría el LOTE ENTERO.
+- **La señal de "deshicieron mi largada" es la generación, no el silencio.** `fetchHeatStart`
+  devuelve `null` si no hubo respuesta y `{ epochMs: null, generation }` si el heat no largó: antes
+  los dos se leían igual (`null`) y hacía falta pedir tres respuestas seguidas para no resetear a un
+  juez por un bache de señal. Ahora una respuesta que no llegó no concluye nada y una generación
+  MAYOR es concluyente, así que el hook pregunta cada 2 s
+  (`INTERVALO_DE_LARGADA_MS`) y reacciona a la primera. Un heat "sin largar" con la MISMA generación
+  (largada local sin señal) no suelta nada.
+- **El servidor no puede saber si todos los celulares ya sincronizaron.** El `pendingCount` vive
+  solo en el store de cada dispositivo, y "silencio" no distingue "sin pendientes" de "celular
+  apagado". Por eso la garantía no es "esperar a que sincronicen" sino que un tap tardío no importe.
+
+**Cosas que quedan, dichas para que no se descubran solas:**
+
+- Anular un marcaje desde el servidor NO le llega a un celular que ya lo bajó
+  (`mergeRemoteEvents` solo agrega ids nuevos). Con deshacer la largada no importa —el celular
+  suelta el ancla y filtra por generación—, pero un `void_timing_event` suelto sí puede dejar al
+  juez viendo un marcaje que la organización ya anuló.
+- Todavía no hay pantalla para anular UN marcaje puntual (`voidTimingEvent` existe y nadie la
+  llama). El deshacer es todo-o-nada por heat.
+- **Orden de despliegue: migración primero.** El cliente nuevo pide `heats.start_generation`; si la
+  columna no existe `fetchHeatStart` devuelve `null` y NINGÚN juez recibe la largada. Por eso
+  `verify-queries.mjs` la consulta: corré `npm run verify:remote` después del `db push`.
+
+**El botón sigue pidiendo confirmación** (`ModalDeConfirmacion`, con el motivo dentro vía su prop
+`campos`) — mismo patrón que "Eliminar categoría". `cancel_heat_start` también pone
+`ended_at = null` explícitamente, como defensa: hoy `ended_at` solo se llena cuando todos los
+carriles llegan a un estado terminal, pero si un día deja de depender de un `timing_event`,
+deshacer no puede dejar pegada una fecha de cierre en un heat que volvió a "sin iniciar".
 
 ## Un heat cerrado tiene que seguir mostrando cuándo arrancó
 

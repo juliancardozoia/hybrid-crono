@@ -54,6 +54,14 @@ const CONSULTAS = [
     tabla: "lanes",
     select: "heats (started_at)",
   },
+  // No es un embed, pero es lo que decide si un juez puede anclar su reloj: si
+  // esta columna no existe (la migracion 20260925100000 no se aplico) el
+  // cliente nuevo no recibe la largada y NINGUN juez arranca.
+  {
+    donde: "features/judge/lib/bundle.ts · fetchHeatStart / fetchLaneBundle",
+    tabla: "heats",
+    select: "started_at, start_generation",
+  },
   {
     donde: "features/events/config/queries.ts · getTeams",
     tabla: "teams",

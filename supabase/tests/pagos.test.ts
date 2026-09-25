@@ -49,7 +49,7 @@ beforeEach(async () => {
     );
     await s.db.query("select save_member_data($1, $2::jsonb)", [
       m.rows[0].id,
-      JSON.stringify({ firstName: "Ana", lastName: "Pérez", acceptTerms: true }),
+      JSON.stringify({ firstName: "Ana", lastName: "Pérez", country: "CO", acceptTerms: true }),
     ]);
     await s.db.query("select submit_registration($1)", [registro]);
   });
@@ -153,9 +153,14 @@ describe("la orden", () => {
       const r = await s.db.query<{ id: string }>("select id from start_registration($1)", [
         s.divisionId,
       ]);
-      await expectDenied(() =>
-        s.db.query("select upsert_order($1)", [r.rows[0].id]),
+      // Desde 20260919100000 (hold de cupo) el armado de la orden en $0 SE
+      // PERMITE -evento gratis o alta manual sin costo-: la orden existe pero
+      // no cobra nada ni reserva un lugar.
+      const orden = await s.db.query<{ amount_cents: number; total_cents: number }>(
+        "select amount_cents, total_cents from upsert_order($1)",
+        [r.rows[0].id],
       );
+      expect(orden.rows[0]).toMatchObject({ amount_cents: 0, total_cents: 0 });
     });
   });
 
@@ -381,12 +386,21 @@ describe("cobrar cierra el círculo", () => {
     });
   });
 
-  it("pero no ve los intentos: son rastro de auditoría de la organización", async () => {
+  // Desde 20260915100000 (comprobante de pago) el atleta ve los intentos de SU
+  // orden -su comprobante ya subido-, pero nunca los de otra persona.
+  it("ve los intentos de SU orden, y un tercero no ve ninguno", async () => {
     const orden = await crearOrden();
     await asUser(s.db, s.users.owner, () =>
       s.db.query("select confirmar_pago_manual($1)", [orden.id]),
     );
+
     await asUser(s.db, atleta, async () => {
+      const res = await s.db.query("select id from payment_attempts");
+      expect(res.rows).toHaveLength(1);
+    });
+
+    const tercero = await createUser(s.db, "tercero@correo.com");
+    await asUser(s.db, tercero, async () => {
       const res = await s.db.query("select id from payment_attempts");
       expect(res.rows).toEqual([]);
     });

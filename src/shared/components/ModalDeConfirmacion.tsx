@@ -54,11 +54,18 @@ export function ModalDeConfirmacion<TEstado extends EstadoConError>({
   mensajeDeCarga,
   variante = "destructive",
   ancho = "max-w-md",
+  campos,
 }: {
   abierto: boolean;
   alCerrar: () => void;
   titulo: string;
   descripcion: React.ReactNode;
+  /**
+   * Campos que viajan con la confirmacion (un motivo, por ejemplo). Van DENTRO
+   * del `<form>`, arriba de los botones: `descripcion` esta en un `<p>` y un
+   * campo ahi no se enviaria con la accion.
+   */
+  campos?: React.ReactNode;
   accion: (prev: TEstado, formData: FormData) => Promise<TEstado>;
   /** Casi siempre `{ error: null }`. */
   estadoInicial: TEstado;
@@ -92,8 +99,10 @@ export function ModalDeConfirmacion<TEstado extends EstadoConError>({
   return (
     <Modal abierto={abierto} alCerrar={alCerrar} titulo={titulo} ancho={ancho}>
       <div className="text-left">
-        <p className="break-words text-sm text-neutral-300">{descripcion}</p>
+        {/* `div` y no `p`: una descripcion con lista (`<ul>`) no puede ir en un parrafo. */}
+        <div className="break-words text-sm text-neutral-300">{descripcion}</div>
         <form action={formAction}>
+          {campos && <div className="mt-4">{campos}</div>}
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <button
               type="button"

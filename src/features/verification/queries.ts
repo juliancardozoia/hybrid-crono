@@ -42,6 +42,19 @@ export async function getVerificationQueue(eventId: string): Promise<QueueRow[]>
   }));
 }
 
+/**
+ * Cuantos marcajes REALES lleva cada heat en curso: lo que se anularia al
+ * deshacer su largada. Mapa por `heatId`; un heat sin largar o ya terminado no
+ * aparece. Es la MISMA cuenta que usa la base para bloquear (`heat_marcajes_activos`),
+ * no la de `eventCount`, que incluye el `lane_start` automatico de cada juez.
+ */
+export async function getMarcajesActivosPorHeat(eventId: string): Promise<Record<string, number>> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("event_heat_marcajes", { p_event_id: eventId });
+
+  return Object.fromEntries((data ?? []).map((r) => [r.heat_id, Number(r.marcajes)]));
+}
+
 export interface LaneLogEntry {
   id: string;
   seq: number;

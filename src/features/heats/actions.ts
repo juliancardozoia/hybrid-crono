@@ -500,26 +500,53 @@ export async function startHeat(
 }
 
 /**
- * Deshace una largada hecha por error.
+ * Deshace una largada hecha por error, con o sin marcajes de por medio.
  *
- * Solo funciona si no llego ningun marcaje: si un juez ya empezo a cronometrar,
- * deshacer la largada le borraria el ancla y sus parciales quedarian colgando de
- * un cero que ya no existe.
+ * Anula TODO lo que los jueces ya marcaron en ese heat con UN motivo -no se
+ * borra nada: cada marcaje queda `voided`, con el motivo, quien y cuando- y
+ * deja el heat sin largar. Los relojes de los jueces se sueltan solos en unos
+ * segundos (ver `useDetectarLargadaDeshecha`).
+ *
+ * La base se niega si algun atleta del heat ya termino o tiene DNF: ese tiempo
+ * es real y ya no es "una largada por error".
  */
-export async function cancelHeatStart(
+export async function deshacerLargada(
   eventId: string,
   heatId: string,
+  formData: FormData,
 ): Promise<FormState> {
   const access = await requireEventAccess(eventId);
   if (!access.canVerify) return { error: "No tienes permiso para esto." };
 
+  const motivo = String(formData.get("motivo") ?? "").trim();
+  if (motivo.length < 3) return { error: "Escribe el motivo de deshacer la largada." };
+
   const supabase = await createClient();
-  const { error } = await supabase.rpc("cancel_heat_start", {
+  const { error } = await supabase.rpc("deshacer_largada_completa", {
     p_heat_id: heatId,
+    p_reason: motivo,
   });
-  if (error)
-    return { error: error.message || "No se pudo deshacer la largada." };
+  if (error) return { error: error.message || "No se pudo deshacer la largada." };
+
+  // Los marcajes quedaron anulados: el cache de resultados de cada carril
+  // (`results`, `workout_scores`) todavia dice lo de la largada anterior hasta
+  // que se recalcula. Si esto falla la largada YA se deshizo -esta hecha en la
+  // base-, pero el leaderboard podria seguir mostrando parciales de una
+  // carrera que ya no existe, asi que se avisa con el paso que lo arregla en
+  // vez de callarlo.
+  const recalculo = await recomputeLanes({ heatId }).catch(() => ({
+    recalculados: 0,
+    error: "fallo",
+  }));
 
   refrescar(eventId);
+
+  if (recalculo.error) {
+    return {
+      error:
+        "La largada se deshizo, pero no se pudieron actualizar los resultados de los carriles. Recalcula desde Verificación.",
+    };
+  }
+
   return { error: null };
 }
