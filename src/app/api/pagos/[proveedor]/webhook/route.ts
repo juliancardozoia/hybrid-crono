@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { dispararEnvioDeCorreos } from "@/features/correos/lib/disparar";
 import { descifrar } from "@/features/pagos/lib/cifrado";
 import { ADAPTADORES } from "@/features/pagos/adapters";
 import { VERIFICADORES } from "@/features/pagos/adapters/verificadores";
@@ -138,6 +139,11 @@ export async function POST(
     p_amount_cents: resultado.montoCents ?? undefined,
     p_raw: resultado.raw as never,
   });
+
+  // Un pago aprobado deja "pago recibido" e "inscripcion confirmada" en la cola
+  // (triggers). Se mandan ahora, despues de responder a la pasarela: ella no
+  // espera al proveedor de correo.
+  dispararEnvioDeCorreos();
 
   return NextResponse.json({ recibido: true });
 }

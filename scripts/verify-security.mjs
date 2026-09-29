@@ -44,6 +44,8 @@ const TABLAS = [
   "divisions", "division_segment_specs", "penalty_types", "athletes", "teams",
   "team_members", "heats", "lanes", "lane_audit", "timing_events", "results",
   "result_publications",
+  // Correos: la cola y las direcciones suprimidas. Solo las toca service_role.
+  "email_outbox", "email_suppressions",
 ];
 
 // NUNCA uses `{ head: true }` para sondear una tabla.
@@ -127,6 +129,11 @@ for (const fn of [
   // que upsert_workout_score() (exige can_verify_event, no can_score_event),
   // asi que el anonimo tiene que seguir sin poder ni siquiera invocarla.
   "corregir_workout_score",
+  // Correos. Las interno_* no las llama ningun cliente: si el anonimo llegara
+  // a interno_encolar_correo, mandaria correo a cualquiera con nuestro dominio.
+  "interno_encolar_correo", "interno_reclamar_correos", "interno_marcar_correo",
+  "interno_datos_de_inscripcion_para_correo", "interno_agendar_barrido_de_correos",
+  "integrantes_con_correo_suprimido",
 ]) {
   const { error } = await anon.rpc(fn, {});
   error ? ok(`${fn} bloqueada`) : mal(`${fn} es INVOCABLE por anon`);

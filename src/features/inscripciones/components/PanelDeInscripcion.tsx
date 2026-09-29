@@ -23,6 +23,7 @@ import type {
 import { BloqueDePago } from "@/features/pagos/components/BloqueDePago";
 import type { PagoDeInscripcion } from "@/features/pagos/queries";
 import { Boton, claseDeBoton } from "@/shared/components/Boton";
+import { BotonCopiar } from "@/shared/components/BotonCopiar";
 import { BotonDeEnvio } from "@/shared/components/BotonDeEnvio";
 import { useCarga } from "@/shared/components/Carga";
 import { useNotificaciones } from "@/shared/components/Notificaciones";
@@ -48,6 +49,7 @@ export function PanelDeInscripcion({
   documentos,
   miId,
   soyCapitan,
+  posicionesSinCorreo,
   pago,
   readiness,
 }: {
@@ -59,6 +61,8 @@ export function PanelDeInscripcion({
   documentos: Array<{ name: string; url: string; requiresAcceptance: boolean }>;
   miId: string | null;
   soyCapitan: boolean;
+  /** Lugares cuyo correo la plataforma ya no puede usar: hay que avisar por fuera. */
+  posicionesSinCorreo: number[];
   pago: PagoDeInscripcion;
   readiness: Readiness;
 }) {
@@ -135,6 +139,24 @@ export function PanelDeInscripcion({
                           {miembro.invited_email}
                         </span>
                       )}
+                      {/* La invitacion se guardo, pero a esta direccion ya no
+                          le escribimos (rebote o queja): sin este aviso el
+                          capitan esperaria para siempre a que responda. */}
+                      {posicionesSinCorreo.includes(posicion) &&
+                        miembro.status !== "completo" && (
+                          <span className="mt-1 flex flex-wrap items-center gap-1 text-xs text-amber-400">
+                            Este correo no recibe mensajes de la plataforma.
+                            Compártele por otro medio el enlace de esta página.
+                            <BotonCopiar
+                              valor={
+                                typeof window === "undefined"
+                                  ? `/inscripcion/${registro.id}`
+                                  : `${window.location.origin}/inscripcion/${registro.id}`
+                              }
+                              titulo="Copiar enlace"
+                            />
+                          </span>
+                        )}
                     </span>
                     <span
                       className={`text-xs ${

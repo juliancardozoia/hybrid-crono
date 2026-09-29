@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireManage } from "@/features/events/lib/access";
+import { dispararEnvioDeCorreos } from "@/features/correos/lib/disparar";
 import { cifrar, descifrar, hayLlaveDeCifrado } from "./lib/cifrado";
 import { leerCredencialesMercadoPago } from "./adapters/verificadores/mercadopago";
 import { ADAPTADORES } from "./adapters";
@@ -284,6 +285,9 @@ export async function confirmarPagoManual(
 
   if (error) return { error: error.message || "No se pudo confirmar el pago." };
 
+  // Confirmar la transferencia paga la orden y confirma la inscripcion: los dos
+  // correos ya estan en la cola.
+  dispararEnvioDeCorreos();
   revalidatePath(`/panel/eventos/${eventId}`, "layout");
   return OK;
 }

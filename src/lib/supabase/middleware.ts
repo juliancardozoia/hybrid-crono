@@ -22,6 +22,9 @@ const PUBLIC_PREFIXES = [
   // El webhook de pagos lo llama la pasarela, que no tiene sesion. Su barrera
   // es la firma, no la cookie: ver src/app/api/pagos/[proveedor]/webhook.
   "/api/pagos",
+  // El barrido de la cola (pg_cron) y los rebotes del proveedor de correo
+  // llegan sin sesion. Sus barreras son CRON_SECRET y la firma del evento.
+  "/api/correos",
 ];
 
 function isPublic(pathname: string): boolean {

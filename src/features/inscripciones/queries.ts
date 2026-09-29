@@ -152,6 +152,24 @@ export async function getReadiness(registrationId: string): Promise<Readiness | 
 }
 
 /**
+ * Los lugares del equipo cuyo correo la plataforma ya no puede usar (rebotó o
+ * marcó spam). El capitán tiene que saberlo: la invitación se guardó, pero al
+ * companero no le va a llegar nada, y sin este aviso esperaría para siempre.
+ *
+ * FUNCION NUEVA, TODAVIA NO EN `database.types.ts` (ver `llamarReadiness`).
+ * Ante cualquier error devuelve vacio: el aviso es una ayuda, y que la
+ * migracion aun no este aplicada nunca puede tumbar la pantalla del trámite.
+ */
+export async function getPosicionesSinCorreo(registrationId: string): Promise<number[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("integrantes_con_correo_suprimido" as never, {
+    p_registration_id: registrationId,
+  } as never);
+  if (error || !Array.isArray(data)) return [];
+  return (data as Array<{ member_position: number }>).map((f) => f.member_position);
+}
+
+/**
  * La misma consulta para varias inscripciones a la vez.
  *
  * `registration_readiness` toma un solo id -- no hay (todavia) una version

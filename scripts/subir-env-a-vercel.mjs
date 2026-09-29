@@ -16,15 +16,40 @@ for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
   if (m) env[m[1]] = m[2].trim();
 }
 
-// NEXT_PUBLIC_APP_URL no se copia a proposito: en local apunta a localhost, y
-// en Vercel appUrl() lo deduce solo del dominio del deploy.
-const VARIABLES = [
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-];
-
 const ENTORNOS = ["production", "preview", "development"];
+
+/**
+ * Que variable va a que entorno. Por defecto, a los tres (`ENTORNOS`) — eso
+ * cubre las claves de Supabase, que son las mismas en todos lados.
+ *
+ * Las de correo NO: mandar de verdad solo tiene sentido en produccion. Un
+ * deploy de preview con EMAIL_DRIVER=resend le escribiria a gente real desde
+ * una rama a medio probar; sin la variable ahi, `driverConfigurado()` FALLA en
+ * vez de adivinar (Vercel corre los previews con NODE_ENV=production, asi que
+ * "sin nada" no cae en 'log' solo). Por eso preview y development quedan en
+ * 'log' explicito: la prueba se ve en la consola del deploy, nunca sale.
+ */
+const SOLO_PRODUCCION = ["production"];
+
+const VARIABLES = [
+  { nombre: "NEXT_PUBLIC_SUPABASE_URL" },
+  { nombre: "NEXT_PUBLIC_SUPABASE_ANON_KEY" },
+  { nombre: "SUPABASE_SERVICE_ROLE_KEY" },
+  // NEXT_PUBLIC_APP_URL de PRODUCCION no vive en .env.local (ahi apunta a
+  // localhost, para el desarrollo) -- se carga una sola vez a mano con
+  // `vercel env add NEXT_PUBLIC_APP_URL production --no-sensitive` y el
+  // dominio propio, la unica vez que se define. Preview y development siguen
+  // sin ella a proposito: ahi conviene que cada deploy use SU URL, que es lo
+  // que appUrl() deduce sola sin la variable.
+  // Correos. Los que no esten en .env.local se saltean con un aviso.
+  { nombre: "EMAIL_DRIVER", entornos: SOLO_PRODUCCION, valor: "resend" },
+  { nombre: "EMAIL_DRIVER", entornos: ["preview", "development"], valor: "log" },
+  { nombre: "EMAIL_FROM", entornos: SOLO_PRODUCCION },
+  { nombre: "EMAIL_REPLY_TO", entornos: SOLO_PRODUCCION },
+  { nombre: "RESEND_API_KEY", entornos: SOLO_PRODUCCION },
+  { nombre: "RESEND_WEBHOOK_SECRET", entornos: SOLO_PRODUCCION },
+  { nombre: "CRON_SECRET", entornos: SOLO_PRODUCCION },
+];
 
 /**
  * Las NEXT_PUBLIC_* van como no sensibles a la fuerza.
@@ -50,15 +75,17 @@ function agregar(nombre, valor, entorno) {
   });
 }
 
-for (const nombre of VARIABLES) {
-  const valor = env[nombre];
+for (const { nombre, entornos = ENTORNOS, valor: fijo } of VARIABLES) {
+  // `valor` fijo (los EMAIL_DRIVER por entorno) no depende de .env.local; el
+  // resto si, y se saltea con un aviso si todavia no esta cargado ahi.
+  const valor = fijo ?? env[nombre];
   if (!valor) {
     console.log(`  FALTA  ${nombre} no está en .env.local`);
     continue;
   }
-  for (const entorno of ENTORNOS) {
+  for (const entorno of entornos) {
     const { code, salida } = await agregar(nombre, valor, entorno);
-    const yaExiste = /already exists/i.test(salida);
+    const yaExiste = /already (exists|been added)/i.test(salida);
     console.log(
       `  ${code === 0 ? "ok" : yaExiste ? "ya estaba" : "FALLA"}  ${nombre} (${entorno})`,
     );

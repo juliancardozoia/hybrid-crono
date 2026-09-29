@@ -25,8 +25,11 @@ buscador y filtros, y ficha publica de cada competencia. Las **inscripciones**: 
 con invitacion por correo, cupos, tallas y campos configurables. Y los **pagos**: credenciales
 cifradas del organizador, ordenes, descuentos y webhooks con firma verificada. Y el **cronograma
 multi-arena** con deteccion de solapes, mas los **colaboradores** con permisos por evento. Y los
-**planes**: el corte gratuito/pago aplicado en Postgres, con su pantalla y el medio de cobro. Falta
-el envio de correos, el panel de super admin, el tour de onboarding y el ensayo general con jueces
+**planes**: el corte gratuito/pago aplicado en Postgres, con su pantalla y el medio de cobro. Y los
+**correos transaccionales**: cola en Postgres, disparadores y envio desde la app (**falta aplicar la
+migracion `20260926100000_correos.sql` en Supabase, contratar el dominio y verificarlo en el
+proveedor**: ver [Correos transaccionales](#correos-transaccionales-la-cola-vive-en-postgres)).
+Falta el panel de super admin, el tour de onboarding y el ensayo general con jueces
 reales. El plan completo por fases está en
 `C:\Users\julian.cardozo\.claude\plans\quiero-desarrollar-una-aplicacion-dynamic-puddle.md`.
 
@@ -161,8 +164,14 @@ probar contra el proyecto de verdad:
    | Función | Quién puede ejecutarla |
    |---|---|
    | devuelve `trigger` | nadie (los triggers no necesitan EXECUTE) |
+   | `interno_*` | nadie: solo el dueño (triggers y funciones definer) y `service_role` |
    | `public_*` | `anon` y `authenticated` |
    | cualquier otra | solo `authenticated` |
+
+   **`interno_*` existe porque la regla "cualquier otra → authenticated" reabre lo que se cierre a
+   mano**: cada migración vuelve a correr la política, así que un `revoke` puntual sobre
+   `interno_encolar_correo` se deshacía solo en la migración siguiente. Es una regla de nombre, como
+   `public_*`. Si una función no la llama ningún cliente, nómbrala así.
 
    **Toda migración que agregue funciones tiene que terminar con
    `select public.apply_function_lockdown();`**, y las funciones públicas se nombran `public_*`.
@@ -242,6 +251,8 @@ src/app/eventos/       ficha pública de una competencia
 src/features/catalogo/ catálogo público: consultas, filtros, tarjetas y encabezado
 src/features/inscripciones/ trámite de inscripción: equipos, invitaciones y cupos
 src/features/pagos/    cobros: cifrado de credenciales, órdenes, descuentos y adaptadores
+src/features/correos/  correos transaccionales: plantillas es/pt/en, envío, procesador de la cola
+                       y verificación de firma de los eventos del proveedor
 src/features/planes/   el plan de la organización: qué habilita, y el medio de cobro
 src/features/leaderboard/  consultas públicas, sus pantallas y los QR
 src/features/verification/ torre de control, cola de anomalías, publicación y recálculo
@@ -2080,6 +2091,140 @@ funcion: es lo unico que va a leer el organizador.
   igual que `payment_providers.secret_ciphertext`.
 - **El aviso de plan es informativo, no la barrera.** `AvisoDePlan` existe para que el "no" llegue
   antes de intentarlo y con la salida al lado, no para impedir nada.
+
+## Correos transaccionales: la cola vive en Postgres
+
+`supabase/migrations/20260926100000_correos.sql` + `src/features/correos/`.
+
+```
+hecho de negocio ──trigger──▶ interno_encolar_correo ──▶ email_outbox ──▶ procesarCola ──▶ enviarCorreo
+(insert/update)               (dedupe, supresión,         (pendiente)      (renderiza)     (log | resend)
+                               límites)
+```
+
+### Por qué triggers sobre las TABLAS
+
+Una inscripción se confirma por TRES caminos (webhook de pago, `confirmarPagoManual`, alta sin
+precio) y el staff se toca desde varias acciones. Enganchar el envío a cada acción de Next garantiza
+que un día se olvide una. Un trigger cubre todos, presentes y futuros, y encola **dentro de la misma
+transacción**: si la operación falla no queda un correo fantasma, y si un webhook llega tres veces
+sale un solo correo (`dedupe_key`).
+
+Los disparadores miran el dato que quedó escrito y **no redefinen** `invite_member`,
+`invite_event_staff` & compañía: copiar cuerpos largos con varias versiones es como se rompe una
+inscripción.
+
+| Tipo (`kind`) | Trigger | A quién |
+|---|---|---|
+| `invitacion_equipo` | `registration_members` insert / update de `invited_email` | al integrante invitado (nunca al capitán) |
+| `inscripcion_confirmada` | `registrations.status → 'confirmada'` | a cada integrante |
+| `pago_recibido` | `orders.status → 'pagada'` con `total_cents > 0` | a quien inició el trámite |
+| `invitacion_staff` | `event_staff` insert **ya aprobado** | al invitado |
+| `juez_aprobado` | `event_staff.approved_at` null → no null | al postulado |
+
+- **Solo `source = 'self_service'` notifica.** El alta manual del organizador ya trae los datos y
+  "no hay a quien invitar" (`admin_create_registration`): un correo por cada atleta cargado a mano
+  es spam y agota el cupo diario del proveedor.
+- **Una postulación propia (`apply_as_judge`) no dispara nada**: nace sin aprobar. Aprobarla sí.
+- **El payload se arma al ENCOLAR** (nombre del evento, categoría…), no al enviar: el correo dice lo
+  que era cierto cuando ocurrió, y el procesador no hace consultas con embeds de PostgREST (la
+  brecha que los tests de base no cubren).
+- **`dedupe_key` incluye el correo** en las invitaciones: cambiar de persona en el mismo lugar SÍ es
+  otra invitación; re-invitar al mismo correo no.
+- **Las acciones llaman a `dispararEnvioDeCorreos()` después de encolar** (invitar integrante,
+  enviar/confirmar inscripción, confirmar pago manual, webhook de pago, invitar colaborador, aprobar
+  juez). Si agregas una acción que dispara un trigger de correo, agrégale esa línea; si la olvidas
+  el correo igual sale, pero con el retraso del barrido de reintentos.
+
+### Privilegios: nadie toca la cola salvo `service_role`
+
+`email_outbox` y `email_suppressions` tienen RLS **sin políticas** y `revoke all` explícito para
+`anon` y `authenticated` (los default privileges de Supabase les daban todo). Las funciones
+`interno_*` no las llama ningún cliente: si `authenticated` llegara a `interno_encolar_correo`,
+cualquier usuario mandaría correo a cualquier dirección con nuestro dominio.
+
+### Límites anti-abuso: en Postgres, no en la app
+
+`interno_encolar_correo(..., p_limite_hora)` levanta `EM001` (mismo criterio que `PL001` de los
+planes: con código propio el mensaje del servidor se muestra tal cual) si una persona lanza más de N
+invitaciones por hora, o si una dirección recibe más de 5 invitaciones en un día. Vive en la base
+porque una server action se saltea llamando a PostgREST con la misma sesión.
+
+- **Los correos de sistema (`p_limite_hora` nulo) no cuentan**: los dispara un hecho verificado, no
+  una decisión libre de quien opera. Un evento grande invita a decenas de jueces de una vez, por eso
+  el tope de staff (100/h) es más alto que el de equipos (30/h).
+- **Un duplicado ni cuenta ni rebota**: el chequeo de `dedupe_key` va ANTES de los límites.
+
+### Rebotes y quejas: proteger la reputación del dominio
+
+Sin esto se sigue escribiendo a direcciones que rebotan y el dominio termina en spam — incluida la
+verificación de cuenta. `/api/correos/eventos` recibe los eventos del proveedor (Resend firma con
+Svix) y suprime la dirección en `email_suppressions`.
+
+**Misma regla que el webhook de pagos: un evento cuya firma no se pudo verificar NUNCA suprime
+nada.** Está hecho estructural: `verificarEventoDeCorreo` devuelve un tipo discriminado y los
+destinatarios solo existen en la rama `verificado: true`. Un atacante que pudiera falsificar
+"rebote" silenciaría a atletas reales. Rebote **transitorio** (buzón lleno) no suprime.
+
+`interno_encolar_correo` no encola a una dirección suprimida y **no da error**: la invitación ya se
+guardó y el capitán siempre puede compartir el link a mano. `integrantes_con_correo_suprimido` le
+dice a la pantalla qué lugar quedó sin correo (solo al capitán o a quien administra: si no, sería
+una forma de averiguar si un correo ajeno rebota).
+
+### El envío: dos caminos y un solo proveedor
+
+- **Inmediato**: `dispararEnvioDeCorreos()` (`after()` de Next). El usuario nunca espera al
+  proveedor, y si está caído la acción no falla: el correo queda pendiente.
+- **Barrido de reintentos**: `/api/correos/procesar` con `CRON_SECRET` (sin él responde 503, nunca
+  se abre). Se agenda UNA vez a mano con `interno_agendar_barrido_de_correos(url, secreto)` (pg_cron
+  + pg_net de Supabase; el secreto queda en el comando del job) o con Vercel Cron.
+- **`interno_reclamar_correos`** usa `for update skip locked`: el envío inmediato y el barrido no se
+  pisan. Un worker que murió a mitad de envío se recupera a los 5 minutos.
+- **La política de reintento vive en `interno_marcar_correo`** (espera 1, 5, 30, 120, 720 min; al
+  quinto fallo `fallido` con `last_error`), no en la app: es lo que prueba la suite de base.
+- **`enviarCorreo` es el ÚNICO archivo que conoce al proveedor.** `EMAIL_DRIVER=log` escribe el
+  correo en `.correos-dev/` y no envía nada (desarrollo, sin dominio); `resend` envía. **Sin la
+  variable, en producción FALLA** en vez de caer en `log`: un correo que "se envió" a la consola no
+  puede pasar en silencio. Resend admite ~2 envíos por segundo: el procesador pausa 550 ms entre
+  envíos.
+- **`Idempotency-Key` = id de la fila**: si el worker muere después de enviar y antes de marcar, el
+  reintento no duplica el correo.
+- **El cliente de la cola va SIN el tipo `Database`** (`servicio.ts`, `api/correos/eventos`): las
+  tablas y funciones `interno_*` son de este módulo. Cuando se regeneren los tipos tras el
+  `db push` se puede tipar; las funciones nuevas que llama la pantalla (`integrantes_con_correo_suprimido`)
+  usan el mismo `as never` que `registration_readiness` hasta entonces.
+
+### Plantillas e idioma
+
+`src/features/correos/lib/plantillas/`. Una función pura (`renderizarCorreo`) de fila a
+`{asunto, html, texto}`, sin base ni red. HTML de tabla con estilos en línea y sin imágenes (los
+clientes de correo ignoran CSS moderno y bloquean recursos externos). Los textos van APARTE del
+diccionario de la pantalla: ese se carga en el navegador de todos y estos solo los usa el servidor.
+
+- **Todo lo que viene de la base se escapa** y el asunto no admite saltos de línea (inyección de
+  cabeceras). El `path` pasa por `sanitizeReturnPath`.
+- **Un tipo desconocido lanza**: queda como fallo con su motivo en vez de mandar un correo vacío.
+- **El monto está en centavos** (`total_cents / 100`), como todo el esquema.
+- **Idioma**: perfil (`profiles.locale`) > idioma de quien invitó (`payload.locale_hint`, la única
+  pista para quien no tiene cuenta) > español. `idiomaActual()` NO sirve: refleja a quien ejecuta
+  la acción, no a quien recibe el correo. `locale` se llena en `elegirIdioma`, en `signUp`
+  (`options.data`, que `handle_new_user` copia) y nunca lo pisa un cambio de correo.
+
+### Correos de Auth (verificación de cuenta y recuperar clave)
+
+Salen de **Supabase Auth**, no de esta cola: se configuran en el dashboard (Authentication → SMTP
+personalizado apuntando a Resend; plantillas en español). El SMTP por defecto de Supabase solo
+entrega a los miembros del equipo del proyecto, así que **mientras no haya dominio verificado un
+atleta nuevo no recibe la verificación**. Las plantillas de Supabase son de un solo idioma; si hace
+falta es/pt/en, el camino es el *Send Email Hook*, que llamaría a una ruta nuestra y reutilizaría
+las plantillas. `/auth/callback` sanea `volver` (los correos llegan por ahí).
+
+### Lo que NO está en la v1
+
+Hold de pago por vencer, cupo liberado desde lista de espera (necesitan un job programado),
+recordatorio de heat, cambios de cronograma, resultados publicados, aviso al organizador de
+comprobante pendiente. Agregar uno es un `kind` nuevo: trigger + plantilla + textos en los tres
+idiomas. Todo es transaccional: sin marketing ni baja de suscripción.
 
 ## Publicar no es lo mismo que poner en vivo
 

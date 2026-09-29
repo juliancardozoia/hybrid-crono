@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { dispararEnvioDeCorreos } from "@/features/correos/lib/disparar";
 import { requireManage } from "@/features/events/lib/access";
 import { pasoSiguiente } from "@/features/events/lib/asistente";
 import { cifrar, hayLlaveDeCifrado } from "@/features/pagos/lib/cifrado";
@@ -176,6 +177,8 @@ export async function invitarIntegrante(
 
   if (error) return { error: traducir(error) };
 
+  // El trigger ya dejo la invitacion en la cola: esto solo la manda ahora.
+  dispararEnvioDeCorreos();
   refrescar(registrationId);
   return OK;
 }
@@ -286,6 +289,9 @@ export async function confirmarInscripcionIndividual(
   });
   if (errorEnvio) return { error: traducir(errorEnvio) };
 
+  // Sin precio el envio confirma solo: la confirmacion ya esta en la cola.
+  dispararEnvioDeCorreos();
+
   // A diferencia de `empezarInscripcion` (equipo), aca no queda nada pendiente
   // que ver en /inscripcion/[id]: se guardo y se envio de un solo gesto, asi
   // que el destino util es el panel -- el punto de entrada unico de la
@@ -305,6 +311,7 @@ export async function enviarInscripcion(
 
   if (error) return { error: traducir(error) };
 
+  dispararEnvioDeCorreos();
   refrescar(registrationId);
   return OK;
 }
@@ -358,6 +365,7 @@ export async function confirmarInscripcion(
 
   if (error) return { error: traducir(error) };
 
+  dispararEnvioDeCorreos();
   revalidatePath(`/panel/eventos/${eventId}`, "layout");
   return OK;
 }

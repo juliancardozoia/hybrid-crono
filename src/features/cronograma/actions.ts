@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireManage } from "@/features/events/lib/access";
+import { dispararEnvioDeCorreos } from "@/features/correos/lib/disparar";
 import { instanteEnZona } from "@/shared/utils/fecha";
 import type { EventStaffRole } from "@/lib/supabase/types";
 
@@ -203,6 +204,7 @@ export async function invitarColaborador(
   });
 
   if (error) return { error: traducir(error) };
+  dispararEnvioDeCorreos();
   refrescar(eventId);
   return OK;
 }
@@ -243,6 +245,7 @@ export async function aprobarJuez(
   if (error)
     return { error: error.message || "No se pudo aprobar la postulación." };
 
+  dispararEnvioDeCorreos();
   refrescar(eventId);
   return OK;
 }
@@ -334,9 +337,14 @@ export async function reusarColaboradores(
       p_can_manage_workouts: false,
     });
 
-    if (error) return { error: traducir(error) };
+    if (error) {
+      // Los anteriores del lote SI quedaron invitados y encolados.
+      dispararEnvioDeCorreos();
+      return { error: traducir(error) };
+    }
   }
 
+  dispararEnvioDeCorreos();
   refrescar(eventId);
   return OK;
 }

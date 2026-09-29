@@ -4,6 +4,7 @@ import { EncabezadoPublico } from "@/features/catalogo/components/EncabezadoPubl
 import {
   getFormularioDeInscripcion,
   getInscripcion,
+  getPosicionesSinCorreo,
   getReadiness,
 } from "@/features/inscripciones/queries";
 import { reclamarLugar } from "@/features/inscripciones/actions";
@@ -36,14 +37,16 @@ export default async function InscripcionDetallePage({
   const inscripcion = await getInscripcion(id);
   if (!inscripcion) notFound();
 
-  const [form, pago, readiness] = await Promise.all([
+  const yo = inscripcion.integrantes.find((m) => m.profile_id === user.id) ?? null;
+  const soyCapitan = inscripcion.registro.created_by === user.id;
+
+  const [form, pago, readiness, posicionesSinCorreo] = await Promise.all([
     getFormularioDeInscripcion(inscripcion.evento.publicSlug),
     getPagoDeInscripcion(id),
     getReadiness(id),
+    // Solo al capitan le sirve saberlo (y la funcion no responde a nadie mas).
+    soyCapitan ? getPosicionesSinCorreo(id) : Promise.resolve([]),
   ]);
-
-  const yo = inscripcion.integrantes.find((m) => m.profile_id === user.id) ?? null;
-  const soyCapitan = inscripcion.registro.created_by === user.id;
 
   return (
     <>
@@ -87,6 +90,7 @@ export default async function InscripcionDetallePage({
           documentos={form?.documents ?? []}
           miId={yo?.id ?? null}
           soyCapitan={soyCapitan}
+          posicionesSinCorreo={posicionesSinCorreo}
           pago={pago}
           readiness={readiness ?? "incompleto"}
         />

@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
 import { COOKIE_DE_IDIOMA, DURACION_COOKIE, esIdioma } from "./idiomas";
 
 /**
@@ -25,5 +26,34 @@ export async function elegirIdioma(codigo: string): Promise<void> {
     sameSite: "lax",
   });
 
+  await guardarIdiomaEnElPerfil(codigo);
+
   revalidatePath("/", "layout");
+}
+
+/**
+ * Recuerda el idioma en el perfil, para escribirle en ese idioma por correo.
+ *
+ * La cookie es lo que ve la pantalla; el correo se manda desde un trigger, sin
+ * navegador de por medio, asi que necesita el dato en la base.
+ *
+ * Es un "extra": cambiar de idioma tiene que funcionar igual sin sesion, sin
+ * red, o con la migracion todavia sin aplicar. Por eso nunca lanza ni se
+ * reporta — la cookie ya quedo guardada.
+ */
+async function guardarIdiomaEnElPerfil(codigo: string): Promise<void> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from("profiles")
+      .update({ locale: codigo } as never)
+      .eq("id", user.id);
+  } catch {
+    /* ver arriba */
+  }
 }
