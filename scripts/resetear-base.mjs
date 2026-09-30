@@ -29,10 +29,15 @@
  *      organizacion (org_members, payment_providers, billing_accounts,
  *      invitations, movements con org_id propio) cae por cascade sin
  *      ningun restrict de por medio.
- *   3) Los archivos de STORAGE (`avatars`, `eventos`). No son filas de
- *      Postgres: hay que borrarlos aparte o quedan huerfanos ocupando
- *      espacio sin que ninguna fila los referencie.
- *   4) Las CUENTAS de `auth.users`, por la API de administracion (no se
+ *   3) La cola de CORREOS (`email_outbox`, `email_suppressions`). No cuelgan
+ *      de ningun evento, organizacion ni usuario (`email_outbox.origen_uid`
+ *      es un uuid suelto, sin FK) — nada las borra por cascada. Sin este
+ *      paso, la cola de correos de la data de prueba (invitaciones,
+ *      confirmaciones) sobrevive intacta a un reset "de cero".
+ *   4) Los archivos de STORAGE (`avatars`, `eventos`, `comprobantes`). No son
+ *      filas de Postgres: hay que borrarlos aparte o quedan huerfanos
+ *      ocupando espacio sin que ninguna fila los referencie.
+ *   5) Las CUENTAS de `auth.users`, por la API de administracion (no se
  *      puede hacer con un DELETE de tabla). `profiles` cae sola por
  *      `on delete cascade`. Van AL FINAL a proposito: `registrations.created_by`
  *      y `timing_events.recorded_by` son `on delete restrict` contra
@@ -42,6 +47,12 @@
  * `org_id` null) y cualquier tabla de referencia que no cuelgue de una
  * organizacion, un evento o una cuenta — son datos de fabrica, no datos de
  * uso.
+ *
+ * `email_suppressions` (las direcciones que rebotaron o se quejaron) SI se
+ * borra tambien: el pedido es dejar todo en cero, no solo lo que cuelga de
+ * una organizacion. Si en algun momento hace falta un reset que la conserve
+ * (es reputacion de dominio, no dato de prueba), hay que sacarla de la lista
+ * del paso 3 a proposito.
  *
  * Usa el service role: RLS no importa aca, esto no es el camino que hay que
  * probar.
@@ -131,7 +142,26 @@ for (const org of orgs ?? []) {
 console.log(`Listo: ${orgs?.length ?? 0} organizacion(es) borradas.`);
 
 // ---------------------------------------------------------------------------
-// 3) Archivos de Storage.
+// 3) Cola de correos. No cuelga de ninguna organizacion, evento ni cuenta
+//    (ver el comentario del encabezado), asi que nada de lo anterior la toco.
+
+console.log("\nVaciando la cola de correos…");
+// Clave primaria distinta en cada tabla (`id` en una, `email` en la otra):
+// no hay una columna comun para un "borrar todo" generico.
+for (const [tabla, columnaClave] of [
+  ["email_outbox", "id"],
+  ["email_suppressions", "email"],
+]) {
+  const { error, count } = await db
+    .from(tabla)
+    .delete({ count: "exact" })
+    .not(columnaClave, "is", null);
+  if (error) morir(`borrar ${tabla}`, error);
+  console.log(`   ${tabla}: ${count ?? 0} fila(s) borradas.`);
+}
+
+// ---------------------------------------------------------------------------
+// 4) Archivos de Storage.
 
 /** Todas las rutas de ARCHIVO (nunca carpetas) bajo un prefijo, recursivo:
  * no se puede asumir un solo nivel de anidamiento (`eventos` tiene
@@ -166,13 +196,13 @@ async function vaciarBucket(bucket) {
 }
 
 console.log("\nVaciando archivos subidos…");
-for (const bucket of ["eventos", "avatars"]) {
+for (const bucket of ["eventos", "avatars", "comprobantes"]) {
   const cantidad = await vaciarBucket(bucket);
   console.log(`   ${bucket}: ${cantidad} archivo(s) borrados.`);
 }
 
 // ---------------------------------------------------------------------------
-// 4) Cuentas de usuario. Al final: timing_events.recorded_by y
+// 5) Cuentas de usuario. Al final: timing_events.recorded_by y
 //    registrations.created_by son restrict contra auth.users, y esas filas
 //    ya no existen desde el paso 1.
 

@@ -71,9 +71,13 @@ export async function signUp(_prev: AuthState, formData: FormData): Promise<Auth
     email,
     password,
     options: {
-      // En Vercel sale del dominio del deploy: un link a localhost en el mail
-      // de confirmacion no lo puede abrir nadie.
-      emailRedirectTo: absoluteUrl("/auth/callback"),
+      // El destino viaja en la URL de confirmacion, igual que en
+      // signInWithGoogle: el correo de confirmacion es un viaje de ida y
+      // vuelta por fuera de esta request, y sin esto /auth/callback no tiene
+      // forma de saber a donde volver. Antes no se notaba porque, sin
+      // confirmacion por correo, signUp() redirigia de una en esta misma
+      // funcion -- el bug estaba ahi pero invisible.
+      emailRedirectTo: absoluteUrl(`/auth/callback?volver=${encodeURIComponent(volver)}`),
       // `handle_new_user` lo copia a `profiles.locale`: es el idioma en que se
       // le escribe por correo a partir de ahora.
       data: { locale: await idiomaActual() },

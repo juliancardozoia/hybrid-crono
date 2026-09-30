@@ -38,13 +38,23 @@ describe("callback de auth", () => {
 
   it("sin codigo no canjea nada y vuelve al login", async () => {
     const res = await pedir("?volver=/panel");
-    expect(res.headers.get("location")).toBe("http://localhost:3000/login?error=sin-codigo");
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:3000/login?error=sin-codigo&volver=%2Fpanel",
+    );
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
   });
 
-  it("un codigo invalido vuelve al login", async () => {
+  it("un codigo invalido vuelve al login SIN perder el destino original", async () => {
+    // Pasa seguido: el link se abrio en otro navegador/dispositivo (el
+    // verificador PKCE vive en una cookie del que arranco el registro), o un
+    // escaneo de seguridad del correo gasto el codigo antes del click real. La
+    // cuenta queda confirmada igual -- lo unico que falla es esta sesion -- asi
+    // que quien inicia sesion a mano en /login tiene que caer en la misma
+    // inscripcion que queria, no en el panel por defecto.
     exchangeCodeForSession.mockResolvedValue({ error: { message: "expirado" } });
-    const res = await pedir("?code=abc&volver=/panel");
-    expect(res.headers.get("location")).toBe("http://localhost:3000/login?error=link-invalido");
+    const res = await pedir("?code=abc&volver=%2Finscripcion%2F123");
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:3000/login?error=link-invalido&volver=%2Finscripcion%2F123",
+    );
   });
 });
