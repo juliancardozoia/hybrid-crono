@@ -31,7 +31,16 @@ const OK: FormState = { error: null };
 function traducir(error: { code?: string; message?: string } | null): string {
   if (!error) return "No se pudo completar la operación.";
   if (error.code === "42501") return "Hay que entrar con una cuenta.";
-  if (error.code === "23505") return "Ese lugar ya está ocupado.";
+  if (error.code === "23505") {
+    // Al confirmar, el 23505 sale de los indices unicos de `athletes` (correo o
+    // documento repetido en la competencia), no de un puesto del equipo:
+    // decir "ese lugar" ahi no le da al organizador ninguna pista.
+    if (error.message?.includes("athletes_email_unico"))
+      return "Ya hay un atleta con ese correo en esta competencia.";
+    if (error.message?.includes("athletes_document_unico"))
+      return "Ya hay un atleta con ese documento en esta competencia.";
+    return "Ese lugar ya está ocupado.";
+  }
   return error.message || "No se pudo completar la operación.";
 }
 

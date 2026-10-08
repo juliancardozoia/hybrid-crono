@@ -617,6 +617,77 @@ describe("confirmar: acá nace el equipo", () => {
     });
   });
 
+  it("reenviar una inscripción ya pagada no la vuelve a 'esperando pago'", async () => {
+    // Bug real: el atleta tenia su tramite abierto desde antes de que el
+    // organizador lo marcara pagado, tocaba "Confirmar inscripcion", y el
+    // tramite volvia a esperando_pago con el equipo ya creado.
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query(
+        "insert into division_registration (division_id, event_id, price_cents) values ($1, $2, 150000)",
+        [s.divisionId, s.eventId],
+      ),
+    );
+    const registro = await empezar(s.divisionId);
+    const [capitan] = await integrantes(registro);
+    await completar(atleta, capitan.id);
+    await asUser(s.db, atleta, () => s.db.query("select submit_registration($1)", [registro]));
+    await asUser(s.db, s.users.owner, () =>
+      s.db.query("select confirm_registration($1)", [registro]),
+    );
+
+    await asUser(s.db, atleta, async () => {
+      const res = await s.db.query<{ status: string; team_id: string | null }>(
+        "select status, team_id from submit_registration($1)",
+        [registro],
+      );
+      expect(res.rows[0].status).toBe("confirmada");
+      expect(res.rows[0].team_id).not.toBeNull();
+    });
+  });
+
+  it("confirmar un trámite que ya tiene equipo solo corrige el estado", async () => {
+    // Las filas que el bug ya dejo mal: confirmar no puede materializar un
+    // segundo equipo (y antes reventaba con athletes_email_unico).
+    const registro = await empezar(s.divisionId);
+    const [capitan] = await integrantes(registro);
+    await completar(atleta, capitan.id);
+    await asUser(s.db, atleta, () => s.db.query("select submit_registration($1)", [registro]));
+    await asAdmin(s.db, () =>
+      s.db.query("update registrations set status = 'esperando_pago' where id = $1", [registro]),
+    );
+
+    await asUser(s.db, s.users.owner, async () => {
+      const antes = await s.db.query<{ n: number }>(
+        "select count(*)::int as n from teams where event_id = $1",
+        [s.eventId],
+      );
+      const res = await s.db.query<{ status: string; hold_expires_at: string | null }>(
+        "select status, hold_expires_at from confirm_registration($1)",
+        [registro],
+      );
+      expect(res.rows[0].status).toBe("confirmada");
+      expect(res.rows[0].hold_expires_at).toBeNull();
+
+      const despues = await s.db.query<{ n: number }>(
+        "select count(*)::int as n from teams where event_id = $1",
+        [s.eventId],
+      );
+      expect(despues.rows[0].n).toBe(antes.rows[0].n);
+    });
+  });
+
+  it("una inscripción cancelada no se puede reenviar", async () => {
+    const registro = await empezar(s.divisionId);
+    const [capitan] = await integrantes(registro);
+    await completar(atleta, capitan.id);
+    await asUser(s.db, atleta, () => s.db.query("select cancel_registration($1)", [registro]));
+
+    const mensaje = await asUser(s.db, atleta, () =>
+      expectDenied(() => s.db.query("select submit_registration($1)", [registro])),
+    );
+    expect(mensaje).toMatch(/cancelada/i);
+  });
+
   it("cancelar retira el equipo en vez de borrarlo", async () => {
     const registro = await empezar(s.divisionId);
     const [capitan] = await integrantes(registro);
