@@ -271,21 +271,28 @@ export async function reportarPagoManual(
   return OK;
 }
 
-/** La organización marca una transferencia como recibida. */
-export async function confirmarPagoManual(
-  orderId: string,
+/**
+ * La organización marca una inscripción como pagada.
+ *
+ * Pasa por `confirmar_pago_de_inscripcion`, que crea la orden si el atleta
+ * nunca llegó a la pantalla de pago y registra el intento con su referencia:
+ * cuando un atleta dice "yo pagué", hay que poder mostrar que se registró,
+ * cuándo y quién lo confirmó, haya habido orden o no.
+ */
+export async function confirmarPagoDeInscripcion(
+  registrationId: string,
   eventId: string,
   referencia?: string,
 ): Promise<FormState> {
   const supabase = await createClient();
-  const { error } = await supabase.rpc("confirmar_pago_manual", {
-    p_order_id: orderId,
+  const { error } = await supabase.rpc("confirmar_pago_de_inscripcion", {
+    p_registration_id: registrationId,
     p_referencia: referencia || undefined,
   });
 
   if (error) return { error: error.message || "No se pudo confirmar el pago." };
 
-  // Confirmar la transferencia paga la orden y confirma la inscripcion: los dos
+  // Confirmar el pago paga la orden y confirma la inscripcion: los dos
   // correos ya estan en la cola.
   dispararEnvioDeCorreos();
   revalidatePath(`/panel/eventos/${eventId}`, "layout");

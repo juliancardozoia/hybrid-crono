@@ -113,7 +113,6 @@ export default async function InscripcionesPage({ params }: { params: Promise<{ 
 
                   {i.status === "esperando_pago" && (
                     <ConfirmarPago
-                      orderId={ordenes.get(i.id)?.id ?? null}
                       registrationId={i.id}
                       eventId={id}
                       intentos={

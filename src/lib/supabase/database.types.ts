@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
@@ -2931,6 +2931,30 @@ export type Database = {
           p_stage: number
         }
         Returns: undefined
+      }
+      confirmar_pago_de_inscripcion: {
+        Args: { p_referencia?: string; p_registration_id: string }
+        Returns: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          discount_cents: number
+          discount_code_id: string | null
+          event_id: string
+          id: string
+          paid_at: string | null
+          provider: Database["public"]["Enums"]["payment_provider"] | null
+          registration_id: string
+          status: Database["public"]["Enums"]["order_status"]
+          total_cents: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       confirmar_pago_manual: {
         Args: { p_order_id: string; p_referencia?: string }

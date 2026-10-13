@@ -432,6 +432,14 @@ confirm_registration  materializa el equipo
   la excepcion; confirmar dos veces no crea dos equipos.
 - **Cancelar retira el equipo (`withdrawn`), no lo borra**, para que sus tiempos —si llego a
   correr— no desaparezcan.
+- **Con precio y sin orden pagada, `confirm_registration` solo la llama la organizacion.** Deja
+  pasar a `created_by` porque el camino gratuito la usa con la sesion del atleta, y hasta
+  `20261013100000` eso dejaba a un atleta confirmarse solo una categoria paga por RPC directo.
+- **"Marcar como pagada" pasa SIEMPRE por `confirmar_pago_de_inscripcion`**, haya orden o no: la
+  crea si falta y deja el intento con referencia y quien. Confirmar directo no dejaba rastro.
+- **`delete_team` no deja el tramite confirmado sin equipo**: borra el alta manual sin pago y
+  cancela el resto (una orden pagada no se borra en cascada). Reenviar un tramite confirmado
+  (`submit_registration`) es un no-op: antes lo devolvia a `esperando_pago`.
 - **Cambiar de integrante borra los datos del anterior.** No son suyos.
 - **La talla tiene que ser una de `events.shirt_sizes`.** Sin ese chequeo el organizador termina
   con "L", "l" y "Large".

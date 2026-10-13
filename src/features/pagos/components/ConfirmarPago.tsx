@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { confirmarPagoManual } from "../actions";
-import { confirmarInscripcion } from "@/features/inscripciones/actions";
+import { confirmarPagoDeInscripcion } from "../actions";
 import { Boton } from "@/shared/components/Boton";
 import { useCargaMientras } from "@/shared/components/Carga";
 import type { IntentoDePago } from "../queries";
@@ -10,21 +9,16 @@ import type { IntentoDePago } from "../queries";
 /**
  * La organizacion marca un pago como recibido.
  *
- * Si hay orden, pasa por `confirmar_pago_manual`, que deja el intento
- * registrado con su referencia: cuando un atleta dice "yo pagué", hay que poder
- * mostrar exactamente que se registro y cuando.
- *
- * Si no hay orden —una inscripcion vieja, o una categoria a la que le pusieron
- * precio despues— se confirma la inscripcion directo. No es lo ideal, pero es
- * mejor que dejar a alguien trabado.
+ * Haya orden o no, pasa por `confirmar_pago_de_inscripcion`: crea la orden si
+ * el atleta nunca llego a la pantalla de pago y deja el intento registrado con
+ * su referencia. Cuando un atleta dice "yo pagué", hay que poder mostrar
+ * exactamente que se registro, cuando y quien lo confirmo.
  */
 export function ConfirmarPago({
-  orderId,
   registrationId,
   eventId,
   intentos = [],
 }: {
-  orderId: string | null;
   registrationId: string;
   eventId: string;
   /** Lo que el atleta ya reportó, con su comprobante firmado — el más reciente primero. */
@@ -61,14 +55,12 @@ export function ConfirmarPago({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        {orderId && (
-          <input
-            value={referencia}
-            onChange={(e) => setReferencia(e.target.value)}
-            placeholder="Referencia de la transferencia"
-            className="rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
-          />
-        )}
+        <input
+          value={referencia}
+          onChange={(e) => setReferencia(e.target.value)}
+          placeholder="Referencia de la transferencia"
+          className="rounded-xl border border-neutral-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-lime-400"
+        />
         <Boton
           variante="secondary"
           compacto
@@ -76,9 +68,7 @@ export function ConfirmarPago({
           textoCargando="Confirmando…"
           onClick={() =>
             startTransition(async () => {
-              const r = orderId
-                ? await confirmarPagoManual(orderId, eventId, referencia)
-                : await confirmarInscripcion(registrationId, eventId);
+              const r = await confirmarPagoDeInscripcion(registrationId, eventId, referencia);
               setError(r.error);
             })
           }

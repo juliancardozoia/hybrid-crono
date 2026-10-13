@@ -362,23 +362,6 @@ export async function reclamarLugar(
   return OK;
 }
 
-/** Confirma a mano una inscripción que quedó esperando pago. */
-export async function confirmarInscripcion(
-  registrationId: string,
-  eventId: string,
-): Promise<FormState> {
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("confirm_registration", {
-    p_registration_id: registrationId,
-  });
-
-  if (error) return { error: traducir(error) };
-
-  dispararEnvioDeCorreos();
-  revalidatePath(`/panel/eventos/${eventId}`, "layout");
-  return OK;
-}
-
 /**
  * El precio de TODAS las categorias, en un solo envio.
  *
