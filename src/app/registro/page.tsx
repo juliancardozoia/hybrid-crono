@@ -3,7 +3,7 @@ import { PantallaDeCuenta } from "@/features/auth/components/PantallaDeCuenta";
 import { signUp } from "@/features/auth/actions";
 import { traduccion } from "@/shared/i18n/servidor";
 
-export const metadata = { title: "Crear cuenta — Scora" };
+export const metadata = { title: "Crear cuenta — Scoorify" };
 
 export default async function RegistroPage({
   searchParams,

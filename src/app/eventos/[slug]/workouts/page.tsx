@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const evento = await getEventoPublico(slug);
-  if (!evento) return { title: "Pruebas — Scora" };
+  if (!evento) return { title: "Pruebas — Scoorify" };
   const que = evento.format === "carrera_hibrida" ? "Circuito" : "Workouts";
   return { title: `${que} — ${evento.name}` };
 }

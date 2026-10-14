@@ -180,7 +180,7 @@ export function FormularioDePerfil({ perfil }: { perfil: Perfil }) {
             className={campo}
           />
           <span className="text-xs text-neutral-600">
-            Único por cuenta: no puede repetirse en otro perfil de Scora.
+            Único por cuenta: no puede repetirse en otro perfil de Scoorify.
           </span>
         </label>
 

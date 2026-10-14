@@ -63,7 +63,7 @@ describe("enviarCorreo", () => {
   it("resend: manda la peticion con clave, remitente e idempotencia", async () => {
     const fetchFn = vi.fn(async () => new Response(JSON.stringify({ id: "re_123" }), { status: 200 }));
     const r = await enviarCorreo(MENSAJE, {
-      env: { EMAIL_DRIVER: "resend", RESEND_API_KEY: "re_clave", EMAIL_FROM: "Scora <no-reply@mail.ejemplo.com>", EMAIL_REPLY_TO: "hola@ejemplo.com" },
+      env: { EMAIL_DRIVER: "resend", RESEND_API_KEY: "re_clave", EMAIL_FROM: "Scoorify <no-reply@mail.ejemplo.com>", EMAIL_REPLY_TO: "hola@ejemplo.com" },
       idempotencia: "fila-1",
       fetchFn: fetchFn as unknown as typeof fetch,
     });
@@ -76,7 +76,7 @@ describe("enviarCorreo", () => {
       "Idempotency-Key": "fila-1",
     });
     expect(JSON.parse(init.body as string)).toMatchObject({
-      from: "Scora <no-reply@mail.ejemplo.com>",
+      from: "Scoorify <no-reply@mail.ejemplo.com>",
       to: ["ana@correo.com"],
       subject: "Hola",
       reply_to: "hola@ejemplo.com",

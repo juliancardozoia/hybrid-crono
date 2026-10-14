@@ -4,7 +4,7 @@ import { FormularioSimpleDeCuenta } from "@/features/auth/components/FormularioS
 import { requestPasswordReset } from "@/features/auth/actions";
 import { traduccion } from "@/shared/i18n/servidor";
 
-export const metadata = { title: "Recuperar contraseña — Scora" };
+export const metadata = { title: "Recuperar contraseña — Scoorify" };
 
 export default async function RecuperarPage() {
   const { t } = await traduccion();

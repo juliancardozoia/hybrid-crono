@@ -23,7 +23,7 @@ import { Selector } from "@/shared/components/Selector";
  * DOS convenciones, nunca una mezcla silenciosa (ver `TiePointPolicy` en
  * `src/shared/scoring/types.ts`): `same_position_points` es el reglamento
  * OFICIAL de los Games y el default -- cada empatado cobra integro el puesto
- * compartido. `average_occupied_positions` es una convencion DE SCORA, nunca
+ * compartido. `average_occupied_positions` es una convencion DE SCOORIFY, nunca
  * default, que reparte los puntos de las posiciones que el grupo ocupa.
  *
  * Cambiar esto NO altera ninguna categoria ya bloqueada: la politica se
@@ -67,7 +67,7 @@ export function SelectorDePoliticaDeEmpate({
             Puntos íntegros del puesto compartido (reglamento oficial)
           </option>
           <option value="average_occupied_positions">
-            Promedio de posiciones ocupadas (convención Scora — no es el reglamento oficial)
+            Promedio de posiciones ocupadas (convención Scoorify — no es el reglamento oficial)
           </option>
         </Selector>
       </div>

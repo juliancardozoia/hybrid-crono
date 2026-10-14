@@ -276,7 +276,7 @@ describe("pointsForTiedGroup: same_position_points (default, reglamento oficial)
   });
 });
 
-describe("pointsForTiedGroup: average_occupied_positions (convencion Scora)", () => {
+describe("pointsForTiedGroup: average_occupied_positions (convencion Scoorify)", () => {
   it("el caso real: 10 atletas, empates en 3, 5 y 9 -- (P3+P4)/2, (P5+P6)/2, (P9+P10)/2", () => {
     // Precision 2, no 3: el promedio crudo puede caer justo en el limite de
     // redondeo (x.xxx5) y toBeCloseTo(_, 3) exige una tolerancia mas chica

@@ -222,7 +222,7 @@ export function MenuLateral({
         className="mb-4 px-3 pt-2 text-lg font-bold tracking-tight"
         onClick={cerrar}
       >
-        Scora<span className="text-lime-400">.</span>
+        Scoorify<span className="text-lime-400">.</span>
       </Link>
 
       <Grupo enlaces={CUENTA} pathname={pathname} alElegir={cerrar} />

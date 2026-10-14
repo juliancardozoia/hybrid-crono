@@ -3,7 +3,7 @@ import { PantallaDeCuenta } from "@/features/auth/components/PantallaDeCuenta";
 import { signIn } from "@/features/auth/actions";
 import { traduccion } from "@/shared/i18n/servidor";
 
-export const metadata = { title: "Entrar — Scora" };
+export const metadata = { title: "Entrar — Scoorify" };
 
 export default async function LoginPage({
   searchParams,

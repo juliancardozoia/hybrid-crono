@@ -94,7 +94,7 @@ describe("rankPart", () => {
   it("los empatados cobran los MISMOS puntos con la politica default (same_position_points)", () => {
     // Regla del reglamento de los Games: "more than one athlete can share a
     // workout rank, and each will earn the original point value". Es el
-    // default; la convencion Scora que promedia se prueba aparte, mas abajo.
+    // default; la convencion Scoorify que promedia se prueba aparte, mas abajo.
     const placements = rankPart({
       part: POR_REPS,
       table: TABLA_DE_40,
@@ -223,7 +223,7 @@ describe("rankPart", () => {
  * El caso real que origino esta auditoria: 10 atletas, empates en 3, 5 y 9.
  * Posiciones fisicas 1,2,3,3,5,5,7,8,9,9 -- los puestos 4, 6 y 10 quedan
  * CONSUMIDOS, ninguna fila los tiene. Se corre con las dos politicas para
- * fijar que el default no cambia nada y que la convencion Scora reparte sin
+ * fijar que el default no cambia nada y que la convencion Scoorify reparte sin
  * inflar el total.
  */
 describe("el caso real: 10 atletas con empates en 3, 5 y 9", () => {
@@ -288,7 +288,7 @@ describe("el caso real: 10 atletas con empates en 3, 5 y 9", () => {
     expect(total).toBeGreaterThan(490);
   });
 
-  it("average_occupied_positions (Scora): reparte las posiciones ocupadas y ninguno saca 0", () => {
+  it("average_occupied_positions (Scoorify): reparte las posiciones ocupadas y ninguno saca 0", () => {
     const tabla = tablaDinamica(10, 100, "average_occupied_positions");
     const fila = rankearCon(tabla);
     const puntos = fila.map((p) => p.points);

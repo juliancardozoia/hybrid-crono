@@ -4,7 +4,7 @@ import { claimLane } from "@/features/judge/actions";
 import { getJudgeLanes, puedeJuzgar, type JudgeLane, type LanesResult } from "@/features/judge/queries";
 import { ClaimButton } from "@/features/judge/components/ClaimButton";
 
-export const metadata = { title: "Carriles — Scora" };
+export const metadata = { title: "Carriles — Scoorify" };
 
 /**
  * `puedeJuzgar()` ya gatea el link "Juzgar" del menu (`MenuDeCuenta`,

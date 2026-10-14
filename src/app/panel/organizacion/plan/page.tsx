@@ -6,7 +6,7 @@ import { BotonDePlan } from "@/features/planes/components/BotonDePlan";
 import { SimpleForm, Field, FieldRow, Select } from "@/shared/components/SimpleForm";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Plan — Scora" };
+export const metadata = { title: "Plan — Scoorify" };
 
 /**
  * Que incluye cada plan, con el corte escrito como es y no como suena mejor.

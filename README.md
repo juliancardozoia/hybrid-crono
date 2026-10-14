@@ -1,4 +1,4 @@
-# Hybrid Crono
+# Scoorify
 
 Cronometraje de competencias de fitness por tiempo (tipo Hyrox). Un juez marca los parciales de un
 atleta con el celular y el tiempo total se **deriva** de esos marcajes: nunca se escribe a mano.

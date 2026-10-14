@@ -279,7 +279,7 @@ export function buildScoreboard(input: ScoreboardInput): ScoreboardDivisionResul
     // 1..N -- suma de puntos y union de placements -- y solo vuelve a
     // rankear (assignPhysicalPositions) el TOTAL entre quienes siguen en el
     // pool de N. Un corte reduce quien sigue compitiendo, pero nunca reinicia
-    // los puntos: es la regla de dominio de Scora para fases y cortes dentro
+    // los puntos: es la regla de dominio de Scoorify para fases y cortes dentro
     // de una misma competencia.
     for (const stage of [...etapas].sort((a, b) => a - b)) {
       const entradasDeLaEtapa = entradasPorEtapa.get(stage) ?? [];

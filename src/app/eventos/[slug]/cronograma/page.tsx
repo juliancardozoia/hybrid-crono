@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const evento = await getEventoPublico(slug);
-  return { title: evento ? `Cronograma — ${evento.name}` : "Cronograma — Scora" };
+  return { title: evento ? `Cronograma — ${evento.name}` : "Cronograma — Scoorify" };
 }
 
 export default async function CronogramaPage({

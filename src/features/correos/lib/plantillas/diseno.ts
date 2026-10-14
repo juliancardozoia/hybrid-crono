@@ -52,7 +52,7 @@ export function renderHtml(c: Carcasa): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px">
 <tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;overflow:hidden">
-<tr><td style="background:#0b0b0c;padding:18px 28px;color:#ffffff;font-size:20px;font-weight:700">Scora<span style="color:${ACENTO}">.</span></td></tr>
+<tr><td style="background:#0b0b0c;padding:18px 28px;color:#ffffff;font-size:20px;font-weight:700">Scoorify<span style="color:${ACENTO}">.</span></td></tr>
 <tr><td style="padding:28px">
 <h1 style="margin:0 0 14px;color:${TINTA};font-size:22px;line-height:1.25">${esc(c.titulo)}</h1>
 <p style="margin:0 0 6px;color:${TINTA};font-size:15px;line-height:1.55">${esc(c.saludo)}</p>

@@ -1941,8 +1941,8 @@ de las claves: los otros dos se tipan contra su `Diccionario`, asi que olvidarse
 de traducir algo es un error de compilacion y no un texto en español apareciendo
 en medio del ingles.
 
-**La marca es Scora.** El wordmark lleva un punto en el color de acento
-(`Scora.`) porque "Scora" no se parte en dos como se partia "Hybrid|Crono". Los
+**La marca es Scoorify.** El wordmark lleva un punto en el color de acento
+(`Scoorify.`) porque "Scoorify" no se parte en dos como se partia "Hybrid|Crono". Los
 identificadores `hybrid-crono-judge` (base de Dexie), `hybrid-crono.device-id` y
 `hybrid-crono.vistos` NO se renombraron: son claves de almacenamiento, nadie las
 ve, y cambiarlas deja huerfana la IndexedDB de cada juez con los marcajes que no
@@ -2527,7 +2527,7 @@ Verificadas contra el rulebook de los CrossFit Games, no inferidas:
   empatado depende de `tiePointPolicy` — ver
   [Como reparte puntos un grupo empatado](#como-reparte-puntos-un-grupo-empatado-tiepointpolicy)
   mas abajo: por default cobran los mismos puntos, sin promediar (el reglamento oficial), pero una
-  competencia puede elegir la convencion Scora que reparte los puntos de las posiciones que ocupa
+  competencia puede elegir la convencion Scoorify que reparte los puntos de las posiciones que ocupa
   el grupo.
 - **El desempate general es el vector de puestos** ordenado ascendente, comparado elemento a
   elemento (`compareTiebreakVectors`). **Sin tercer criterio**: si el vector es identico, el
@@ -2900,11 +2900,11 @@ convenciones legitimas, nunca una mezcla silenciosa (`TiePointPolicy` en
 | Politica | Regla | Origen |
 |---|---|---|
 | **`same_position_points`** · *default* | Cada empatado cobra los puntos INTEGROS de la posicion compartida. El puesto consumido (el 4 de un empate en el 3) no lo paga nadie: el total repartido queda por ENCIMA de lo que ofrece la curva. | **Reglamento oficial de los Games**: *"more than one athlete can share a workout rank, and each will earn the original point value"*. Es lo que el codigo siempre hizo. |
-| `average_occupied_positions` | El grupo reparte EQUITATIVAMENTE los puntos de TODAS las posiciones que ocupa — `(P3+P4)/2` para un empate en el 3. | **Convencion Scora**, no el reglamento tradicional. Conserva el total que reparte la curva: sobre el ejemplo de arriba, `same_position_points` reparte 500.11 puntos donde la curva solo ofrece 467.78; `average_occupied_positions` reparte los 467.78 exactos (hasta el redondeo a 3 decimales). |
+| `average_occupied_positions` | El grupo reparte EQUITATIVAMENTE los puntos de TODAS las posiciones que ocupa — `(P3+P4)/2` para un empate en el 3. | **Convencion Scoorify**, no el reglamento tradicional. Conserva el total que reparte la curva: sobre el ejemplo de arriba, `same_position_points` reparte 500.11 puntos donde la curva solo ofrece 467.78; `average_occupied_positions` reparte los 467.78 exactos (hasta el redondeo a 3 decimales). |
 
 **El default es el reglamento oficial, a proposito.** Un organizador que viene de CrossFit espera
 que dos empatados en 3º cobren los puntos del 3º, y audita la tabla contra el rulebook. La UI
-ofrece la convencion Scora rotulada explicitamente como tal — nunca como default — con su efecto
+ofrece la convencion Scoorify rotulada explicitamente como tal — nunca como default — con su efecto
 explicado: evita que empatar cerca del fondo *premie* (con el default, dos empatados en 9º de 10
 cobran 9.667 cada uno y el 0 del puesto 10 no lo paga nadie).
 

@@ -18,7 +18,7 @@ import { Icono } from "./Icono";
 
 const SECCIONES: Array<{ titulo: string; enlaces: Array<{ label: string; href?: string }> }> = [
   {
-    titulo: "Scora",
+    titulo: "Scoorify",
     enlaces: [
       { label: "Competencias", href: "/" },
       { label: "Acerca de nosotros" },
@@ -39,7 +39,7 @@ const SECCIONES: Array<{ titulo: string; enlaces: Array<{ label: string; href?: 
   },
 ];
 
-const INSTAGRAM = "https://instagram.com/scora.app";
+const INSTAGRAM = "https://instagram.com/scoorify.app";
 
 export function PieDelSitio() {
   return (
@@ -51,7 +51,7 @@ export function PieDelSitio() {
               hace scroll hasta el final. */}
           <div className="flex flex-col gap-4">
             <Link href="/" className="text-lg font-bold tracking-tight">
-              Scora<span className="text-lime-400">.</span>
+              Scoorify<span className="text-lime-400">.</span>
             </Link>
             <p className="max-w-xs text-sm leading-relaxed text-neutral-500">
               Competencias de CrossFit y carreras híbridas en Latinoamérica. Inscripciones,
@@ -62,14 +62,14 @@ export function PieDelSitio() {
               href={INSTAGRAM}
               target="_blank"
               rel="noreferrer noopener"
-              aria-label="Scora en Instagram"
+              aria-label="Scoorify en Instagram"
               className="group flex w-fit items-center gap-2.5 rounded-xl border border-neutral-800 py-2 pr-4 pl-2.5 transition-colors hover:border-lime-400/50 hover:bg-neutral-900"
             >
               <Icono
                 nombre="instagram"
                 className="h-5 w-5 text-neutral-400 transition-colors group-hover:text-lime-400"
               />
-              <span className="text-sm font-medium">@scora.app</span>
+              <span className="text-sm font-medium">@scoorify.app</span>
             </a>
           </div>
 
@@ -100,7 +100,7 @@ export function PieDelSitio() {
         </div>
 
         <div className="mt-12 flex flex-col gap-3 border-t border-neutral-900 pt-6 text-xs text-neutral-600 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Scora</p>
+          <p>© {new Date().getFullYear()} Scoorify</p>
           <p>
             ¿Eres juez?{" "}
             <Link href="/juez" className="text-neutral-400 hover:text-neutral-200">

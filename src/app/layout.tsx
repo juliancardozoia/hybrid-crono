@@ -25,13 +25,13 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Scora",
+  title: "Scoorify",
   description: "Cronometraje de competencias por tiempo.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Scora",
+    title: "Scoorify",
   },
 };
 

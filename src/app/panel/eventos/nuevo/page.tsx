@@ -6,7 +6,7 @@ import { FichaDelEvento } from "@/features/events/components/FichaDelEvento";
 import { PasosDelAsistente } from "@/features/events/components/PasosDelAsistente";
 import { PASOS } from "@/features/events/lib/asistente";
 
-export const metadata = { title: "Nueva competencia — Scora" };
+export const metadata = { title: "Nueva competencia — Scoorify" };
 
 export default async function NuevoEventoPage() {
   const orgs = await getMyOrganizations();

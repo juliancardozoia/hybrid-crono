@@ -65,7 +65,7 @@ export function assignPhysicalPositions<T>(
  * oficial de los Games, "more than one athlete can share a workout rank, and
  * each will earn the original point value" -- todos cobran integros los
  * puntos de la posicion compartida. Con `average_occupied_positions` -- una
- * convencion de Scora, no del reglamento -- el grupo reparte equitativamente
+ * convencion de Scoorify, no del reglamento -- el grupo reparte equitativamente
  * los puntos de TODAS las posiciones que ocupa, para que un empate no infle
  * el total que reparte la curva. `pointsForTiedGroup` resuelve las dos.
  */

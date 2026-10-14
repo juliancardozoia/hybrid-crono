@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const evento = await getEventoPublico(slug);
-  if (!evento) return { title: "Competencia — Scora" };
+  if (!evento) return { title: "Competencia — Scoorify" };
 
   return {
-    title: `${evento.name} — Scora`,
+    title: `${evento.name} — Scoorify`,
     description: evento.description?.slice(0, 160) ?? undefined,
     openGraph: {
       title: evento.name,

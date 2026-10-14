@@ -69,7 +69,7 @@ export function ElegirCategoria({
     (c) => c.scope === "integrante" && (c.divisionId === null || c.divisionId === elegida),
   );
 
-  // "Competirás como Juan Pérez · Colombia": si SCORA ya sabe esto de una
+  // "Competirás como Juan Pérez · Colombia": si SCOORIFY ya sabe esto de una
   // inscripcion anterior, no tiene sentido volver a preguntarlo. Arranca
   // mostrando el resumen (no el formulario) apenas el perfil alcanza -- el
   // atleta puede igual apretar "Cambiar" si algo esta mal.

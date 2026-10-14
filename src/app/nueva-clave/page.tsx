@@ -4,7 +4,7 @@ import { CampoDeClave } from "@/features/auth/components/CampoDeClave";
 import { updatePassword } from "@/features/auth/actions";
 import { traduccion } from "@/shared/i18n/servidor";
 
-export const metadata = { title: "Nueva contraseña — Scora" };
+export const metadata = { title: "Nueva contraseña — Scoorify" };
 
 /**
  * Se llega aca por el enlace del correo, que ya dejo una sesion abierta. Por eso

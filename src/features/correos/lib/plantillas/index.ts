@@ -60,7 +60,7 @@ export function renderizarCorreo(
   const p = fila.payload ?? {};
   const tipo = fila.kind as TipoDeCorreo;
 
-  const evento = texto(p, "event_name") ?? "Scora";
+  const evento = texto(p, "event_name") ?? "Scoorify";
   const quien = texto(p, "captain_name") ?? texto(p, "inviter_name") ?? t.comun.alguien;
   const url = `${baseUrl.replace(/\/+$/, "")}${sanitizeReturnPath(texto(p, "path"))}`;
 

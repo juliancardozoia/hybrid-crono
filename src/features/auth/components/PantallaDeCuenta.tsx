@@ -11,7 +11,7 @@ import type { ClaveDeTexto } from "@/shared/i18n/es";
  * DOS COLUMNAS, Y LA IZQUIERDA NO ES DECORACION
  *
  * Es la primera pantalla que ve alguien que llego por el link de una
- * competencia, y para el "Scora" no significa nada todavia. La columna
+ * competencia, y para el "Scoorify" no significa nada todavia. La columna
  * de la izquierda contesta "¿que es esto y por que le doy mi correo?" mientras
  * la derecha hace el trabajo. En pantalla chica desaparece: ahi el que llega ya
  * venia decidido y el formulario tiene que estar arriba de todo, sin scroll.
@@ -58,7 +58,7 @@ export async function PantallaDeCuenta({
 
         <div className="relative flex items-center justify-between gap-4">
           <Link href="/" className="text-xl font-bold tracking-tight">
-            Scora<span className="text-lime-400">.</span>
+            Scoorify<span className="text-lime-400">.</span>
           </Link>
           <SelectorDeIdioma actual={idioma} elegir={elegirIdioma} etiqueta={t("cuenta.idioma")} />
         </div>
@@ -95,7 +95,7 @@ export async function PantallaDeCuenta({
               izquierda no existe. */}
           <div className="mb-10 flex items-center justify-between gap-4 lg:hidden">
             <Link href="/" className="font-bold tracking-tight">
-              Scora<span className="text-lime-400">.</span>
+              Scoorify<span className="text-lime-400">.</span>
             </Link>
             <SelectorDeIdioma actual={idioma} elegir={elegirIdioma} etiqueta={t("cuenta.idioma")} />
           </div>

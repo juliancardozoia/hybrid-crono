@@ -150,14 +150,14 @@ export type ComparableScore = {
  *   nadie, y el total repartido queda por ENCIMA de lo que ofrece la curva.
  * - `average_occupied_positions`: el grupo reparte equitativamente los puntos
  *   de TODAS las posiciones que ocupa -- (P3+P4)/2 para un empate en el 3.
- *   Es una CONVENCION SCORA, no el reglamento tradicional: conserva el total
+ *   Es una CONVENCION SCOORIFY, no el reglamento tradicional: conserva el total
  *   que reparte la curva, a costa de que un empate cerca del fondo ya no
  *   iguale exactamente los puntos del puesto compartido.
  *
  * El default es `same_position_points` porque es lo que el codigo siempre
  * hizo y lo que un organizador que viene de CrossFit espera al auditar la
  * tabla contra el reglamento oficial. La UI ofrece la otra rotulada como
- * convencion Scora, nunca como default.
+ * convencion Scoorify, nunca como default.
  */
 export type TiePointPolicy = "same_position_points" | "average_occupied_positions";
 

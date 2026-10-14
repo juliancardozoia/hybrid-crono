@@ -4,7 +4,7 @@ import { FormularioDePerfil } from "@/features/cuenta/components/FormularioDePer
 import { getPerfil } from "@/features/cuenta/queries";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Mi perfil — Scora" };
+export const metadata = { title: "Mi perfil — Scoorify" };
 
 /**
  * Mi perfil: SOLO foto y datos personales.

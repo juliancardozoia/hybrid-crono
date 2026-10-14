@@ -34,7 +34,7 @@ export async function EncabezadoPublico() {
     <header className="safe-top sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-4 px-4 py-3">
         <Link href="/" className="font-bold tracking-tight">
-          Scora<span className="text-lime-400">.</span>
+          Scoorify<span className="text-lime-400">.</span>
         </Link>
 
         <div className="ml-auto flex items-center gap-2 sm:gap-3">

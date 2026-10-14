@@ -13,7 +13,7 @@ import { getPagoDeInscripcion } from "@/features/pagos/queries";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Mi inscripción — Scora" };
+export const metadata = { title: "Mi inscripción — Scoorify" };
 
 export default async function InscripcionDetallePage({
   params,

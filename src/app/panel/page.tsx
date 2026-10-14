@@ -34,7 +34,7 @@ import {
 import { traduccion } from "@/shared/i18n/servidor";
 import { Icono } from "@/shared/components/Icono";
 
-export const metadata = { title: "Panel — Scora" };
+export const metadata = { title: "Panel — Scoorify" };
 
 /**
  * El inicio de cualquier cuenta -- y, desde este cambio, tambien el
